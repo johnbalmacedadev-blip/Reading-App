@@ -1,0 +1,33 @@
+# Dependencies
+**/node_modules/
+backend/vendor/
+
+# Build output
+Teacher Dashboard/dist/
+backend/public/build/
+
+# Environment
+**/.env
+**/.env.local
+**/.env.production
+
+# IDE / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Laravel runtime
+backend/storage/*.key
+backend/public/hot
+backend/public/storage
+backend/cookies.txt
+backend/test-cookies.txt
+
+# Local archives and unrelated project folders
+*.zip
+PDF attachments*/
+Web app*/
+Web System/
+Revised_Project_Milestones.pdf
+Screenshot*
