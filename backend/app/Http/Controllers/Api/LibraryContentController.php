@@ -130,6 +130,20 @@ class LibraryContentController extends Controller
     return response()->json(['message' => 'Content deleted.']);
   }
 
+  private const CONTINUUM_PDF_PATH = 'library/continuum-sml.pdf';
+
+  public function downloadContinuum(): StreamedResponse|JsonResponse
+  {
+    if (! Storage::disk('public')->exists(self::CONTINUUM_PDF_PATH)) {
+      return response()->json(['message' => 'Continuum PDF not found.'], 404);
+    }
+
+    return Storage::disk('public')->download(
+      self::CONTINUUM_PDF_PATH,
+      'Continuum-Lecture-Scientifique-SML.pdf'
+    );
+  }
+
   public function download(LibraryContent $libraryContent): StreamedResponse|JsonResponse
   {
     if (! $libraryContent->file_path || ! Storage::disk('public')->exists($libraryContent->file_path)) {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { AdminLayout } from "./AdminLayout";
 import {
-  Search, Edit2, X, ChevronDown, GraduationCap, Eye, Plus, Trash2, Loader2,
+  Search, Edit2, X, ChevronDown, ChevronLeft, ChevronRight, GraduationCap, Eye, Plus, Trash2, Loader2,
 } from "lucide-react";
 import { useLanguage } from "../../i18n";
 import {
@@ -26,6 +26,7 @@ const gradeExpected: Record<string, number> = {
 
 const GRADES = ["Kindergarten", "Grade 1", "Grade 2", "Grade 3"];
 const STATUSES = ["On Track", "Monitor", "At Risk"];
+const PAGE_SIZE = 20;
 
 type FormState = {
   id?: number;
@@ -333,6 +334,7 @@ export function AdminStudentsPage() {
   const [saving, setSaving] = useState(false);
   const [modalError, setModalError] = useState("");
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -356,6 +358,10 @@ export function AdminStudentsPage() {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [search, gradeFilter, statusFilter]);
+
   const filtered = students.filter((s) => {
     const matchSearch =
       s.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -364,6 +370,13 @@ export function AdminStudentsPage() {
     const matchStatus = statusFilter === "All" || s.status === statusFilter;
     return matchSearch && matchGrade && matchStatus;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageStart = (safePage - 1) * PAGE_SIZE;
+  const paginated = filtered.slice(pageStart, pageStart + PAGE_SIZE);
+  const showingFrom = filtered.length === 0 ? 0 : pageStart + 1;
+  const showingTo = Math.min(pageStart + PAGE_SIZE, filtered.length);
 
   const stats = {
     total: students.length,
@@ -540,7 +553,7 @@ export function AdminStudentsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((s, i) => {
+                {paginated.map((s, i) => {
                   const sc = statusConfig[s.status] ?? statusConfig["On Track"];
                   const expected = gradeExpected[s.grade] || 14;
                   return (
@@ -593,6 +606,49 @@ export function AdminStudentsPage() {
                 })}
               </tbody>
             </table>
+          )}
+          {!loading && filtered.length > 0 && (
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "12px 16px", borderTop: "1px solid #f1f5f9", background: "#fafbfc",
+            }}>
+              <span style={{ fontSize: 12, color: "#64748b" }}>
+                Showing {showingFrom}–{showingTo} of {filtered.length}
+              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={safePage <= 1}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 4,
+                    padding: "6px 12px", borderRadius: 7, border: "1px solid #e2e8f0",
+                    background: "white", fontSize: 12, color: "#374151",
+                    cursor: safePage <= 1 ? "not-allowed" : "pointer",
+                    opacity: safePage <= 1 ? 0.5 : 1,
+                  }}
+                >
+                  <ChevronLeft size={14} /> Previous
+                </button>
+                <span style={{ fontSize: 12, color: "#64748b", minWidth: 90, textAlign: "center" }}>
+                  Page {safePage} of {totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={safePage >= totalPages}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 4,
+                    padding: "6px 12px", borderRadius: 7, border: "1px solid #e2e8f0",
+                    background: "white", fontSize: 12, color: "#374151",
+                    cursor: safePage >= totalPages ? "not-allowed" : "pointer",
+                    opacity: safePage >= totalPages ? 0.5 : 1,
+                  }}
+                >
+                  Next <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
           )}
           {!loading && filtered.length === 0 && (
             <div style={{ padding: "40px 0", textAlign: "center", color: "#94a3b8", fontSize: 14 }}>No record found.</div>

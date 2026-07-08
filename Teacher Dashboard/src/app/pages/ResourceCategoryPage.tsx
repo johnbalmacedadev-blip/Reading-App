@@ -1,6 +1,7 @@
 import { useNavigate, useParams } from "react-router";
 import { ArrowLeft, Download } from "lucide-react";
 import { NotificationDropdown } from "../components/NotificationDropdown";
+import { UserAvatar } from "../components/UserAvatar";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
 
@@ -119,12 +120,7 @@ export function ResourceCategoryPage() {
             <div className="flex items-center gap-4">
               <LangToggle className="" />
               <NotificationDropdown />
-              <div
-                className="w-12 h-12 rounded-full flex items-center justify-center"
-                style={{ background: "#38b6ff", color: "#ffffff" }}
-              >
-                MG
-              </div>
+              <UserAvatar />
             </div>
           </div>
         </div>

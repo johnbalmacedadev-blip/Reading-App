@@ -30,6 +30,7 @@ import { AdminContentPage } from "./pages/admin/AdminContentPage";
 import { AdminAssessmentsPage } from "./pages/admin/AdminAssessmentsPage";
 import { AdminAuditPage } from "./pages/admin/AdminAuditPage";
 import { AdminSettingsPage } from "./pages/admin/AdminSettingsPage";
+import { AdminDownloadableResourcesPage } from "./pages/admin/AdminDownloadableResourcesPage";
 import { BoardAssessmentsPage } from "./pages/BoardAssessmentsPage";
 import { SchoolAssessmentsPage } from "./pages/SchoolAssessmentsPage";
 import { TeacherSignUpPage } from "./pages/TeacherSignUpPage";
@@ -38,6 +39,9 @@ import { PaymentPage } from "./pages/PaymentPage";
 import { TeacherSignInPage } from "./pages/TeacherSignInPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { TeacherRoute } from "./components/TeacherRoute";
+import { AdminRoute } from "./components/AdminRoute";
+import { BoardRoute } from "./components/BoardRoute";
+import { AdminLoginPage } from "./pages/admin/AdminLoginPage";
 
 function withTeacherRoute(Component: ComponentType) {
   return function ProtectedPage() {
@@ -45,6 +49,26 @@ function withTeacherRoute(Component: ComponentType) {
       <TeacherRoute>
         <Component />
       </TeacherRoute>
+    );
+  };
+}
+
+function withAdminRoute(Component: ComponentType) {
+  return function ProtectedPage() {
+    return (
+      <AdminRoute>
+        <Component />
+      </AdminRoute>
+    );
+  };
+}
+
+function withBoardRoute(Component: ComponentType) {
+  return function ProtectedPage() {
+    return (
+      <BoardRoute>
+        <Component />
+      </BoardRoute>
     );
   };
 }
@@ -88,7 +112,7 @@ export const router = createBrowserRouter([
   },
   {
     path: "/board",
-    Component: BoardReportsPage,
+    Component: withBoardRoute(SchoolBoardDashboard),
   },
   {
     path: "/profile",
@@ -132,23 +156,23 @@ export const router = createBrowserRouter([
   },
   {
     path: "/board/ateliers",
-    Component: AtelierManagementPage,
+    Component: withBoardRoute(AtelierManagementPage),
   },
   {
     path: "/board/atelier/:atelierNum",
-    Component: AtelierEditPage,
+    Component: withBoardRoute(AtelierEditPage),
   },
   {
     path: "/board/reports",
-    Component: BoardReportsPage,
+    Component: withBoardRoute(BoardReportsPage),
   },
   {
     path: "/board/assessments",
-    Component: BoardAssessmentsPage,
+    Component: withBoardRoute(BoardAssessmentsPage),
   },
   {
     path: "/board/settings",
-    Component: SettingsPage,
+    Component: withBoardRoute(SettingsPage),
   },
   {
     path: "/school/settings",
@@ -167,39 +191,51 @@ export const router = createBrowserRouter([
     Component: SchoolAssessmentsPage,
   },
   {
+    path: "/admin/login",
+    Component: AdminLoginPage,
+  },
+  {
     path: "/admin",
-    Component: AdminDashboard,
+    Component: withAdminRoute(AdminDashboard),
   },
   {
     path: "/admin/school-boards",
-    Component: AdminSchoolBoardsPage,
+    Component: withAdminRoute(AdminSchoolBoardsPage),
   },
   {
     path: "/admin/schools",
-    Component: AdminSchoolsPage,
+    Component: withAdminRoute(AdminSchoolsPage),
   },
   {
     path: "/admin/teachers",
-    Component: AdminTeachersPage,
+    Component: withAdminRoute(AdminTeachersPage),
   },
   {
     path: "/admin/students",
-    Component: AdminStudentsPage,
+    Component: withAdminRoute(AdminStudentsPage),
   },
   {
     path: "/admin/content",
-    Component: AdminContentPage,
+    Component: withAdminRoute(AdminContentPage),
+  },
+  {
+    path: "/admin/downloadable-resources",
+    Component: withAdminRoute(AdminDownloadableResourcesPage),
+  },
+  {
+    path: "/admin/downloadable-resources/:categoryId",
+    Component: withAdminRoute(AdminDownloadableResourcesPage),
   },
   {
     path: "/admin/assessments",
-    Component: AdminAssessmentsPage,
+    Component: withAdminRoute(AdminAssessmentsPage),
   },
   {
     path: "/admin/audit",
-    Component: AdminAuditPage,
+    Component: withAdminRoute(AdminAuditPage),
   },
   {
     path: "/admin/settings",
-    Component: AdminSettingsPage,
+    Component: withAdminRoute(AdminSettingsPage),
   },
 ]);

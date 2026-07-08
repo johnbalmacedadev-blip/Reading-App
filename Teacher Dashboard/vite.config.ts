@@ -34,6 +34,12 @@ export default defineConfig({
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
 
+  build: {
+    outDir: path.resolve(__dirname, '../backend/public/spa'),
+    emptyOutDir: true,
+    sourcemap: false,
+  },
+
   server: {
     proxy: {
       '/api': 'http://localhost:8001',

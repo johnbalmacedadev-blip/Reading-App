@@ -1,4 +1,5 @@
-import { useNavigate, useParams } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate, useParams } from "react-router";
 import {
   ArrowLeft,
   Calendar,
@@ -6,44 +7,37 @@ import {
   MessageSquare,
   Download,
   FileText,
+  Loader2,
 } from "lucide-react";
+import { toast } from "sonner";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage, type TranslationKey } from "../i18n";
+import { teacherApi, type EvaluationStatus } from "../api/client";
+import { exportStudentReportPdf } from "../utils/exportStudentReportPdf";
 
 interface Evaluation {
   number: number;
-  title: string;
-  status: "success" | "adequate" | "needs-improvement" | "not-required" | null;
+  status: EvaluationStatus;
   date: string;
-  comment?: string;
+  comment?: string | null;
 }
 
-const studentData = {
-  "1": {
-    name: "Amélie Dubois",
-    grade: "1re année",
-    class: "Mme Gisèle",
-    evaluations: [
-      { number: 1, title: "Connaissance alphabétique - Maj", status: "success" as const, date: "2025-09-15", comment: "Excellente maîtrise des lettres majuscules" },
-      { number: 2, title: "Connaissance alphabétique - Min", status: "success" as const, date: "2025-09-22" },
-      { number: 3, title: "Sons initiaux", status: "adequate" as const, date: "2025-09-29", comment: "Besoin de pratique supplémentaire avec les sons CH et J" },
-      { number: 4, title: "Syllabes", status: "success" as const, date: "2025-10-06" },
-      { number: 5, title: "Rimes", status: "success" as const, date: "2025-10-13" },
-      { number: 6, title: "Phonèmes", status: "adequate" as const, date: "2025-10-20" },
-      { number: 7, title: "Fusion phonémique", status: "success" as const, date: "2025-10-27" },
-      { number: 8, title: "Segmentation", status: "success" as const, date: "2025-11-03" },
-    ],
-  },
-  "2": {
-    name: "Benjamin Tremblay",
-    grade: "1re année",
-    class: "Mme Gisèle",
-    evaluations: [
-      { number: 1, title: "Connaissance alphabétique - Maj", status: "adequate" as const, date: "2025-09-15" },
-      { number: 2, title: "Connaissance alphabétique - Min", status: "success" as const, date: "2025-09-22" },
-      { number: 3, title: "Sons initiaux", status: "success" as const, date: "2025-09-29" },
-    ],
-  },
+interface StudentReport {
+  name: string;
+  grade: string;
+  classId: number;
+  teacherDisplay: string;
+  evaluations: Evaluation[];
+}
+
+type AtelierTitleKey =
+  | "tracking.atelier1" | "tracking.atelier2" | "tracking.atelier3" | "tracking.atelier4"
+  | "tracking.atelier5" | "tracking.atelier6" | "tracking.atelier7" | "tracking.atelier8"
+  | "tracking.atelier9" | "tracking.atelier10" | "tracking.atelier11" | "tracking.atelier12"
+  | "tracking.atelier13" | "tracking.atelier14" | "tracking.atelier15";
+
+type StudentNavState = {
+  classId?: number;
 };
 
 const GRADE_LABEL_KEYS: Record<string, TranslationKey> = {
@@ -60,17 +54,87 @@ const BENCHMARK_KEYS: Record<string, { expected: number; labelKey: TranslationKe
   "2e année": { expected: 14, labelKey: "student.benchmarkEndG2" },
 };
 
+function atelierTitleKey(number: number): AtelierTitleKey {
+  return `tracking.atelier${number}` as AtelierTitleKey;
+}
+
+function loadStoredClassId(studentId: string | undefined): number | undefined {
+  if (!studentId) return undefined;
+  try {
+    const raw = sessionStorage.getItem(`student-report-context-${studentId}`);
+    if (!raw) return undefined;
+    const stored = JSON.parse(raw) as StudentNavState;
+    return stored.classId;
+  } catch {
+    return undefined;
+  }
+}
+
 export function StudentDetailPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { studentId } = useParams();
   const { t, tp, auto } = useLanguage();
-  const student = studentData[studentId as keyof typeof studentData];
+  const navState = (location.state as StudentNavState | null) ?? {};
+  const [student, setStudent] = useState<StudentReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportHovered, setExportHovered] = useState(false);
+  const reportRef = useRef<HTMLDivElement>(null);
 
-  if (!student) {
-    return <div>{t("student.notFound")}</div>;
+  const classId = navState.classId ?? loadStoredClassId(studentId);
+
+  useEffect(() => {
+    if (!studentId) return;
+
+    setLoading(true);
+    setError(false);
+
+    teacherApi
+      .getStudent(studentId, classId)
+      .then(({ student: data }) => {
+        const report: StudentReport = {
+          name: data.name,
+          grade: data.grade,
+          classId: data.class_id,
+          teacherDisplay: data.teacher_display,
+          evaluations: data.evaluations
+            .filter((evaluation) => evaluation.status !== "not-required")
+            .map((evaluation) => ({
+              number: evaluation.number,
+              status: evaluation.status,
+              date: evaluation.date ?? "",
+              comment: evaluation.comment,
+            })),
+        };
+        setStudent(report);
+        sessionStorage.setItem(
+          `student-report-context-${studentId}`,
+          JSON.stringify({ classId: data.class_id })
+        );
+      })
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  }, [studentId, classId]);
+
+  if (loading) {
+    return (
+      <div className="h-screen flex items-center justify-center" style={{ background: "#dff3ff" }}>
+        <Loader2 className="w-8 h-8 animate-spin" style={{ color: "#004aad" }} />
+      </div>
+    );
   }
 
-  const getStatusColor = (status: "success" | "adequate" | "needs-improvement" | "not-required" | null) => {
+  if (error || !student) {
+    return (
+      <div className="h-screen flex items-center justify-center" style={{ background: "#dff3ff" }}>
+        <p style={{ color: "#004aad" }}>{t("student.notFound")}</p>
+      </div>
+    );
+  }
+
+  const getStatusColor = (status: EvaluationStatus | null) => {
     if (status === "success") return "#c9e265";
     if (status === "adequate") return "#ffde59";
     if (status === "needs-improvement") return "#ff5757";
@@ -78,7 +142,7 @@ export function StudentDetailPage() {
     return "#d1d5db";
   };
 
-  const getStatusText = (status: "success" | "adequate" | "needs-improvement" | "not-required" | null) => {
+  const getStatusText = (status: EvaluationStatus | null) => {
     if (status === "success") return t("common.onTrack");
     if (status === "adequate") return t("common.monitor");
     if (status === "needs-improvement") return t("common.atRisk");
@@ -87,17 +151,19 @@ export function StudentDetailPage() {
   };
 
   const completedCount = student.evaluations.length;
-  const successCount = student.evaluations.filter(e => e.status === "success").length;
-  const successRate = Math.round((successCount / completedCount) * 100);
+  const successCount = student.evaluations.filter((evaluation) => evaluation.status === "success").length;
+  const successRate = completedCount > 0 ? Math.round((successCount / completedCount) * 100) : 0;
 
   const calculateCompetencyScore = (atelierNumbers: number[]) => {
-    const relevantEvaluations = student.evaluations.filter(e => atelierNumbers.includes(e.number));
+    const relevantEvaluations = student.evaluations.filter((evaluation) =>
+      atelierNumbers.includes(evaluation.number)
+    );
     if (relevantEvaluations.length === 0) return 0;
 
-    const totalScore = relevantEvaluations.reduce((sum, e) => {
-      if (e.status === "success") return sum + 100;
-      if (e.status === "adequate") return sum + 70;
-      if (e.status === "needs-improvement") return sum + 40;
+    const totalScore = relevantEvaluations.reduce((sum, evaluation) => {
+      if (evaluation.status === "success") return sum + 100;
+      if (evaluation.status === "adequate") return sum + 70;
+      if (evaluation.status === "needs-improvement") return sum + 40;
       return sum;
     }, 0);
 
@@ -117,6 +183,20 @@ export function StudentDetailPage() {
   const isOnTrack = completedCount >= currentBenchmark.expected;
   const isAhead = completedCount > currentBenchmark.expected;
   const gradeLabel = t(GRADE_LABEL_KEYS[student.grade] ?? "grade.grade1");
+
+  const handleExportPdf = async () => {
+    if (!reportRef.current || exporting) return;
+
+    setExporting(true);
+    try {
+      await exportStudentReportPdf(reportRef.current, student.name);
+      toast.success(t("student.exportSuccess"));
+    } catch {
+      toast.error(t("student.exportFailed"));
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const skillRows = [
     {
@@ -173,50 +253,62 @@ export function StudentDetailPage() {
         style={{ background: "#ffffff", borderColor: "#dff3ff" }}
       >
         <div className="max-w-7xl mx-auto">
-          <button
-            onClick={() => navigate("/class/1")}
-            className="flex items-center gap-2 mb-4 text-sm"
-            style={{ color: "#38b6ff" }}
-          >
-            <ArrowLeft className="w-4 h-4" />
-            {t("student.backToClass")}
-          </button>
-
           <div className="flex items-center justify-between">
-            <div>
-              <div
-                className="inline-block px-4 py-2 rounded-lg mb-3"
-                style={{ background: "#004aad", color: "#ffffff" }}
-              >
-                <p className="text-sm">{t("tracking.smlSystem")}</p>
-              </div>
-              <h1 className="text-3xl mb-2" style={{ color: "#004aad" }}>
-                {student.name}
-              </h1>
-              <p className="text-lg" style={{ color: "#000000" }}>
-                {gradeLabel} - {student.class}
-              </p>
-            </div>
+            <button
+              onClick={() => navigate(`/class/${student.classId}`)}
+              className="flex items-center gap-2 text-sm"
+              style={{ color: "#38b6ff" }}
+            >
+              <ArrowLeft className="w-4 h-4" />
+              {t("student.backToClass")}
+            </button>
 
             <div className="flex items-center gap-4">
               <LangToggle />
               <button
-                className="px-6 py-3 rounded-xl flex items-center gap-2 transition-all"
+                type="button"
+                onClick={handleExportPdf}
+                disabled={exporting}
+                onMouseEnter={() => setExportHovered(true)}
+                onMouseLeave={() => setExportHovered(false)}
+                className="px-6 py-3 rounded-xl flex items-center gap-2 transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed"
                 style={{
-                  background: "#004aad",
+                  background: exportHovered && !exporting ? "#38b6ff" : "#004aad",
                   color: "#ffffff",
+                  boxShadow: exportHovered && !exporting
+                    ? "0 8px 20px rgba(0, 74, 173, 0.35)"
+                    : "0 2px 8px rgba(0, 74, 173, 0.15)",
+                  transform: exportHovered && !exporting ? "translateY(-2px)" : "translateY(0)",
                 }}
               >
-                <Download className="w-5 h-5" />
-                {t("student.exportReport")}
+                {exporting ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Download className="w-5 h-5" />
+                )}
+                {exporting ? t("student.exporting") : t("student.exportReport")}
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 p-6 overflow-y-auto">
+      <div ref={reportRef} className="flex-1 p-6 overflow-y-auto">
         <div className="max-w-7xl mx-auto">
+          <div className="mb-8">
+            <div
+              className="inline-block px-4 py-2 rounded-lg mb-3"
+              style={{ background: "#004aad", color: "#ffffff" }}
+            >
+              <p className="text-sm">{t("tracking.smlSystem")}</p>
+            </div>
+            <h1 className="text-3xl mb-2" style={{ color: "#004aad" }}>
+              {student.name}
+            </h1>
+            <p className="text-lg" style={{ color: "#000000" }}>
+              {gradeLabel} - {student.teacherDisplay}
+            </p>
+          </div>
           <div
             className="rounded-2xl p-6 shadow-lg mb-8"
             style={{ background: "#ffffff", border: "1px solid #dff3ff" }}
@@ -373,8 +465,8 @@ export function StudentDetailPage() {
 
             {(() => {
               const sorted = [...radarData].sort((a, b) => b.score - a.score);
-              const forces = sorted.filter(s => s.score >= 50);
-              const prochaines = sorted.filter(s => s.score < 50).reverse();
+              const forces = sorted.filter((item) => item.score >= 50);
+              const prochaines = sorted.filter((item) => item.score < 50).reverse();
               return (
                 <div className="rounded-2xl p-6 shadow-lg" style={{ background: "#ffffff", border: "1px solid #dff3ff" }}>
                   <h2 className="text-xl mb-6" style={{ color: "#004aad" }}>{t("student.resultsSummary")}</h2>
@@ -392,10 +484,10 @@ export function StudentDetailPage() {
                     </div>
                     {forces.length > 0 ? (
                       <ul className="space-y-2 ml-10">
-                        {forces.map(f => (
-                          <li key={f.subjectKey} className="text-sm flex items-center gap-2" style={{ color: "#374151" }}>
+                        {forces.map((item) => (
+                          <li key={item.subjectKey} className="text-sm flex items-center gap-2" style={{ color: "#374151" }}>
                             <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#059669", display: "inline-block", flexShrink: 0 }} />
-                            {t(f.subjectKey)} ({f.score})
+                            {t(item.subjectKey)} ({item.score})
                           </li>
                         ))}
                       </ul>
@@ -417,15 +509,15 @@ export function StudentDetailPage() {
                         </svg>
                       </div>
                       <span className="font-bold text-base" style={{ color: "#ef4444" }}>
-                        {t("student.priorities")} ({prochaines.length})
+                        {t("student.nextSteps")} ({prochaines.length})
                       </span>
                     </div>
                     {prochaines.length > 0 ? (
                       <ul className="space-y-2 ml-10">
-                        {prochaines.map(p => (
-                          <li key={p.subjectKey} className="text-sm flex items-center gap-2" style={{ color: "#374151" }}>
+                        {prochaines.map((item) => (
+                          <li key={item.subjectKey} className="text-sm flex items-center gap-2" style={{ color: "#374151" }}>
                             <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#ef4444", display: "inline-block", flexShrink: 0 }} />
-                            {t(p.subjectKey)} ({p.score})
+                            {t(item.subjectKey)} ({item.score})
                           </li>
                         ))}
                       </ul>
@@ -457,16 +549,19 @@ export function StudentDetailPage() {
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
                         <span
-                          className="px-3 py-1 rounded-lg text-sm"
+                          className="inline-flex items-center justify-center rounded-lg text-sm font-medium shrink-0"
                           style={{
                             background: "#004aad",
                             color: "#ffffff",
+                            padding: "6px 12px",
+                            lineHeight: 1,
+                            minHeight: 28,
                           }}
                         >
                           {tp("evaluation.workshopN", { n: evaluation.number })}
                         </span>
                         <h3 className="text-lg" style={{ color: "#004aad" }}>
-                          {auto(evaluation.title)}
+                          {t(atelierTitleKey(evaluation.number))}
                         </h3>
                       </div>
                       <p className="text-sm mb-2" style={{ color: "#000000", opacity: 0.7 }}>

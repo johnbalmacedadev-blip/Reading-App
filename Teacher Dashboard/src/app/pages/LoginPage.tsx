@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router";
+import { useMemo, useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router";
 import {
   BookOpen,
   GraduationCap,
@@ -7,10 +7,14 @@ import {
   Building2,
   ArrowRight,
   Settings,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import classroomPhoto from "../../imports/image-1.png";
 import { useLanguage } from "../i18n";
 import { LangToggle } from "../components/LangToggle";
+import { useAuth } from "../context/AuthContext";
+import { ApiError } from "../api/client";
 
 const portalDefs = [
   {
@@ -44,7 +48,9 @@ const portalDefs = [
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useLanguage();
+  const { user, loading, login } = useAuth();
   const portals = useMemo(
     () =>
       portalDefs.map((portal) => ({
@@ -54,17 +60,76 @@ export function LoginPage() {
       })),
     [t]
   );
-  const [selectedPortal, setSelectedPortal] = useState<
-    string | null
-  >(null);
+  const [selectedPortal, setSelectedPortal] = useState<string | null>(() => {
+    const portal = (location.state as { portal?: string } | null)?.portal;
+    return portal && portal !== "enseignant" ? portal : null;
+  });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (loading || !user) return;
+    if (user.role === "board_admin") navigate("/board", { replace: true });
+    else if (user.role === "school_admin") navigate("/school", { replace: true });
+    else if (user.role === "teacher") navigate("/dashboard", { replace: true });
+    else if (user.role === "admin") navigate("/admin", { replace: true });
+  }, [user, loading, navigate]);
+
+  useEffect(() => {
+    const portal = (location.state as { portal?: string } | null)?.portal;
+    if (portal === "enseignant") {
+      navigate("/signin", { replace: true });
+    }
+  }, [location.state, navigate]);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const portal = portals.find((p) => p.id === selectedPortal);
-    navigate(portal?.route ?? "/dashboard");
+
+    if (selectedPortal === "ecole") {
+      if (!email || !password) {
+        setError(t("login.fillAllFields"));
+        return;
+      }
+
+      setSubmitting(true);
+      setError("");
+
+      try {
+        await login(email, password, "school");
+        navigate("/school");
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : t("login.loginFailed"));
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    if (selectedPortal === "conseil") {
+      if (!email || !password) {
+        setError(t("login.fillAllFields"));
+        return;
+      }
+
+      setSubmitting(true);
+      setError("");
+
+      try {
+        await login(email, password, "board");
+        navigate("/board");
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : t("login.loginFailed"));
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
   };
+
+  const usesPortalLogin = selectedPortal === "ecole" || selectedPortal === "conseil";
 
   const activePortal = portals.find(
     (p) => p.id === selectedPortal,
@@ -115,7 +180,7 @@ export function LoginPage() {
             <LangToggle className="" />
           </div>
           <button
-            onClick={() => navigate("/admin")}
+            onClick={() => navigate("/admin/login")}
             title="Admin portal"
             style={{
               width: 34, height: 34, borderRadius: 8,
@@ -160,64 +225,69 @@ export function LoginPage() {
 
               <div className="space-y-4">
                 {portals.map(({ id, Icon, bg, color }) => (
-
-                  <button
-                    key={id}
-                    onClick={() => setSelectedPortal(id)}
-                    className="w-full flex items-center gap-4 p-5 rounded-2xl text-left transition-all hover:shadow-md group"
-                    style={{
-                      background: bg,
-                      border: `1.5px solid ${bg === "#dff3ff" ? "#b8e4ff" : bg === "#f7ffd6" ? "#c9e265" : "#ffd0d0"}`,
-                    }}
-                  >
-                    <div
-                      className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
-                      style={{ background: color }}
+                  <div key={id}>
+                    <button
+                      onClick={() => {
+                        if (id === "enseignant") {
+                          navigate("/signin");
+                          return;
+                        }
+                        setSelectedPortal(id);
+                      }}
+                      className="w-full flex items-center gap-4 p-5 rounded-2xl text-left transition-all hover:shadow-md group"
+                      style={{
+                        background: bg,
+                        border: `1.5px solid ${bg === "#dff3ff" ? "#b8e4ff" : bg === "#f7ffd6" ? "#c9e265" : "#ffd0d0"}`,
+                      }}
                     >
-                      <Icon className="w-6 h-6 text-white" />
-                    </div>
-                    <div className="flex-1">
-                      <p
-                        className="font-bold text-base"
+                      <div
+                        className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
+                        style={{ background: color }}
+                      >
+                        <Icon className="w-6 h-6 text-white" />
+                      </div>
+                      <div className="flex-1">
+                        <p
+                          className="font-bold text-base"
+                          style={{ color }}
+                        >
+                          {id === "enseignant"
+                            ? t("login.teacherPortal")
+                            : id === "ecole"
+                              ? t("login.schoolPortal")
+                              : t("login.boardPortal")}
+                        </p>
+                        <p
+                          className="text-sm mt-0.5"
+                          style={{ color: "#666" }}
+                        >
+                          {id === "enseignant"
+                            ? t("login.teacherDesc")
+                            : id === "ecole"
+                              ? t("login.schoolDesc")
+                              : t("login.boardDesc")}
+                        </p>
+                      </div>
+                      <ArrowRight
+                        className="w-5 h-5 opacity-40 group-hover:opacity-100 transition-opacity"
                         style={{ color }}
-                      >
-                        {id === "enseignant"
-                          ? t("login.teacherPortal")
-                          : id === "ecole"
-                            ? t("login.schoolPortal")
-                            : t("login.boardPortal")}
-                      </p>
-                      <p
-                        className="text-sm mt-0.5"
-                        style={{ color: "#666" }}
-                      >
-                        {id === "enseignant"
-                          ? t("login.teacherDesc")
-                          : id === "ecole"
-                            ? t("login.schoolDesc")
-                            : t("login.boardDesc")}
-                      </p>
-                    </div>
-                    <ArrowRight
-                      className="w-5 h-5 opacity-40 group-hover:opacity-100 transition-opacity"
-                      style={{ color }}
-                    />
-                  </button>
-                ))}
-              </div>
+                      />
+                    </button>
 
-              {/* Sign up CTA */}
-              <div className="mt-8 pt-6" style={{ borderTop: "1px solid #f1f5f9" }}>
-                <p className="text-center text-sm" style={{ color: "#94a3b8" }}>
-                  {t("login.newTeacher")}{" "}
-                  <button
-                    onClick={() => navigate("/signup")}
-                    className="font-semibold"
-                    style={{ color: "#004aad", background: "none", border: "none", cursor: "pointer", fontSize: 14 }}
-                  >
-                    {t("login.createAccountArrow")}
-                  </button>
-                </p>
+                    {id === "enseignant" && (
+                      <p className="text-center text-sm mt-3" style={{ color: "#94a3b8" }}>
+                        {t("login.newTeacher")}{" "}
+                        <button
+                          onClick={() => navigate("/signup")}
+                          className="font-semibold"
+                          style={{ color: "#004aad", background: "none", border: "none", cursor: "pointer", fontSize: 14 }}
+                        >
+                          {t("login.createAccountArrow")}
+                        </button>
+                      </p>
+                    )}
+                  </div>
+                ))}
               </div>
             </>
           ) : (
@@ -252,11 +322,9 @@ export function LoginPage() {
                     className="text-xl font-bold"
                     style={{ color: "#004aad" }}
                   >
-                    {activePortal?.id === "enseignant"
-                      ? t("login.teacherPortal")
-                      : activePortal?.id === "ecole"
-                        ? t("login.schoolPortal")
-                        : t("login.boardPortal")}
+                    {activePortal?.id === "ecole"
+                      ? t("login.schoolPortal")
+                      : t("login.boardPortal")}
                   </h2>
                 </div>
               </div>
@@ -265,23 +333,45 @@ export function LoginPage() {
                 onSubmit={handleLogin}
                 className="space-y-5"
               >
+                {error && (
+                  <div
+                    className="rounded-xl px-4 py-3 text-sm"
+                    style={{
+                      background: "#fff1f2",
+                      border: "1px solid #fecdd3",
+                      color: "#e11d48",
+                    }}
+                  >
+                    {error}
+                  </div>
+                )}
+
                 <div>
                   <label
                     className="block text-sm font-medium mb-2"
                     style={{ color: "#333" }}
                   >
-                    {t("login.email")}
+                    {usesPortalLogin ? t("login.username") : t("login.email")}
                   </label>
                   <input
-                    type="email"
+                    type={usesPortalLogin ? "text" : "email"}
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      setError("");
+                    }}
                     className="w-full px-4 py-3 rounded-xl border"
                     style={{
                       background: "#f8ffdb",
                       borderColor: "#dff3ff",
                     }}
-                    placeholder={t("login.emailPlaceholder")}
+                    placeholder={
+                      usesPortalLogin
+                        ? t("login.schoolUsernamePlaceholder")
+                        : t("login.emailPlaceholder")
+                    }
+                    required={usesPortalLogin}
+                    autoComplete={usesPortalLogin ? "username" : "email"}
                   />
                 </div>
 
@@ -292,19 +382,33 @@ export function LoginPage() {
                   >
                     {t("login.password")}
                   </label>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) =>
-                      setPassword(e.target.value)
-                    }
-                    className="w-full px-4 py-3 rounded-xl border"
-                    style={{
-                      background: "#f8ffdb",
-                      borderColor: "#dff3ff",
-                    }}
-                    placeholder="••••••••"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        setError("");
+                      }}
+                      className="w-full px-4 py-3 pr-12 rounded-xl border"
+                      style={{
+                        background: "#f8ffdb",
+                        borderColor: "#dff3ff",
+                      }}
+                      placeholder="••••••••"
+                      required={usesPortalLogin}
+                      autoComplete="current-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1"
+                      style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8" }}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex justify-end">
@@ -320,65 +424,16 @@ export function LoginPage() {
 
                 <button
                   type="submit"
+                  disabled={submitting}
                   className="w-full py-3 rounded-xl font-semibold transition-all"
                   style={{
-                    background: "#004aad",
+                    background: submitting ? "#64748b" : "#004aad",
                     color: "#ffffff",
+                    cursor: submitting ? "not-allowed" : "pointer",
                   }}
                 >
-                  {t("login.signIn")}
+                  {submitting ? t("login.signingIn") : t("login.signIn")}
                 </button>
-
-                <div className="flex flex-col justify-between">
-                  <div className="relative my-4">
-                    <div className="absolute inset-0 flex items-center">
-                      <div
-                        className="w-full border-t"
-                        style={{ borderColor: "#e5e7eb" }}
-                      />
-                    </div>
-                    <div className="relative flex justify-center text-sm">
-                      <span
-                        className="px-3 bg-white"
-                        style={{ color: "#999" }}
-                      >
-                        {t("common.or")}
-                      </span>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    className="w-full py-3 rounded-xl border flex items-center justify-center gap-2 transition-all hover:bg-gray-50"
-                    style={{
-                      borderColor: "#e5e7eb",
-                      color: "#333",
-                    }}
-                  >
-                    <svg
-                      className="w-5 h-5"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        fill="#4285F4"
-                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                      />
-                      <path
-                        fill="#34A853"
-                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                      />
-                      <path
-                        fill="#FBBC05"
-                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                      />
-                      <path
-                        fill="#EA4335"
-                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                      />
-                    </svg>
-                    {t("login.signInGoogle")}
-                  </button>
-                </div>
               </form>
             </>
           )}

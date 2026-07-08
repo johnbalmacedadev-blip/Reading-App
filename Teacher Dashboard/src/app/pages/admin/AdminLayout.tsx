@@ -1,10 +1,14 @@
+import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router";
 import {
   LayoutDashboard, Building2, School, Users, GraduationCap,
   Library, ClipboardList, History, Settings, LogOut, BookOpen, ShieldCheck,
+  FileDown, ChevronDown, ChevronRight,
 } from "lucide-react";
 import { LangToggle } from "../../components/LangToggle";
 import { useLanguage } from "../../i18n";
+import { downloadableApi, type DownloadableCategoryItem } from "../../api/client";
+import { useAuth } from "../../context/AuthContext";
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/admin" },
@@ -26,11 +30,28 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useLanguage();
+  const { logout } = useAuth();
+  const [categories, setCategories] = useState<DownloadableCategoryItem[]>([]);
+  const [downloadableOpen, setDownloadableOpen] = useState(
+    () => location.pathname.startsWith("/admin/downloadable-resources")
+  );
+
+  useEffect(() => {
+    downloadableApi.listCategories().then(({ categories: data }) => setCategories(data)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (location.pathname.startsWith("/admin/downloadable-resources")) {
+      setDownloadableOpen(true);
+    }
+  }, [location.pathname]);
 
   const isActive = (path: string) => {
     if (path === "/admin") return location.pathname === "/admin";
     return location.pathname.startsWith(path);
   };
+
+  const isDownloadableActive = location.pathname.startsWith("/admin/downloadable-resources");
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "#f0f4f8", fontFamily: "'Inter', sans-serif" }}>
@@ -71,7 +92,104 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
         {/* Nav */}
         <nav style={{ flex: 1, padding: "12px 12px" }}>
-          {navItems.map((item) => {
+          {navItems.slice(0, 6).map((item) => {
+            const active = isActive(item.path);
+            return (
+              <button
+                key={item.path}
+                onClick={() => navigate(item.path)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  width: "100%", padding: "9px 12px", borderRadius: 8,
+                  border: "none", cursor: "pointer", textAlign: "left",
+                  marginBottom: 2,
+                  background: active ? "rgba(56,182,255,0.15)" : "transparent",
+                  color: active ? "#38b6ff" : "rgba(255,255,255,0.6)",
+                  fontWeight: active ? 600 : 400,
+                  fontSize: 13,
+                  transition: "all 0.15s",
+                  borderLeft: active ? "2px solid #38b6ff" : "2px solid transparent",
+                }}
+                onMouseEnter={(e) => {
+                  if (!active) {
+                    (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.05)";
+                    (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.85)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!active) {
+                    (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+                    (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.6)";
+                  }
+                }}
+              >
+                <item.icon size={16} />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+
+          {/* Downloadable Resources with sub-links */}
+          <div style={{ marginBottom: 2 }}>
+            <button
+              onClick={() => {
+                setDownloadableOpen((o) => !o);
+                if (!isDownloadableActive) navigate("/admin/downloadable-resources");
+              }}
+              style={{
+                display: "flex", alignItems: "center", gap: 10,
+                width: "100%", padding: "9px 12px", borderRadius: 8,
+                border: "none", cursor: "pointer", textAlign: "left",
+                background: isDownloadableActive ? "rgba(56,182,255,0.15)" : "transparent",
+                color: isDownloadableActive ? "#38b6ff" : "rgba(255,255,255,0.6)",
+                fontWeight: isDownloadableActive ? 600 : 400,
+                fontSize: 13,
+                transition: "all 0.15s",
+                borderLeft: isDownloadableActive ? "2px solid #38b6ff" : "2px solid transparent",
+              }}
+            >
+              <FileDown size={16} />
+              <span style={{ flex: 1 }}>Downloadable Resources</span>
+              {downloadableOpen
+                ? <ChevronDown size={14} style={{ opacity: 0.6 }} />
+                : <ChevronRight size={14} style={{ opacity: 0.6 }} />}
+            </button>
+            {downloadableOpen && (
+              <div style={{ marginLeft: 12, marginTop: 2, paddingLeft: 8, borderLeft: "1px solid rgba(255,255,255,0.1)" }}>
+                {categories.map((cat) => {
+                  const subActive = location.pathname === `/admin/downloadable-resources/${cat.id}`;
+                  return (
+                    <button
+                      key={cat.id}
+                      onClick={() => navigate(`/admin/downloadable-resources/${cat.id}`)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        width: "100%", padding: "7px 10px", borderRadius: 6,
+                        border: "none", cursor: "pointer", textAlign: "left",
+                        marginBottom: 1,
+                        background: subActive ? "rgba(56,182,255,0.12)" : "transparent",
+                        color: subActive ? "#38b6ff" : "rgba(255,255,255,0.5)",
+                        fontWeight: subActive ? 600 : 400,
+                        fontSize: 12,
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 8, height: 8, borderRadius: "50%",
+                          background: cat.color, flexShrink: 0,
+                        }}
+                      />
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {cat.title}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {navItems.slice(6).map((item) => {
             const active = isActive(item.path);
             return (
               <button
@@ -115,7 +233,10 @@ export function AdminLayout({ children }: AdminLayoutProps) {
             <LangToggle />
           </div>
           <button
-            onClick={() => navigate("/")}
+            onClick={async () => {
+              await logout();
+              navigate("/admin/login");
+            }}
             style={{
               display: "flex", alignItems: "center", gap: 10,
               width: "100%", padding: "9px 12px", borderRadius: 8,

@@ -30,6 +30,14 @@ class LibraryContentSeeder extends Seeder
 
         Storage::disk('public')->makeDirectory('library');
 
+        $continuumSource = resource_path('continuum/continuum-sml.pdf');
+        if (file_exists($continuumSource)) {
+            Storage::disk('public')->put(
+                'library/continuum-sml.pdf',
+                file_get_contents($continuumSource)
+            );
+        }
+
         foreach ($items as $index => $item) {
             $slug = 'sample-'.($index + 1);
             $extension = strtolower($item['format']);

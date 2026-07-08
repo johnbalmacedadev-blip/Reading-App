@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { AdminLayout } from "./AdminLayout";
 import {
-  Plus, Search, Edit2, Archive, X, ChevronDown, User, Mail, Phone, Loader2,
+  Plus, Search, Edit2, Archive, X, ChevronDown, User, Mail, Phone, Loader2, Eye, EyeOff,
 } from "lucide-react";
 import {
   adminTeachersApi,
+  adminSchoolBoardsApi,
   type AdminSchool,
   type AdminTeacherPayload,
   type AdminTeacherRecord,
 } from "../../api/client";
 
-const BOARDS = ["CSDM", "CSDN", "CSMB", "CSPO"];
 const TITLES = ["Mr.", "Mrs.", "Mme", "M."];
 const STATUSES = ["Active", "Inactive", "Archived"];
 
@@ -19,6 +19,38 @@ const statusColors: Record<string, { bg: string; color: string }> = {
   Inactive: { bg: "#fffbeb", color: "#d97706" },
   Archived: { bg: "#f8fafc", color: "#94a3b8" },
 };
+
+function TeacherAvatar({ teacher, initials }: { teacher: AdminTeacherRecord; initials: string }) {
+  const [failed, setFailed] = useState(false);
+  const showPhoto = teacher.has_avatar && !failed;
+
+  return (
+    <div
+      style={{
+        width: 32,
+        height: 32,
+        borderRadius: "50%",
+        background: showPhoto ? "transparent" : "linear-gradient(135deg, #dff3ff, #004aad22)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+        overflow: "hidden",
+      }}
+    >
+      {showPhoto ? (
+        <img
+          src={adminTeachersApi.avatarUrl(teacher.id)}
+          alt=""
+          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <span style={{ fontSize: 13, fontWeight: 700, color: "#004aad" }}>{initials}</span>
+      )}
+    </div>
+  );
+}
 
 const schoolBoardMap: Record<string, string> = {
   "École Saint-Laurent": "CSDM",
@@ -31,6 +63,8 @@ const schoolBoardMap: Record<string, string> = {
   "École des Pionniers": "CSPO",
 };
 
+type BoardOption = { code: string; name: string };
+
 type FormState = {
   id?: number;
   title: string;
@@ -42,68 +76,115 @@ type FormState = {
   board: string;
   status: string;
   since: string;
+  portal_username: string;
+  portal_password: string;
 };
 
-const emptyForm = (schoolId = 0): FormState => ({
+const emptyForm = (schoolId = 0, defaultBoard = "CSDM"): FormState => ({
   title: "Mrs.",
   first_name: "",
   last_name: "",
   email: "",
   phone: "",
   school_id: schoolId,
-  board: "CSDM",
+  board: defaultBoard,
   status: "Active",
   since: new Date().toISOString().slice(0, 10),
+  portal_username: "",
+  portal_password: "",
 });
 
-function toPayload(form: FormState): AdminTeacherPayload {
-  return {
+function toPayload(form: FormState, isCreate: boolean): AdminTeacherPayload {
+  const payload: AdminTeacherPayload = {
     title: form.title || undefined,
     first_name: form.first_name.trim(),
     last_name: form.last_name.trim(),
-    email: form.email.trim(),
     phone: form.phone.trim() || undefined,
-    school_id: form.school_id,
-    school_board: form.board,
+    school_id: form.school_id > 0 ? form.school_id : null,
+    school_board: form.board || null,
     account_status: form.status,
     started_at: form.since || undefined,
+    portal_username: form.portal_username.trim(),
   };
+  if (isCreate || form.portal_password.trim()) {
+    payload.portal_password = form.portal_password.trim();
+  }
+  return payload;
 }
 
 function fromRecord(teacher: AdminTeacherRecord): FormState {
+  const username = teacher.portal_username ?? teacher.email;
   return {
     id: teacher.id,
     title: teacher.title || "Mrs.",
     first_name: teacher.first_name,
     last_name: teacher.last_name,
-    email: teacher.email,
+    email: username,
     phone: teacher.phone,
-    school_id: teacher.school_id,
-    board: teacher.board,
+    school_id: teacher.school_id ?? 0,
+    board: teacher.board ?? "",
     status: teacher.status,
     since: teacher.since,
+    portal_username: username,
+    portal_password: teacher.portal_password ?? "",
   };
 }
 
 function TeacherModal({
   mode,
-  form,
+  initialForm,
   schools,
+  boardOptions,
   saving,
   error,
-  onChange,
   onClose,
   onSave,
 }: {
   mode: "create" | "edit";
-  form: FormState;
+  initialForm: FormState;
   schools: AdminSchool[];
+  boardOptions: BoardOption[];
   saving: boolean;
   error: string;
-  onChange: (form: FormState) => void;
   onClose: () => void;
-  onSave: () => void;
+  onSave: (form: FormState) => void;
 }) {
+  const [form, setForm] = useState(initialForm);
+  const [suggesting, setSuggesting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const isCreate = mode === "create";
+
+  useEffect(() => {
+    setForm(initialForm);
+    setShowPassword(false);
+  }, [initialForm]);
+
+  const suggestCredentials = useCallback(async (firstName: string, lastName: string, board: string) => {
+    if (!firstName.trim() || !lastName.trim()) return;
+    setSuggesting(true);
+    try {
+      const creds = await adminTeachersApi.suggestCredentials(firstName.trim(), lastName.trim(), board);
+      setForm((f) => ({
+        ...f,
+        portal_username: creds.portal_username,
+        email: creds.portal_username,
+        portal_password: isCreate ? creds.portal_password : f.portal_password,
+      }));
+    } catch {
+      // keep manual values
+    } finally {
+      setSuggesting(false);
+    }
+  }, [isCreate]);
+
+  useEffect(() => {
+    if (isCreate && form.first_name.trim() && form.last_name.trim()) {
+      const timer = setTimeout(() => {
+        suggestCredentials(form.first_name, form.last_name, form.board);
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [form.first_name, form.last_name, form.board, isCreate, suggestCredentials]);
   const inputStyle = {
     width: "100%",
     padding: "9px 12px 9px 32px",
@@ -136,7 +217,7 @@ function TeacherModal({
               <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 5 }}>Title</label>
               <select
                 value={form.title}
-                onChange={(e) => onChange({ ...form, title: e.target.value })}
+                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
                 style={plainInputStyle}
               >
                 {TITLES.map((t) => (
@@ -148,7 +229,7 @@ function TeacherModal({
               <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 5 }}>First Name</label>
               <input
                 value={form.first_name}
-                onChange={(e) => onChange({ ...form, first_name: e.target.value })}
+                onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))}
                 style={plainInputStyle}
               />
             </div>
@@ -156,7 +237,7 @@ function TeacherModal({
               <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 5 }}>Last Name</label>
               <input
                 value={form.last_name}
-                onChange={(e) => onChange({ ...form, last_name: e.target.value })}
+                onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))}
                 style={plainInputStyle}
               />
             </div>
@@ -165,15 +246,22 @@ function TeacherModal({
           {[
             { label: "Email", key: "email" as const, icon: Mail, placeholder: "firstname.lastname@board.qc.ca" },
             { label: "Phone", key: "phone" as const, icon: Phone, placeholder: "514-555-0000" },
-          ].map((f) => (
-            <div key={f.key}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 5 }}>{f.label}</label>
+          ].map((field) => (
+            <div key={field.key}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 5 }}>{field.label}</label>
               <div style={{ position: "relative" }}>
-                <f.icon size={14} color="#94a3b8" style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }} />
+                <field.icon size={14} color="#94a3b8" style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }} />
                 <input
-                  value={form[f.key]}
-                  onChange={(e) => onChange({ ...form, [f.key]: e.target.value })}
-                  placeholder={f.placeholder}
+                  value={form[field.key]}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setForm((prev) => ({
+                      ...prev,
+                      [field.key]: value,
+                      ...(field.key === "email" ? { portal_username: value } : {}),
+                    }));
+                  }}
+                  placeholder={field.placeholder}
                   style={inputStyle}
                 />
               </div>
@@ -185,17 +273,21 @@ function TeacherModal({
             <select
               value={form.school_id || ""}
               onChange={(e) => {
+                if (!e.target.value) {
+                  setForm((prev) => ({ ...prev, school_id: 0 }));
+                  return;
+                }
                 const schoolId = Number(e.target.value);
                 const school = schools.find((s) => s.id === schoolId);
-                onChange({
-                  ...form,
+                setForm((prev) => ({
+                  ...prev,
                   school_id: schoolId,
-                  board: school ? schoolBoardMap[school.name] ?? form.board : form.board,
-                });
+                  board: school ? schoolBoardMap[school.name] ?? prev.board : prev.board,
+                }));
               }}
               style={plainInputStyle}
             >
-              <option value="" disabled>Select school</option>
+              <option value="">NONE</option>
               {schools.map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
@@ -207,11 +299,12 @@ function TeacherModal({
               <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 5 }}>School Board</label>
               <select
                 value={form.board}
-                onChange={(e) => onChange({ ...form, board: e.target.value })}
+                onChange={(e) => setForm((prev) => ({ ...prev, board: e.target.value }))}
                 style={plainInputStyle}
               >
-                {BOARDS.map((b) => (
-                  <option key={b}>{b}</option>
+                <option value="">NONE</option>
+                {boardOptions.map((b) => (
+                  <option key={b.code} value={b.code}>{b.name} ({b.code})</option>
                 ))}
               </select>
             </div>
@@ -220,7 +313,7 @@ function TeacherModal({
               <input
                 type="date"
                 value={form.since}
-                onChange={(e) => onChange({ ...form, since: e.target.value })}
+                onChange={(e) => setForm((prev) => ({ ...prev, since: e.target.value }))}
                 style={plainInputStyle}
               />
             </div>
@@ -230,13 +323,77 @@ function TeacherModal({
             <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 5 }}>Status</label>
             <select
               value={form.status}
-              onChange={(e) => onChange({ ...form, status: e.target.value })}
+              onChange={(e) => setForm((prev) => ({ ...prev, status: e.target.value }))}
               style={plainInputStyle}
             >
               {STATUSES.map((s) => (
                 <option key={s}>{s}</option>
               ))}
             </select>
+          </div>
+
+          <div style={{ marginTop: 4, paddingTop: 16, borderTop: "1px solid #f1f5f9" }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: "#0a1628", margin: "0 0 12px" }}>
+              Teacher portal login
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>Username</label>
+                  <button
+                    type="button"
+                    onClick={() => suggestCredentials(form.first_name, form.last_name, form.board)}
+                    disabled={suggesting || !form.first_name.trim() || !form.last_name.trim()}
+                    style={{ fontSize: 11, color: "#004aad", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                  >
+                    {suggesting ? "Suggesting…" : "Auto-suggest"}
+                  </button>
+                </div>
+                <input
+                  value={form.portal_username}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setForm((prev) => ({ ...prev, portal_username: value, email: value }));
+                  }}
+                  placeholder="teacher.name@portal.local"
+                  style={plainInputStyle}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 5 }}>
+                  Password {isCreate ? "" : "(leave blank to keep current)"}
+                </label>
+                <div style={{ position: "relative" }}>
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={form.portal_password}
+                    onChange={(e) => setForm((prev) => ({ ...prev, portal_password: e.target.value }))}
+                    placeholder={isCreate ? "Auto-generated password" : "Saved portal password"}
+                    style={{ ...plainInputStyle, paddingRight: 40 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    style={{
+                      position: "absolute",
+                      right: 10,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      color: "#94a3b8",
+                      padding: 0,
+                      display: "flex",
+                      alignItems: "center",
+                    }}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
 
           {error && <p style={{ fontSize: 12, color: "#ef4444", margin: 0 }}>{error}</p>}
@@ -250,7 +407,7 @@ function TeacherModal({
             Cancel
           </button>
           <button
-            onClick={onSave}
+            onClick={() => onSave(form)}
             disabled={saving}
             style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "#004aad", color: "white", fontSize: 13, cursor: "pointer", fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}
           >
@@ -266,6 +423,7 @@ function TeacherModal({
 export function AdminTeachersPage() {
   const [teachers, setTeachers] = useState<AdminTeacherRecord[]>([]);
   const [schools, setSchools] = useState<AdminSchool[]>([]);
+  const [boardOptions, setBoardOptions] = useState<BoardOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -281,12 +439,16 @@ export function AdminTeachersPage() {
     setLoading(true);
     setError("");
     try {
-      const [teachersRes, schoolsRes] = await Promise.all([
+      const [teachersRes, schoolsRes, boardsRes] = await Promise.all([
         adminTeachersApi.list(),
         adminTeachersApi.schools(),
+        adminSchoolBoardsApi.list({ status: "Active" }),
       ]);
       setTeachers(teachersRes.teachers);
       setSchools(schoolsRes.schools);
+      setBoardOptions(
+        boardsRes.boards.map((b) => ({ code: b.code, name: b.name })).sort((a, b) => a.name.localeCompare(b.name))
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load teachers.");
       setTeachers([]);
@@ -313,7 +475,7 @@ export function AdminTeachersPage() {
   const activeCount = teachers.filter((t) => t.status === "Active").length;
 
   const openCreate = () => {
-    setForm(emptyForm(schools[0]?.id ?? 0));
+    setForm(emptyForm(schools[0]?.id ?? 0, boardOptions[0]?.code ?? "CSDM"));
     setModalError("");
     setModalMode("create");
   };
@@ -328,24 +490,24 @@ export function AdminTeachersPage() {
     if (!saving) setModalMode(null);
   };
 
-  const handleSave = async () => {
+  const handleSave = async (form: FormState) => {
     if (!form.first_name.trim() || !form.last_name.trim()) {
       setModalError("First and last name are required.");
       return;
     }
-    if (!form.email.trim()) {
-      setModalError("Email is required.");
+    if (!form.portal_username.trim()) {
+      setModalError("Portal username is required.");
       return;
     }
-    if (!form.school_id) {
-      setModalError("Please select a school.");
+    if (modalMode === "create" && !form.portal_password.trim()) {
+      setModalError("Portal password is required.");
       return;
     }
 
     setSaving(true);
     setModalError("");
     try {
-      const payload = toPayload(form);
+      const payload = toPayload(form, modalMode === "create");
       if (modalMode === "create") {
         const { teacher } = await adminTeachersApi.create(payload);
         setTeachers((prev) => [...prev, teacher].sort((a, b) => a.name.localeCompare(b.name)));
@@ -442,7 +604,7 @@ export function AdminTeachersPage() {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: "#f8fafc" }}>
-                  {["Teacher", "Email", "School", "Board", "Classes", "Status", "Actions"].map((h) => (
+                  {["Teacher", "Email", "School", "Board", "Classes", "Students", "Status", "Actions"].map((h) => (
                     <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, color: "#64748b", letterSpacing: 0.3, whiteSpace: "nowrap" }}>
                       {h}
                     </th>
@@ -456,18 +618,30 @@ export function AdminTeachersPage() {
                     <tr key={t.id} style={{ borderTop: "1px solid #f1f5f9", background: i % 2 === 0 ? "white" : "#fafbfc" }}>
                       <td style={{ padding: "13px 16px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #dff3ff, #004aad22)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: "#004aad" }}>{initials(t.name)}</span>
-                          </div>
+                          <TeacherAvatar teacher={t} initials={initials(t.name)} />
                           <span style={{ fontSize: 13, fontWeight: 500, color: "#1e293b" }}>{t.name}</span>
                         </div>
                       </td>
                       <td style={{ padding: "13px 16px", fontSize: 12, color: "#64748b" }}>{t.email}</td>
-                      <td style={{ padding: "13px 16px", fontSize: 13, color: "#374151" }}>{t.school}</td>
+                      <td style={{ padding: "13px 16px", fontSize: 13, color: t.school ? "#374151" : "#94a3b8" }}>
+                        {t.school || "None"}
+                      </td>
                       <td style={{ padding: "13px 16px" }}>
-                        <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 10, background: "#dff3ff", color: "#004aad" }}>{t.board}</span>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            padding: "3px 8px",
+                            borderRadius: 10,
+                            background: t.board ? "#dff3ff" : "#f1f5f9",
+                            color: t.board ? "#004aad" : "#94a3b8",
+                          }}
+                        >
+                          {t.board || "None"}
+                        </span>
                       </td>
                       <td style={{ padding: "13px 16px", fontSize: 13, color: "#374151", fontWeight: 500 }}>{t.classes}</td>
+                      <td style={{ padding: "13px 16px", fontSize: 13, color: "#374151", fontWeight: 500 }}>{t.students}</td>
                       <td style={{ padding: "13px 16px" }}>
                         <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 12, background: sc.bg, color: sc.color }}>{t.status}</span>
                       </td>
@@ -508,11 +682,11 @@ export function AdminTeachersPage() {
       {modalMode && (
         <TeacherModal
           mode={modalMode}
-          form={form}
+          initialForm={form}
           schools={schools}
+          boardOptions={boardOptions}
           saving={saving}
           error={modalError}
-          onChange={setForm}
           onClose={closeModal}
           onSave={handleSave}
         />

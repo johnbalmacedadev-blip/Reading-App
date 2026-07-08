@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { ArrowLeft, Book, Download, Loader2 } from "lucide-react";
 import { NotificationDropdown } from "../components/NotificationDropdown";
+import { UserAvatar } from "../components/UserAvatar";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
 import { teacherUnitsApi, type PedagogicalUnitItem } from "../api/client";
@@ -75,9 +76,9 @@ export function ResourceDetailPage() {
               {unit.atelier_numbers.length > 0 && (
                 <div
                   className="inline-block px-4 py-2 rounded-xl mb-3"
-                  style={{ background: "#f7ffd6", border: "1px solid #c9e265" }}
+                  style={{ background: unitColor, color: unit.text_color }}
                 >
-                  <p style={{ color: "#004aad" }}>
+                  <p>
                     {a(formatAtelierLabel(unit.atelier_numbers))}
                   </p>
                 </div>
@@ -89,12 +90,7 @@ export function ResourceDetailPage() {
             <div className="flex items-center gap-4">
               <LangToggle className="" />
               <NotificationDropdown />
-              <div
-                className="w-12 h-12 rounded-full flex items-center justify-center"
-                style={{ background: "#38b6ff", color: "#ffffff" }}
-              >
-                MG
-              </div>
+              <UserAvatar />
             </div>
           </div>
         </div>

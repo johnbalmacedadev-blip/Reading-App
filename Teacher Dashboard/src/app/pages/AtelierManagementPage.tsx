@@ -5,6 +5,7 @@ import {
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
 import { boardNavItems } from "../i18n/navHelpers";
+import { usePortalLogout } from "../hooks/usePortalLogout";
 
 const ateliers = [
   // Unité 1: Ateliers 1-6
@@ -37,6 +38,7 @@ const ateliers = [
 export function AtelierManagementPage() {
   const navigate = useNavigate();
   const { t, tp, auto: a } = useLanguage();
+  const handleLogout = usePortalLogout();
 
   const menuItems = boardNavItems(t, "ateliers");
 
@@ -68,7 +70,7 @@ export function AtelierManagementPage() {
         </nav>
 
         <LangToggle />
-        <button onClick={() => navigate("/")} className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm" style={{ color: "#ff5757" }}>
+        <button onClick={handleLogout} className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm" style={{ color: "#ff5757" }}>
           <LogOut className="w-4 h-4" />
           {t("common.logout")}
         </button>

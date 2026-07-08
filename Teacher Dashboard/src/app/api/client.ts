@@ -78,9 +78,13 @@ export type AuthUser = {
   first_name: string | null;
   last_name: string | null;
   email: string;
+  phone?: string | null;
   role: string;
   initials: string;
+  has_avatar?: boolean;
+  avatar_url?: string | null;
   school: { id: number; name: string; city: string | null } | null;
+  school_board?: string | null;
 };
 
 export type ClassSummary = {
@@ -108,14 +112,59 @@ export type ClassStudent = {
 
 export const authApi = {
   csrf: ensureCsrfCookie,
-  login: (email: string, password: string) =>
+  login: (email: string, password: string, portal?: "teacher" | "school" | "admin" | "board") =>
     apiRequest<{ user: AuthUser }>("/api/login", {
       method: "POST",
-      json: { email, password },
+      json: { email, password, ...(portal ? { portal } : {}) },
     }),
   logout: () =>
     apiRequest<{ message: string }>("/api/logout", { method: "POST" }),
   user: () => apiRequest<{ user: AuthUser | null }>("/api/user"),
+};
+
+export type TeacherProfile = {
+  id: number;
+  first_name: string | null;
+  last_name: string | null;
+  email: string;
+  phone: string | null;
+  role: string;
+  initials: string;
+  has_avatar: boolean;
+  avatar_url: string | null;
+  school: { id: number; name: string; city: string | null } | null;
+  school_board: { code: string; name: string } | null;
+  started_at: string | null;
+  started_at_label: string | null;
+  grade_taught: string | null;
+  class_count: number;
+  student_count: number;
+};
+
+export const teacherProfileApi = {
+  get: () => apiRequest<{ profile: TeacherProfile }>("/api/teacher/profile"),
+  update: (payload: {
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone?: string;
+    current_password?: string;
+    password?: string;
+    password_confirmation?: string;
+  }) =>
+    apiRequest<{ profile: TeacherProfile }>("/api/teacher/profile", {
+      method: "PUT",
+      json: payload,
+    }),
+  uploadAvatar: (file: File) => {
+    const formData = new FormData();
+    formData.append("avatar", file);
+    return apiFormRequest<{ profile: TeacherProfile }>("/api/teacher/profile/avatar", formData);
+  },
+  avatarUrl: (cacheKey?: number | string) => {
+    const base = `${API_BASE}/api/teacher/profile/avatar`;
+    return cacheKey ? `${base}?v=${cacheKey}` : base;
+  },
 };
 
 export const teacherApi = {
@@ -144,15 +193,27 @@ export const teacherApi = {
         students: ClassStudent[];
       };
     }>(`/api/teacher/classes/${classId}`),
-  getStudent: (studentId: number | string) =>
+  getStudent: (studentId: number | string, classId?: number | string) =>
     apiRequest<{
       student: {
         id: number;
         name: string;
+        grade: string;
         class_id: number;
+        class_name: string;
+        teacher_display: string;
         school_year: string;
+        evaluations: {
+          number: number;
+          status: EvaluationStatus;
+          comment: string | null;
+          date: string | null;
+          not_required: boolean;
+        }[];
       };
-    }>(`/api/teacher/students/${studentId}`),
+    }>(
+      `/api/teacher/students/${studentId}${classId ? `?class_id=${classId}` : ""}`
+    ),
   getEvaluation: (
     studentId: number | string,
     atelierNumber: number | string,
@@ -196,6 +257,46 @@ export const teacherApi = {
       method: "POST",
       json: payload,
     }),
+};
+
+export type TeacherReportsData = {
+  school_year: string;
+  available_years: string[];
+  classes: Array<{ id: number; name: string; grade: string }>;
+  selected_class_id: number | null;
+  summary: {
+    num_classes: number;
+    num_students: number;
+    good_grades: number;
+    satisfactory: number;
+    failing: number;
+    not_submitted: number;
+  };
+  workshop_range: Array<{ key: string; value: number }>;
+  progress_over_time: Array<{ month: string; average: number }>;
+  class_performance: {
+    threshold: number;
+    on_track: number;
+    progressing: number;
+    needing_support: number;
+    distribution: Array<{ key: string; value: number; color: string }>;
+    engaged_students: Array<{ id: number; name: string; class_id: number; atelier: number }>;
+    support_students: Array<{ id: number; name: string; class_id: number; atelier: number; gap: number }>;
+    all_students: Array<{ id: number; name: string; class_id: number }>;
+  };
+};
+
+export const teacherReportsApi = {
+  get: (params?: { school_year?: string; class_id?: number | string }) => {
+    const search = new URLSearchParams();
+    if (params?.school_year) search.set("school_year", params.school_year);
+    if (params?.class_id) search.set("class_id", String(params.class_id));
+    const query = search.toString();
+
+    return apiRequest<TeacherReportsData>(
+      `/api/teacher/reports${query ? `?${query}` : ""}`
+    );
+  },
 };
 
 export type LibraryContentItem = {
@@ -261,6 +362,60 @@ export const teacherLibraryApi = {
   get: (id: number) => apiRequest<{ content: LibraryContentItem }>(`/api/library/content/${id}`),
   viewUrl: (id: number) => `${API_BASE}/api/library/content/${id}/view`,
   downloadUrl: (id: number) => `${API_BASE}/api/library/content/${id}/download`,
+  continuumDownloadUrl: () => `${API_BASE}/api/library/continuum/download`,
+  downloadableCategories: () =>
+    apiRequest<{ categories: DownloadableCategoryItem[] }>("/api/library/downloadable-categories"),
+  downloadableDownloadUrl: (id: number) =>
+    `${API_BASE}/api/library/downloadable-resources/${id}/download`,
+};
+
+export type DownloadableResourceItem = {
+  id: number;
+  category_id: number;
+  title: string;
+  format: string | null;
+  size: string;
+  has_file: boolean;
+  sort_order: number;
+};
+
+export type DownloadableCategoryItem = {
+  id: number;
+  title: string;
+  slug: string;
+  color: string;
+  sort_order: number;
+  resource_count: number;
+  uploaded_count: number;
+  resources?: DownloadableResourceItem[];
+};
+
+export const downloadableApi = {
+  listCategories: () =>
+    apiRequest<{ categories: DownloadableCategoryItem[] }>("/api/admin/downloadable-categories"),
+  getCategory: (id: number) =>
+    apiRequest<{ category: DownloadableCategoryItem }>(`/api/admin/downloadable-categories/${id}`),
+  updateCategory: (id: number, payload: { title: string; color: string }) =>
+    apiRequest<{ category: DownloadableCategoryItem }>(`/api/admin/downloadable-categories/${id}`, {
+      method: "PUT",
+      json: payload,
+    }),
+  uploadResource: (categoryId: number, formData: FormData) =>
+    apiFormRequest<{ resource: DownloadableResourceItem }>(
+      `/api/admin/downloadable-categories/${categoryId}/resources`,
+      formData
+    ),
+  updateResource: (id: number, formData: FormData) => {
+    formData.append("_method", "PUT");
+    return apiFormRequest<{ resource: DownloadableResourceItem }>(
+      `/api/admin/downloadable-resources/${id}`,
+      formData,
+      "POST"
+    );
+  },
+  removeResource: (id: number) =>
+    apiRequest<{ message: string }>(`/api/admin/downloadable-resources/${id}`, { method: "DELETE" }),
+  downloadUrl: (id: number) => `${API_BASE}/api/admin/downloadable-resources/${id}/download`,
 };
 
 export type PedagogicalLessonItem = {
@@ -348,6 +503,99 @@ export type AdminStudentPayload = {
   status: string;
 };
 
+export type AdminDashboardData = {
+  school_year: string;
+  kpis: {
+    school_boards: { total: number; delta_month: number };
+    schools: { total: number; delta_month: number };
+    teachers: { total: number; delta_month: number };
+    students: { total: number; delta_month: number };
+  };
+  adoption_by_board: Array<{
+    code: string;
+    name: string;
+    active_teachers: number;
+    total_teachers: number;
+  }>;
+  student_growth: Array<{ month: string; students: number }>;
+  growth_percent_year: number;
+  recent_activity: Array<{
+    id: number;
+    type: string;
+    category: string;
+    action: string;
+    target: string;
+    time: string;
+  }>;
+  alerts: Array<{ type: string; message: string }>;
+  health: {
+    api_availability: string;
+    avg_response_ms: number;
+    storage_used_percent: number;
+  };
+};
+
+export const adminDashboardApi = {
+  get: (schoolYear?: string) => {
+    const query = schoolYear ? `?school_year=${encodeURIComponent(schoolYear)}` : "";
+    return apiRequest<AdminDashboardData>(`/api/admin/dashboard${query}`);
+  },
+};
+
+export type AdminSchoolRecord = {
+  id: number;
+  name: string;
+  board: string;
+  city: string;
+  grades: string;
+  teachers: number;
+  students: number;
+  status: string;
+  portal_username: string | null;
+  portal_password: string | null;
+};
+
+export type AdminSchoolPayload = {
+  name: string;
+  city: string;
+  school_board: string;
+  grades?: string;
+  portal_username: string;
+  portal_password?: string;
+};
+
+export const adminSchoolsApi = {
+  list: (params?: { search?: string; board?: string; status?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.search) query.set("search", params.search);
+    if (params?.board) query.set("board", params.board);
+    if (params?.status) query.set("status", params.status);
+    const qs = query.toString();
+    return apiRequest<{ schools: AdminSchoolRecord[] }>(
+      `/api/admin/schools${qs ? `?${qs}` : ""}`
+    );
+  },
+  suggestCredentials: (name: string, school_board: string) =>
+    apiRequest<{ portal_username: string; portal_password: string }>(
+      "/api/admin/schools/suggest-credentials",
+      { method: "POST", json: { name, school_board } }
+    ),
+  create: (payload: AdminSchoolPayload) =>
+    apiRequest<{ school: AdminSchoolRecord }>("/api/admin/schools", {
+      method: "POST",
+      json: payload,
+    }),
+  update: (id: number, payload: AdminSchoolPayload) =>
+    apiRequest<{ school: AdminSchoolRecord }>(`/api/admin/schools/${id}`, {
+      method: "PUT",
+      json: payload,
+    }),
+  archive: (id: number) =>
+    apiRequest<{ school: AdminSchoolRecord }>(`/api/admin/schools/${id}/archive`, {
+      method: "PATCH",
+    }),
+};
+
 export const adminStudentsApi = {
   list: () => apiRequest<{ students: AdminStudentRecord[] }>("/api/admin/students"),
   schools: () => apiRequest<{ schools: AdminSchool[] }>("/api/admin/students/schools"),
@@ -377,25 +625,36 @@ export type AdminTeacherRecord = {
   school_id: number;
   board: string;
   classes: number;
+  students: number;
   status: string;
   since: string;
+  portal_username: string | null;
+  portal_password: string | null;
+  has_avatar: boolean;
+  avatar_url: string | null;
 };
 
 export type AdminTeacherPayload = {
   title?: string;
   first_name: string;
   last_name: string;
-  email: string;
   phone?: string;
-  school_id: number;
-  school_board: string;
+  school_id: number | null;
+  school_board: string | null;
   account_status: string;
   started_at?: string;
+  portal_username: string;
+  portal_password?: string;
 };
 
 export const adminTeachersApi = {
   list: () => apiRequest<{ teachers: AdminTeacherRecord[] }>("/api/admin/teachers"),
   schools: () => apiRequest<{ schools: AdminSchool[] }>("/api/admin/teachers/schools"),
+  suggestCredentials: (first_name: string, last_name: string, school_board: string) =>
+    apiRequest<{ portal_username: string; portal_password: string }>(
+      "/api/admin/teachers/suggest-credentials",
+      { method: "POST", json: { first_name, last_name, school_board } }
+    ),
   create: (payload: AdminTeacherPayload) =>
     apiRequest<{ teacher: AdminTeacherRecord }>("/api/admin/teachers", {
       method: "POST",
@@ -408,6 +667,266 @@ export const adminTeachersApi = {
     }),
   archive: (id: number) =>
     apiRequest<{ teacher: AdminTeacherRecord }>(`/api/admin/teachers/${id}/archive`, {
+      method: "PATCH",
+    }),
+  avatarUrl: (teacherId: number) => `${API_BASE}/api/admin/teachers/${teacherId}/avatar`,
+};
+
+export type AdminAssessmentQuestion = {
+  id?: number;
+  text: string;
+  options: string[];
+  correct: number;
+};
+
+export type AdminAssessmentRecord = {
+  id: number;
+  title: string;
+  unit: string;
+  atelier: number;
+  grade: string;
+  questions: AdminAssessmentQuestion[];
+  status: "Published" | "Draft";
+  created: string;
+};
+
+export type AdminAssessmentPayload = {
+  title: string;
+  unit?: string;
+  atelier: number;
+  grade: string;
+  status: "Published" | "Draft";
+  questions: AdminAssessmentQuestion[];
+};
+
+export const adminAssessmentsApi = {
+  list: (params?: { search?: string; grade?: string; status?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.search) query.set("search", params.search);
+    if (params?.grade) query.set("grade", params.grade);
+    if (params?.status) query.set("status", params.status);
+    const qs = query.toString();
+    return apiRequest<{ assessments: AdminAssessmentRecord[] }>(
+      `/api/admin/assessments${qs ? `?${qs}` : ""}`
+    );
+  },
+  create: (payload: AdminAssessmentPayload) =>
+    apiRequest<{ assessment: AdminAssessmentRecord }>("/api/admin/assessments", {
+      method: "POST",
+      json: payload,
+    }),
+  update: (id: number, payload: AdminAssessmentPayload) =>
+    apiRequest<{ assessment: AdminAssessmentRecord }>(`/api/admin/assessments/${id}`, {
+      method: "PUT",
+      json: payload,
+    }),
+  remove: (id: number) =>
+    apiRequest<{ message: string }>(`/api/admin/assessments/${id}`, { method: "DELETE" }),
+  duplicate: (id: number) =>
+    apiRequest<{ assessment: AdminAssessmentRecord }>(`/api/admin/assessments/${id}/duplicate`, {
+      method: "POST",
+    }),
+};
+
+export type AdminSchoolBoardRecord = {
+  id: number;
+  name: string;
+  code: string;
+  schools: number;
+  teachers: number;
+  students: number;
+  status: string;
+  created: string;
+  portal_username: string | null;
+  portal_password: string | null;
+};
+
+export type AdminSchoolBoardPayload = {
+  name: string;
+  code: string;
+  status?: string;
+  portal_username: string;
+  portal_password?: string;
+};
+
+export const adminSchoolBoardsApi = {
+  list: (params?: { search?: string; status?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.search) qs.set("search", params.search);
+    if (params?.status) qs.set("status", params.status);
+    const query = qs.toString();
+    return apiRequest<{ boards: AdminSchoolBoardRecord[] }>(
+      `/api/admin/school-boards${query ? `?${query}` : ""}`
+    );
+  },
+  suggestCredentials: (name: string, code: string) =>
+    apiRequest<{ portal_username: string; portal_password: string }>(
+      "/api/admin/school-boards/suggest-credentials",
+      { method: "POST", json: { name, code } }
+    ),
+  create: (payload: AdminSchoolBoardPayload) =>
+    apiRequest<{ board: AdminSchoolBoardRecord }>("/api/admin/school-boards", {
+      method: "POST",
+      json: payload,
+    }),
+  update: (id: number, payload: AdminSchoolBoardPayload) =>
+    apiRequest<{ board: AdminSchoolBoardRecord }>(`/api/admin/school-boards/${id}`, {
+      method: "PUT",
+      json: payload,
+    }),
+  archive: (id: number) =>
+    apiRequest<{ board: AdminSchoolBoardRecord }>(`/api/admin/school-boards/${id}/archive`, {
+      method: "PATCH",
+    }),
+};
+
+export type SchoolReportClass = {
+  id: number;
+  name: string;
+  grade: string;
+  raw_grade: string;
+  teacher: string;
+  students: number;
+  on_track: number;
+};
+
+export type SchoolReportGradeBenchmark = {
+  grade: string;
+  on_track: number;
+  class_count: number;
+  student_count: number;
+};
+
+export type SchoolReportSkill = {
+  num: number;
+  subject: string;
+  color: string;
+  score: number;
+};
+
+export type SchoolReportAtRiskStudent = {
+  id: number;
+  name: string;
+  class_name: string;
+  teacher: string;
+  initials: string;
+};
+
+export type SchoolReportsData = {
+  school: { id: number; name: string };
+  school_year: string | null;
+  available_years: string[];
+  summary: {
+    total_students: number;
+    total_classes: number;
+    on_track_average: number;
+  };
+  grade_benchmarks: SchoolReportGradeBenchmark[];
+  skills: SchoolReportSkill[];
+  classes: SchoolReportClass[];
+  at_risk_students: SchoolReportAtRiskStudent[];
+};
+
+export const schoolReportsApi = {
+  get: (schoolYear?: string) => {
+    const params = new URLSearchParams();
+    if (schoolYear) params.set("school_year", schoolYear);
+    const query = params.toString();
+
+    return apiRequest<SchoolReportsData>(
+      `/api/school/reports${query ? `?${query}` : ""}`
+    );
+  },
+};
+
+export type BoardDashboardSchool = {
+  id: number;
+  name: string;
+  city: string;
+  students: number;
+  teachers: number;
+  on_track: number;
+  monitor: number;
+  at_risk: number;
+  trend: string;
+};
+
+export type BoardDashboardData = {
+  board: { code: string; name: string };
+  school_year: string;
+  available_years: string[];
+  summary: {
+    participating_schools: number;
+    total_students: number;
+    active_teachers: number;
+    avg_on_track: number;
+  };
+  success_rate_by_month: Array<{ month: string; rate: number }>;
+  results_by_grade: Array<{ grade_key: string; board: number; provincial: number }>;
+  schools: BoardDashboardSchool[];
+};
+
+export const boardDashboardApi = {
+  get: (schoolYear?: string) => {
+    const params = new URLSearchParams();
+    if (schoolYear) params.set("school_year", schoolYear);
+    const query = params.toString();
+    return apiRequest<BoardDashboardData>(`/api/board/dashboard${query ? `?${query}` : ""}`);
+  },
+};
+
+export type BoardAssessmentRecord = {
+  id: number;
+  title: string;
+  unit: string;
+  atelier: number;
+  grade: string;
+  status: "published" | "draft";
+  question_count: number;
+  assigned_to: "all_schools" | "selected" | "not_assigned" | "board_only";
+  ownership: "platform" | "board_copy";
+  source_assessment_id: number | null;
+  archived?: boolean;
+  created: string;
+};
+
+export type BoardAssessmentsData = {
+  assessments: BoardAssessmentRecord[];
+  archived: BoardAssessmentRecord[];
+  summary: { total: number; published: number; drafts: number; archived: number };
+};
+
+export type BoardAssessmentDetail = BoardAssessmentRecord & {
+  questions: Array<{ id: number; text: string; options: string[]; correct: number }>;
+};
+
+export type BoardAssessmentPayload = {
+  title: string;
+  unit?: string;
+  atelier: number;
+  grade: string;
+  status: "Published" | "Draft";
+  questions: Array<{ text: string; options: string[]; correct: number }>;
+};
+
+export const boardAssessmentsApi = {
+  list: (params?: { search?: string; grade?: string; status?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.search) query.set("search", params.search);
+    if (params?.grade) query.set("grade", params.grade);
+    if (params?.status) query.set("status", params.status);
+    const qs = query.toString();
+    return apiRequest<BoardAssessmentsData>(`/api/board/assessments${qs ? `?${qs}` : ""}`);
+  },
+  get: (id: number) =>
+    apiRequest<{ assessment: BoardAssessmentDetail }>(`/api/board/assessments/${id}`),
+  update: (id: number, payload: BoardAssessmentPayload) =>
+    apiRequest<{ assessment: BoardAssessmentDetail; created_copy: boolean }>(`/api/board/assessments/${id}`, {
+      method: "PUT",
+      json: payload,
+    }),
+  activate: (id: number) =>
+    apiRequest<{ assessment: BoardAssessmentRecord }>(`/api/board/assessments/${id}/activate`, {
       method: "PATCH",
     }),
 };

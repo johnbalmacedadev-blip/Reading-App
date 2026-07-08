@@ -102,20 +102,50 @@ class TeacherClassController extends Controller
         /** @var User $teacher */
         $teacher = $request->user();
 
-        $class = $student->classes()
-            ->where('teacher_id', $teacher->id)
-            ->first();
+        $classQuery = $student->classes()
+            ->with('teacher')
+            ->where('teacher_id', $teacher->id);
+
+        $classId = $request->integer('class_id');
+        $class = $classId > 0
+            ? (clone $classQuery)->where('classes.id', $classId)->first()
+            : $classQuery->first();
 
         if (! $class) {
             abort(403);
         }
 
+        $evaluations = StudentEvaluation::query()
+            ->where('student_id', $student->id)
+            ->where('class_id', $class->id)
+            ->whereNotNull('status')
+            ->orderBy('atelier_number')
+            ->get()
+            ->map(fn (StudentEvaluation $evaluation) => [
+                'number' => $evaluation->atelier_number,
+                'status' => $evaluation->status,
+                'comment' => $evaluation->comment,
+                'date' => $evaluation->updated_at?->format('Y-m-d'),
+                'not_required' => (bool) $evaluation->not_required,
+            ])
+            ->values()
+            ->all();
+
+        $teacherUser = $class->teacher;
+        $teacherDisplay = $teacherUser?->first_name
+            ? 'Mme '.$teacherUser->first_name
+            : ($teacherUser?->name ?? $class->name);
+
         return response()->json([
             'student' => [
                 'id' => $student->id,
                 'name' => $student->fullName(),
+                'grade' => $class->grade,
                 'class_id' => $class->id,
+                'class_name' => $class->name,
+                'teacher_display' => $teacherDisplay,
                 'school_year' => $class->school_year,
+                'evaluations' => $evaluations,
             ],
         ]);
     }

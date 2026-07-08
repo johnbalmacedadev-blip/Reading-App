@@ -5,6 +5,9 @@ backend/vendor/
 # Build output
 Teacher Dashboard/dist/
 backend/public/build/
+backend/public/spa/
+backend/public/app.html
+backend/public/assets/
 
 # Environment
 **/.env

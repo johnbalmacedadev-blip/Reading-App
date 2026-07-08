@@ -24,9 +24,10 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { NotificationDropdown } from "../components/NotificationDropdown";
+import { UserAvatar } from "../components/UserAvatar";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
-import { teacherUnitsApi, type PedagogicalUnitItem } from "../api/client";
+import { teacherLibraryApi, teacherUnitsApi, type DownloadableCategoryItem, type PedagogicalUnitItem } from "../api/client";
 
 interface Resource {
   id: number;
@@ -46,6 +47,8 @@ export function LibraryPage() {
   const { t, tp, auto } = useLanguage();
   const [units, setUnits] = useState<PedagogicalUnitItem[]>([]);
   const [unitsLoading, setUnitsLoading] = useState(true);
+  const [downloadableCategories, setDownloadableCategories] = useState<DownloadableCategoryItem[]>([]);
+  const [downloadableLoading, setDownloadableLoading] = useState(true);
 
   useEffect(() => {
     teacherUnitsApi
@@ -53,6 +56,14 @@ export function LibraryPage() {
       .then(({ units: data }) => setUnits(data))
       .catch(() => setUnits([]))
       .finally(() => setUnitsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    teacherLibraryApi
+      .downloadableCategories()
+      .then(({ categories }) => setDownloadableCategories(categories))
+      .catch(() => setDownloadableCategories([]))
+      .finally(() => setDownloadableLoading(false));
   }, []);
 
   const resources: Resource[] = units.map((unit) => ({
@@ -130,12 +141,7 @@ export function LibraryPage() {
           </div>
           <div className="flex items-center gap-4">
             <NotificationDropdown />
-            <div
-              className="w-12 h-12 rounded-full flex items-center justify-center"
-              style={{ background: "#38b6ff", color: "#ffffff" }}
-            >
-              MG
-            </div>
+            <UserAvatar />
           </div>
         </div>
 
@@ -150,7 +156,7 @@ export function LibraryPage() {
               <p className="text-sm mt-1" style={{ color: "#004aad", opacity: 0.6 }}>{t("library.smlSubtitle")}</p>
             </div>
             <button
-              onClick={() => console.log("Download continuum PDF")}
+              onClick={() => window.open(teacherLibraryApi.continuumDownloadUrl(), "_blank")}
               className="px-5 py-2.5 rounded-xl flex items-center gap-2 text-sm transition-all cursor-pointer"
               style={{ background: "#004aad", color: "#ffffff" }}
             >
@@ -473,45 +479,17 @@ export function LibraryPage() {
           </h2>
 
           <div className="space-y-4">
-            {[
-              {
-                title: "Conscience phonologique",
-                color: "#3b82f6",
-                resources: [
-                  "Rimes", "Segmentation", "Fusions", "Sons initiaux", "Sons finaux", "Syllabes", "Manipulation de phonèmes", "Identification de sons", "Comptage de syllabes"
-                ]
-              },
-              {
-                title: "Connaissance alphabétique",
-                color: "#38bdf8",
-                resources: [
-                  "Voyelles", "Consonnes", "Lecture de CV", "Lecture VC", "Lecture CVC", "Fusion phonémique"
-                ]
-              },
-              {
-                title: "Décodage",
-                color: "#fbbf24",
-                resources: [
-                  "Syllabes ouvertes", "Syllabes fermées", "Mots fréquents", "Les sons complexes", "Familles de mots", "Sons muets"
-                ]
-              },
-              {
-                title: "Fluidité",
-                color: "#a855f7",
-                resources: [
-                  "Phrases simples", "Phrases pyramides", "Lecture de textes", "Pratique de fluidité", "Lecture répétée", "Lecture chronométrée"
-                ]
-              },
-              {
-                title: "Compréhension",
-                color: "#0ea5e9",
-                resources: [
-                  "Compréhension de texte", "Inférence", "Résumé", "Idées principales", "Questions littérales", "Prédictions"
-                ]
-              }
-            ].map((category, idx) => (
+            {downloadableLoading ? (
+              <p className="text-sm" style={{ color: "#94a3b8" }}>Loading resources…</p>
+            ) : downloadableCategories.length === 0 ? (
+              <p className="text-sm" style={{ color: "#94a3b8" }}>{t("library.noUploadedContent")}</p>
+            ) : downloadableCategories.map((category) => {
+              const resources = category.resources ?? [];
+              const uploadedCount = resources.filter((r) => r.has_file).length;
+              if (resources.length === 0) return null;
+              return (
               <details
-                key={idx}
+                key={category.id}
                 className="rounded-2xl overflow-hidden transition-all"
                 style={{
                   background: "#ffffff",
@@ -543,27 +521,17 @@ export function LibraryPage() {
                         color: category.color
                       }}
                     >
-                      {tp("library.resourceCount", { count: String(category.resources.length) })}
+                      {tp("library.resourceCount", { count: String(uploadedCount > 0 ? uploadedCount : resources.length) })}
                     </span>
                   </div>
                   <ChevronDown className="w-5 h-5" style={{ color: category.color }} />
                 </summary>
                 <div className="p-6 grid grid-cols-3 gap-3">
-                  {category.resources.map((resource, resIdx) => {
-                    const categorySlug = category.title
-                      .toLowerCase()
-                      .normalize("NFD")
-                      .replace(/[̀-ͯ]/g, "")
-                      .replace(/\s+/g, "-");
-                    const resourceSlug = resource
-                      .toLowerCase()
-                      .normalize("NFD")
-                      .replace(/[̀-ͯ]/g, "")
-                      .replace(/\s+/g, "-");
-                    return (
+                  {resources.map((resource) =>
+                    resource.has_file ? (
                       <a
-                        key={resIdx}
-                        href={`/ressources/${categorySlug}/${resourceSlug}.pdf`}
+                        key={resource.id}
+                        href={teacherLibraryApi.downloadableDownloadUrl(resource.id)}
                         download
                         className="flex items-center gap-2 px-4 py-3 rounded-xl transition-all text-left"
                         style={{
@@ -581,14 +549,29 @@ export function LibraryPage() {
                       >
                         <Download className="w-4 h-4" style={{ color: category.color }} />
                         <span className="text-sm" style={{ color: "#004aad" }}>
-                          {auto(resource)}
+                          {auto(resource.title)}
                         </span>
                       </a>
-                    );
-                  })}
+                    ) : (
+                      <div
+                        key={resource.id}
+                        className="flex items-center gap-2 px-4 py-3 rounded-xl text-left opacity-50"
+                        style={{
+                          background: `${category.color}08`,
+                          border: `1px solid ${category.color}20`,
+                        }}
+                      >
+                        <Download className="w-4 h-4" style={{ color: category.color }} />
+                        <span className="text-sm" style={{ color: "#004aad" }}>
+                          {auto(resource.title)}
+                        </span>
+                      </div>
+                    )
+                  )}
                 </div>
               </details>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

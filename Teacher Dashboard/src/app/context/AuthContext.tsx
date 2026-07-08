@@ -12,7 +12,8 @@ import { authApi, type AuthUser } from "../api/client";
 type AuthContextValue = {
   user: AuthUser | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  avatarVersion: number;
+  login: (email: string, password: string, portal?: "teacher" | "school" | "admin" | "board") => Promise<AuthUser>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 };
@@ -22,10 +23,12 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [avatarVersion, setAvatarVersion] = useState(Date.now());
 
   const refreshUser = useCallback(async () => {
     const { user: currentUser } = await authApi.user();
     setUser(currentUser);
+    setAvatarVersion(Date.now());
   }, []);
 
   useEffect(() => {
@@ -34,10 +37,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, [refreshUser]);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string, portal?: "teacher" | "school" | "admin" | "board") => {
     await authApi.csrf();
-    const { user: loggedInUser } = await authApi.login(email, password);
+    const { user: loggedInUser } = await authApi.login(email, password, portal);
     setUser(loggedInUser);
+    setAvatarVersion(Date.now());
+    return loggedInUser;
   }, []);
 
   const logout = useCallback(async () => {
@@ -47,8 +52,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, login, logout, refreshUser }),
-    [user, loading, login, logout, refreshUser]
+    () => ({ user, loading, avatarVersion, login, logout, refreshUser }),
+    [user, loading, avatarVersion, login, logout, refreshUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

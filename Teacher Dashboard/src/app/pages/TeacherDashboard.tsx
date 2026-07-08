@@ -12,6 +12,7 @@ import {
   Pencil,
 } from "lucide-react";
 import { NotificationDropdown } from "../components/NotificationDropdown";
+import { UserAvatar } from "../components/UserAvatar";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
 import { useAuth } from "../context/AuthContext";
@@ -174,12 +175,7 @@ export function TeacherDashboard() {
           </div>
           <div className="flex items-center gap-4">
             <NotificationDropdown />
-            <div
-              className="w-12 h-12 rounded-full flex items-center justify-center"
-              style={{ background: "#38b6ff", color: "#ffffff" }}
-            >
-              {user?.initials || "??"}
-            </div>
+            <UserAvatar />
           </div>
         </div>
 

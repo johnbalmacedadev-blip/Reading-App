@@ -1,0 +1,67 @@
+Lecture Portal - cPanel install (SINGLE FOLDER, NO SSH / NO TERMINAL NEEDED)
+============================================================================
+
+This archive extracts to ONE folder named "lecturescientifique.ca".
+Inside it:
+  - index.php, .htaccess, app.html, assets/, deploy-setup.php  <- the website
+  - laravel/                                                   <- app code (blocked from web)
+  - laravel/.env                                               <- ALREADY filled in for you
+
+------------------------------------------------------------
+1. UPLOAD + EXTRACT
+------------------------------------------------------------
+In cPanel File Manager, go to your home folder (/home/youruser/),
+upload lecturescientifique-deploy.tar.gz, then right-click > Extract.
+
+You now have:
+  /home/youruser/lecturescientifique.ca/index.php
+  /home/youruser/lecturescientifique.ca/laravel/...
+
+If your domain's document root folder already exists and is named
+differently, just extract there and move the files so that index.php
+sits directly in the document root, with the laravel/ folder beside it.
+
+------------------------------------------------------------
+2. POINT THE DOMAIN DOCUMENT ROOT
+------------------------------------------------------------
+cPanel > Domains > lecturescientifique.ca > Document Root:
+  /home/youruser/lecturescientifique.ca
+
+(That is the folder that contains index.php.)
+
+------------------------------------------------------------
+3. DATABASE
+------------------------------------------------------------
+The .env is already set to:
+  DB_DATABASE = thevclo_readingapp
+  DB_USERNAME = thevclo_adminreadingapp
+  DB_PASSWORD = (the one you provided)
+
+In cPanel > MySQL Databases, make sure:
+  - database  thevclo_readingapp  exists
+  - user      thevclo_adminreadingapp  exists with that password
+  - the user is added to the database with ALL PRIVILEGES
+
+If any of those names/password differ, edit laravel/.env to match.
+
+------------------------------------------------------------
+4. RUN THE ONE-TIME WEB INSTALLER
+------------------------------------------------------------
+Open in your browser:
+  https://lecturescientifique.ca/deploy-setup.php?token=9a9a85e19b814b078eca5b94f27dad02
+
+To also load demo data (teacher login gisele@example.com / password):
+  https://lecturescientifique.ca/deploy-setup.php?token=9a9a85e19b814b078eca5b94f27dad02&seed=1
+
+It will: check the DB connection, run migrations, (optionally) seed,
+link storage, and cache config.
+
+------------------------------------------------------------
+5. CLEAN UP
+------------------------------------------------------------
+When it prints "Done", DELETE deploy-setup.php from the document root.
+
+If you see a permissions error, set these folders to 755 in File Manager:
+  laravel/storage  and  laravel/bootstrap/cache
+
+APP_KEY is already set, so you never need a terminal or key:generate.

@@ -10,6 +10,10 @@ class School extends Model
     protected $fillable = [
         'name',
         'city',
+        'school_board',
+        'grades',
+        'status',
+        'portal_password_encrypted',
     ];
 
     public function users(): HasMany

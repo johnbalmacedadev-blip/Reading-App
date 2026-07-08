@@ -8,6 +8,7 @@ import {
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
 import { boardNavItems } from "../i18n/navHelpers";
+import { usePortalLogout } from "../hooks/usePortalLogout";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, LineChart, Line, Cell,
@@ -70,6 +71,7 @@ const mockStudentsByClass: Record<string, Array<{ id: number; name: string; grad
 export function BoardReportsPage() {
   const navigate = useNavigate();
   const { t, tp, auto: a } = useLanguage();
+  const handleLogout = usePortalLogout();
   const [year, setYear] = useState("2025-2026");
   const [viewLevel, setViewLevel] = useState<"board" | "school">("board");
   const [selectedSchool, setSelectedSchool] = useState<number | null>(null);
@@ -117,7 +119,7 @@ export function BoardReportsPage() {
         </nav>
 
         <LangToggle />
-        <button onClick={() => navigate("/")} className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm" style={{ color: "#ff5757" }}>
+        <button onClick={handleLogout} className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm" style={{ color: "#ff5757" }}>
           <LogOut className="w-4 h-4" />
           {t("common.logout")}
         </button>

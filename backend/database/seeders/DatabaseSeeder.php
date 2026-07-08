@@ -24,6 +24,8 @@ class DatabaseSeeder extends Seeder
                 'name' => 'Gisèle Martin',
                 'first_name' => 'Gisèle',
                 'last_name' => 'Martin',
+                'phone' => '(514) 555-0123',
+                'started_at' => '2018-09-01',
                 'password' => 'password',
                 'role' => 'teacher',
                 'school_id' => $school->id,
@@ -49,6 +51,24 @@ class DatabaseSeeder extends Seeder
             [
                 'school_id' => $school->id,
                 'grade' => '1re année',
+                'school_year' => '2025-2026',
+            ]
+        );
+
+        SchoolClass::firstOrCreate(
+            ['teacher_id' => $teacher1->id, 'name' => 'Class B'],
+            [
+                'school_id' => $school->id,
+                'grade' => 'Maternelle',
+                'school_year' => '2025-2026',
+            ]
+        );
+
+        SchoolClass::firstOrCreate(
+            ['teacher_id' => $teacher1->id, 'name' => 'Grade 2 — Teacher One'],
+            [
+                'school_id' => $school->id,
+                'grade' => '2e année',
                 'school_year' => '2025-2026',
             ]
         );
@@ -102,7 +122,15 @@ class DatabaseSeeder extends Seeder
 
         $this->call(LibraryContentSeeder::class);
         $this->call(PedagogicalUnitSeeder::class);
+        $this->call(DownloadableResourceSeeder::class);
+        $this->call(AdminSchoolSeeder::class);
+        $this->call(AdminSchoolBoardSeeder::class);
         $this->call(AdminStudentSeeder::class);
         $this->call(AdminTeacherSeeder::class);
+        $this->call(AdminUserSeeder::class);
+        $this->call(TeacherOneClassStudentsSeeder::class);
+        $this->call(RandomStudentEvaluationsSeeder::class);
+        $this->call(AmelieDemoReportSeeder::class);
+        $this->call(AssessmentSeeder::class);
     }
 }

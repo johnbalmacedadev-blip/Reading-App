@@ -316,7 +316,11 @@ export function StudentTracking() {
                         }}
                       >
                         <button
-                          onClick={() => navigate(`/student/${student.id}`)}
+                          onClick={() =>
+                            navigate(`/student/${student.id}`, {
+                              state: { classId: Number(classId) },
+                            })
+                          }
                           className="hover:underline text-left"
                           style={{ color: "#38b6ff" }}
                         >

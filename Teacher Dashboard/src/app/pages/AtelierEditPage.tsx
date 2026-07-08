@@ -4,6 +4,7 @@ import { ArrowLeft, Save, Plus, Trash2, GripVertical, BookOpen, LogOut } from "l
 import { useLanguage } from "../i18n";
 import { LangToggle } from "../components/LangToggle";
 import { boardNavItems } from "../i18n/navHelpers";
+import { usePortalLogout } from "../hooks/usePortalLogout";
 
 interface AtelierQuestion {
   id: string;
@@ -65,6 +66,7 @@ const atelierTemplates: Record<number, { title: string; description: string; ins
 export function AtelierEditPage() {
   const navigate = useNavigate();
   const { t, tp, auto: a } = useLanguage();
+  const handleLogout = usePortalLogout();
   const { atelierNum } = useParams();
   const num = parseInt(atelierNum || "1");
 
@@ -127,7 +129,7 @@ export function AtelierEditPage() {
         </nav>
 
         <LangToggle />
-        <button onClick={() => navigate("/")} className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm" style={{ color: "#ff5757" }}>
+        <button onClick={handleLogout} className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm" style={{ color: "#ff5757" }}>
           <LogOut className="w-4 h-4" />
           {t("common.logout")}
         </button>
