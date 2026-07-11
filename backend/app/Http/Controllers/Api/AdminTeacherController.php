@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\School;
 use App\Models\SchoolBoard;
 use App\Models\User;
+use App\Services\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -82,6 +83,8 @@ class AdminTeacherController extends Controller
 
         $teacher->load('school')->loadCount('classes');
 
+        AuditLogger::log('Create', 'Teacher', "{$teacher->displayName()} created", 'info', $request, subject: $teacher);
+
         return response()->json(['teacher' => $this->format($teacher)], 201);
     }
 
@@ -106,6 +109,8 @@ class AdminTeacherController extends Controller
         $teacher->save();
         $teacher->load('school')->loadCount('classes');
 
+        AuditLogger::log('Edit', 'Teacher', "{$teacher->displayName()} updated", 'info', $request, subject: $teacher);
+
         return response()->json(['teacher' => $this->format($teacher)]);
     }
 
@@ -124,17 +129,25 @@ class AdminTeacherController extends Controller
         ));
     }
 
-    public function archive(User $teacher): JsonResponse
+    public function archive(Request $request, User $teacher): JsonResponse
     {
         if ($teacher->role !== 'teacher') {
             abort(404);
         }
 
+        $wasArchived = $teacher->account_status === 'archived';
+
         $teacher->update([
-            'account_status' => $teacher->account_status === 'archived' ? 'active' : 'archived',
+            'account_status' => $wasArchived ? 'active' : 'archived',
         ]);
 
         $teacher->load('school')->loadCount('classes');
+
+        if ($wasArchived) {
+            AuditLogger::log('Activate', 'Teacher', "{$teacher->displayName()} reactivated", 'info', $request, subject: $teacher);
+        } else {
+            AuditLogger::log('Archive', 'Teacher', "{$teacher->displayName()} archived", 'warning', $request, subject: $teacher);
+        }
 
         return response()->json(['teacher' => $this->format($teacher)]);
     }

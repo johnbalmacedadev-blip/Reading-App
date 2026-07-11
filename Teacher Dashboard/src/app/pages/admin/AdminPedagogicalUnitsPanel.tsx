@@ -1,9 +1,58 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
-  Plus, Edit2, Trash2, X, Loader2, BookOpen, Download, Upload, ChevronDown, ChevronUp,
+  Plus, Edit2, Trash2, X, Loader2, BookOpen, Upload, ChevronDown, ChevronUp, Search,
 } from "lucide-react";
 import { unitsApi, type PedagogicalUnitItem } from "../../api/client";
+import { useLanguage } from "../../i18n";
+import { formatAtelierLabel } from "../../i18n/atelierHelpers";
+
+type ContentType = "Sheet" | "PDF" | "Lesson" | "Assessment" | "Resource" | "PowerPoint";
+
+const types: ContentType[] = ["Sheet", "PDF", "Lesson", "Assessment", "Resource", "PowerPoint"];
+
+const typeColors: Record<ContentType, { bg: string; color: string }> = {
+  Sheet: { bg: "#ecfdf5", color: "#059669" },
+  PDF: { bg: "#fef3c7", color: "#d97706" },
+  Lesson: { bg: "#f3f0ff", color: "#7c3aed" },
+  Assessment: { bg: "#fff1f2", color: "#e11d48" },
+  Resource: { bg: "#f0fdf4", color: "#16a34a" },
+  PowerPoint: { bg: "#fff7ed", color: "#ea580c" },
+};
+
+function formatToContentType(format: string | null, interactive = false): ContentType | null {
+  if (!format) return interactive ? "Lesson" : null;
+  const ext = format.toLowerCase();
+  if (ext === "pdf") return "PDF";
+  if (ext === "ppt" || ext === "pptx") return "PowerPoint";
+  if (interactive) return "Lesson";
+  return "Sheet";
+}
+
+function unitContentTypes(unit: PedagogicalUnitItem): Set<ContentType> {
+  const found = new Set<ContentType>();
+
+  if (unit.has_quick_sheet) {
+    found.add("Sheet");
+    const quickType = formatToContentType(unit.quick_sheet_format);
+    if (quickType) found.add(quickType);
+  }
+
+  for (const lesson of unit.lessons ?? []) {
+    if (lesson.has_interactive) {
+      found.add("Lesson");
+      const interactiveType = formatToContentType(lesson.interactive_format, true);
+      if (interactiveType) found.add(interactiveType);
+    }
+    if (lesson.has_activity_sheet) {
+      found.add("Sheet");
+      const sheetType = formatToContentType(lesson.activity_sheet_format);
+      if (sheetType) found.add(sheetType);
+    }
+  }
+
+  return found;
+}
 
 const PRESET_COLORS = [
   { bg: "#3b82f6", text: "#ffffff" },
@@ -18,12 +67,6 @@ const PRESET_COLORS = [
   { bg: "#ef4444", text: "#ffffff" },
 ];
 
-function formatAtelierLabel(numbers: number[]): string {
-  if (numbers.length === 0) return "";
-  if (numbers.length === 1) return `Atelier ${numbers[0]}`;
-  return `Ateliers ${numbers.join(", ")}`;
-}
-
 function UnitFormModal({
   unit,
   onClose,
@@ -33,6 +76,7 @@ function UnitFormModal({
   onClose: () => void;
   onSaved: (unit: PedagogicalUnitItem) => void;
 }) {
+  const { t } = useLanguage();
   const quickSheetRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({
     title: unit?.title ?? "",
@@ -232,7 +276,7 @@ function UnitFormModal({
               />
             </div>
             <div>
-              <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 5 }}>Atelier numbers</label>
+              <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 5 }}>{t("admin.atelierNumbers")}</label>
               <input
                 value={form.atelier_numbers}
                 onChange={(e) => setForm((f) => ({ ...f, atelier_numbers: e.target.value }))}
@@ -418,9 +462,12 @@ function UnitFormModal({
 }
 
 export function AdminPedagogicalUnitsPanel() {
+  const { t, tp } = useLanguage();
   const [units, setUnits] = useState<PedagogicalUnitItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState<ContentType | "All Types">("All Types");
   const [editingUnit, setEditingUnit] = useState<PedagogicalUnitItem | null | "new">(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
@@ -469,13 +516,41 @@ export function AdminPedagogicalUnitsPanel() {
     }
   };
 
+  const typeCounts = useMemo(
+    () =>
+      types.reduce(
+        (acc, t) => ({
+          ...acc,
+          [t]: units.filter((unit) => unitContentTypes(unit).has(t)).length,
+        }),
+        {} as Record<ContentType, number>
+      ),
+    [units]
+  );
+
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return units.filter((unit) => {
+      const matchSearch =
+        query === "" ||
+        unit.title.toLowerCase().includes(query) ||
+        unit.description.toLowerCase().includes(query) ||
+        unit.atelier_numbers.some((n) => String(n).includes(query));
+
+      const matchType =
+        typeFilter === "All Types" || unitContentTypes(unit).has(typeFilter);
+
+      return matchSearch && matchType;
+    });
+  }, [units, search, typeFilter]);
+
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
         <div>
-          <h2 style={{ fontSize: 18, fontWeight: 700, color: "#0a1628", margin: 0 }}>Pedagogical Units</h2>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: "#0a1628", margin: 0 }}>{t("admin.pedagogicalUnitsTitle")}</h2>
           <p style={{ color: "#64748b", fontSize: 13, marginTop: 4 }}>
-            Manage units shown in the teacher library — lessons, quick sheets, and atelier assignments.
+            {t("admin.pedagogicalUnitsSubtitle")}
           </p>
         </div>
         <button
@@ -495,13 +570,49 @@ export function AdminPedagogicalUnitsPanel() {
         </div>
       )}
 
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+        {types.map((t) => {
+          const tc = typeColors[t];
+          const active = typeFilter === t;
+          return (
+            <button
+              key={t}
+              onClick={() => setTypeFilter(active ? "All Types" : t)}
+              style={{
+                padding: "6px 14px", borderRadius: 20, border: `1px solid ${active ? tc.color : "#e2e8f0"}`,
+                background: active ? tc.bg : "white", color: active ? tc.color : "#64748b",
+                fontSize: 12, fontWeight: active ? 600 : 400, cursor: "pointer",
+                display: "flex", alignItems: "center", gap: 5,
+              }}
+            >
+              <span>{t}</span>
+              <span style={{ background: active ? tc.color : "#e2e8f0", color: active ? "white" : "#94a3b8", borderRadius: 10, padding: "0px 6px", fontSize: 10, fontWeight: 700 }}>
+                {typeCounts[t] ?? 0}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ marginBottom: 18 }}>
+        <div style={{ position: "relative" }}>
+          <Search size={14} color="#94a3b8" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search in library..."
+            style={{ width: "100%", padding: "9px 12px 9px 34px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, outline: "none", boxSizing: "border-box" }}
+          />
+        </div>
+      </div>
+
       {loading ? (
         <div style={{ padding: "40px 0", textAlign: "center", color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
           <Loader2 size={18} className="animate-spin" /> Loading units…
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
-          {units.map((unit) => (
+          {filtered.map((unit) => (
             <div
               key={unit.id}
               style={{ background: "white", borderRadius: 12, padding: "18px 20px", border: "1px solid #f1f5f9", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}
@@ -530,7 +641,7 @@ export function AdminPedagogicalUnitsPanel() {
                   {unit.lesson_count} lessons
                 </span>
                 <span style={{ fontSize: 10, fontWeight: 600, padding: "3px 8px", borderRadius: 10, background: "#f7ffd6", color: "#004aad" }}>
-                  {formatAtelierLabel(unit.atelier_numbers)}
+                  {formatAtelierLabel(unit.atelier_numbers, (n) => tp("evaluation.workshopN", { n }), t("common.ateliers"))}
                 </span>
                 {unit.has_quick_sheet && (
                   <span style={{ fontSize: 10, fontWeight: 600, padding: "3px 8px", borderRadius: 10, background: "#eff6ff", color: "#3b82f6" }}>
@@ -540,6 +651,12 @@ export function AdminPedagogicalUnitsPanel() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {!loading && filtered.length === 0 && units.length > 0 && !error && (
+        <div style={{ padding: "40px 0", textAlign: "center", color: "#94a3b8", fontSize: 14 }}>
+          No units matching filters.
         </div>
       )}
 

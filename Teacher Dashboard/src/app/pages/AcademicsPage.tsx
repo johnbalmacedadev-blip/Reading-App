@@ -1,48 +1,21 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router";
 import {
-  BookOpen, Users, School, LogOut, BarChart3, Settings, Filter, X, ChevronDown, UserCircle, GraduationCap, Target, TrendingUp, ArrowUpRight, Search, User, ClipboardList,
+  BookOpen, Users, School, LogOut, BarChart3, Settings, Filter, X, UserCircle, GraduationCap,
+  ArrowUpRight, Search, User, ClipboardList, Loader2, ChevronDown,
 } from "lucide-react";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
-
-// Mock data
-const teachersData = [
-  { id: 1, name: "Mme Martineau", grade: "Maternelle", classes: ["Maternelle A"], students: 22, avgAtelier: 2.9, enVoie: 91 },
-  { id: 2, name: "M. Gagnon", grade: "Maternelle", classes: ["Maternelle B"], students: 21, avgAtelier: 2.7, enVoie: 86 },
-  { id: 3, name: "M. Leblanc", grade: "Jardin", classes: ["Jardin A"], students: 24, avgAtelier: 3.2, enVoie: 79 },
-  { id: 4, name: "Mme Boucher", grade: "Jardin", classes: ["Jardin B"], students: 23, avgAtelier: 3.0, enVoie: 74 },
-  { id: 5, name: "Mme Pelletier", grade: "1re année", classes: ["1re année A"], students: 25, avgAtelier: 7.2, enVoie: 72 },
-  { id: 6, name: "M. Tremblay", grade: "1re année", classes: ["1re année B"], students: 24, avgAtelier: 6.7, enVoie: 67 },
-  { id: 7, name: "Mme Gagnon", grade: "2e année", classes: ["2e année A"], students: 26, avgAtelier: 12.0, enVoie: 77 },
-  { id: 8, name: "M. Richard", grade: "2e année", classes: ["2e année B"], students: 25, avgAtelier: 10.5, enVoie: 68 },
-];
-
-const studentsData = [
-  { id: 1, name: "Amélie Dubois", className: "Maternelle A", grade: "Maternelle", teacher: "Mme Martineau", atelier: 3, enVoie: true },
-  { id: 2, name: "Hugo Morin", className: "Maternelle A", grade: "Maternelle", teacher: "Mme Martineau", atelier: 1, enVoie: false },
-  { id: 3, name: "Sophie Lavoie", className: "Maternelle A", grade: "Maternelle", teacher: "Mme Martineau", atelier: 4, enVoie: true },
-  { id: 4, name: "Lucas Bernard", className: "Maternelle B", grade: "Maternelle", teacher: "M. Gagnon", atelier: 4, enVoie: true },
-  { id: 5, name: "Emma Côté", className: "Maternelle B", grade: "Maternelle", teacher: "M. Gagnon", atelier: 1, enVoie: false },
-  { id: 6, name: "Charlotte Gagnon", className: "Jardin A", grade: "Jardin", teacher: "M. Leblanc", atelier: 4, enVoie: true },
-  { id: 7, name: "Mathieu Lapointe", className: "Jardin A", grade: "Jardin", teacher: "M. Leblanc", atelier: 2, enVoie: false },
-  { id: 8, name: "Olivia Roy", className: "Jardin A", grade: "Jardin", teacher: "M. Leblanc", atelier: 3, enVoie: true },
-  { id: 9, name: "Noah Tremblay", className: "Jardin B", grade: "Jardin", teacher: "Mme Boucher", atelier: 3, enVoie: false },
-  { id: 10, name: "Léa Fortin", className: "Jardin B", grade: "Jardin", teacher: "Mme Boucher", atelier: 4, enVoie: true },
-  { id: 11, name: "Antoine Bergeron", className: "1re année A", grade: "1re année", teacher: "Mme Pelletier", atelier: 8, enVoie: true },
-  { id: 12, name: "Léa Simard", className: "1re année A", grade: "1re année", teacher: "Mme Pelletier", atelier: 6, enVoie: false },
-  { id: 13, name: "Gabriel Morin", className: "1re année A", grade: "1re année", teacher: "Mme Pelletier", atelier: 7, enVoie: true },
-  { id: 14, name: "Zoé Dupuis", className: "1re année B", grade: "1re année", teacher: "M. Tremblay", atelier: 5, enVoie: false },
-  { id: 15, name: "Thomas Leblanc", className: "1re année B", grade: "1re année", teacher: "M. Tremblay", atelier: 8, enVoie: true },
-  { id: 16, name: "Sophie Tremblay", className: "2e année A", grade: "2e année", teacher: "Mme Gagnon", atelier: 13, enVoie: true },
-  { id: 17, name: "Lucas Fortin", className: "2e année A", grade: "2e année", teacher: "Mme Gagnon", atelier: 10, enVoie: false },
-  { id: 18, name: "Jade Martin", className: "2e année A", grade: "2e année", teacher: "Mme Gagnon", atelier: 13, enVoie: true },
-  { id: 19, name: "Maxime Lachance", className: "2e année B", grade: "2e année", teacher: "M. Richard", atelier: 12, enVoie: true },
-  { id: 20, name: "Camille Rousseau", className: "2e année B", grade: "2e année", teacher: "M. Richard", atelier: 9, enVoie: false },
-];
+import { usePortalLogout } from "../hooks/usePortalLogout";
+import {
+  schoolAcademicsApi,
+  type SchoolAcademicsStudent,
+  type SchoolAcademicsTeacher,
+} from "../api/client";
 
 type ViewMode = "students" | "teachers";
-type SortField = "name" | "grade" | "atelier" | "enVoie" | "teacher" | "avgAtelier" | "students";
+type StudentSortField = "name" | "grade" | "atelier" | "en_voie" | "teacher";
+type TeacherSortField = "name" | "grade" | "students" | "en_voie" | "avg_atelier";
 type SortDirection = "asc" | "desc";
 
 interface FilterState {
@@ -56,8 +29,21 @@ interface FilterState {
 export function AcademicsPage() {
   const navigate = useNavigate();
   const { t, tp, auto } = useLanguage();
+  const handleLogout = usePortalLogout();
+
+  const [studentsData, setStudentsData] = useState<SchoolAcademicsStudent[]>([]);
+  const [teachersData, setTeachersData] = useState<SchoolAcademicsTeacher[]>([]);
+  const [schoolName, setSchoolName] = useState("");
+  const [schoolBoardName, setSchoolBoardName] = useState<string | null>(null);
+  const [grades, setGrades] = useState<string[]>([]);
+  const [year, setYear] = useState("");
+  const [yearOptions, setYearOptions] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
   const [viewMode, setViewMode] = useState<ViewMode>("students");
-  const [sortField, setSortField] = useState<SortField>("name");
+  const [studentSortField, setStudentSortField] = useState<StudentSortField>("name");
+  const [teacherSortField, setTeacherSortField] = useState<TeacherSortField>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [showFilters, setShowFilters] = useState(false);
 
@@ -69,25 +55,58 @@ export function AcademicsPage() {
     searchQuery: "",
   });
 
+  const loadAcademics = useCallback(async (schoolYear?: string) => {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await schoolAcademicsApi.get(schoolYear);
+      setStudentsData(data.students);
+      setTeachersData(data.teachers);
+      setSchoolName(data.school.name);
+      setSchoolBoardName(data.school.school_board?.name ?? null);
+      setGrades(data.grades);
+      setYearOptions(data.available_years);
+      if (!schoolYear && data.school_year) {
+        setYear(data.school_year);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load academics.");
+      setStudentsData([]);
+      setTeachersData([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAcademics();
+  }, [loadAcademics]);
+
+  const handleYearChange = (newYear: string) => {
+    setYear(newYear);
+    loadAcademics(newYear);
+  };
+
   const menuItems = [
-    { icon: BarChart3,     label: "Overview",     active: false, path: "/school/reports" },
-    { icon: GraduationCap, label: "Academics",    active: true,  path: "/school/academics" },
-    { icon: ClipboardList, label: "Assessments",  active: false, path: "/school/assessments" },
-    { icon: User,          label: "Profile",      active: false, path: "/profile?portal=school" },
-    { icon: Settings,      label: "Settings",     active: false, path: "/school/settings" },
+    { icon: BarChart3, label: "Overview", active: false, path: "/school/reports" },
+    { icon: GraduationCap, label: "Academics", active: true, path: "/school/academics" },
+    { icon: ClipboardList, label: "Assessments", active: false, path: "/school/assessments" },
+    { icon: User, label: "Profile", active: false, path: "/profile?portal=school" },
+    { icon: Settings, label: "Settings", active: false, path: "/school/settings" },
   ];
 
-  const grades = ["Maternelle", "Jardin", "1re année", "2e année"];
   const gradeLabel = (grade: string) => {
     const map: Record<string, string> = {
       Maternelle: t("grade.kindergarten"),
       Jardin: t("grade.garden"),
       "1re année": t("grade.grade1"),
       "2e année": t("grade.grade2"),
+      "3e année": t("grade.grade3"),
     };
     return map[grade] ?? grade;
   };
-  const allTeachers = teachersData.map(t => t.name);
+
+  const allTeachers = teachersData.map((teacher) => teacher.name);
 
   const getAtelierColor = (atelier: number) => {
     if (atelier <= 4) return "#3b82f6";
@@ -103,64 +122,85 @@ export function AcademicsPage() {
     return "#004aad";
   };
 
-  // Filter and sort logic
-  const filteredAndSortedData = useMemo(() => {
-    let data: any[] = viewMode === "students" ? [...studentsData] : [...teachersData];
+  const filteredStudents = useMemo(() => {
+    let data = [...studentsData];
 
-    // Apply search filter
     if (filters.searchQuery.trim()) {
       const query = filters.searchQuery.toLowerCase();
-      data = data.filter(item => item.name.toLowerCase().includes(query));
+      data = data.filter((item) => item.name.toLowerCase().includes(query));
     }
 
-    // Apply filters
     if (filters.grades.length > 0) {
-      data = data.filter(item => filters.grades.includes(item.grade));
+      data = data.filter((item) => filters.grades.includes(item.grade));
     }
 
-    if (viewMode === "students") {
-      if (filters.teachers.length > 0) {
-        data = data.filter(item => filters.teachers.includes(item.teacher));
-      }
-      data = data.filter(item =>
-        item.atelier >= filters.atelierRange[0] && item.atelier <= filters.atelierRange[1]
-      );
-      if (filters.enVoieOnly) {
-        data = data.filter(item => item.enVoie);
-      }
-    } else {
-      // For teachers, filter by avgAtelier range
-      data = data.filter(item =>
-        item.avgAtelier >= filters.atelierRange[0] && item.avgAtelier <= filters.atelierRange[1]
-      );
+    if (filters.teachers.length > 0) {
+      data = data.filter((item) => filters.teachers.includes(item.teacher));
     }
 
-    // Apply sorting
+    data = data.filter(
+      (item) => item.atelier >= filters.atelierRange[0] && item.atelier <= filters.atelierRange[1]
+    );
+
+    if (filters.enVoieOnly) {
+      data = data.filter((item) => item.en_voie);
+    }
+
     data.sort((a, b) => {
-      let aVal: any = a[sortField];
-      let bVal: any = b[sortField];
+      const aVal = a[studentSortField];
+      const bVal = b[studentSortField];
 
-      if (sortField === "enVoie" && viewMode === "teachers") {
-        // For teachers, sort by enVoie percentage
-        aVal = a.enVoie;
-        bVal = b.enVoie;
-      } else if (sortField === "atelier" && viewMode === "teachers") {
-        // For teachers, use avgAtelier
-        aVal = a.avgAtelier;
-        bVal = b.avgAtelier;
+      if (typeof aVal === "string" && typeof bVal === "string") {
+        return sortDirection === "asc" ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
       }
 
-      if (typeof aVal === "string") {
+      if (typeof aVal === "boolean" && typeof bVal === "boolean") {
         return sortDirection === "asc"
-          ? aVal.localeCompare(bVal)
-          : bVal.localeCompare(aVal);
+          ? Number(aVal) - Number(bVal)
+          : Number(bVal) - Number(aVal);
       }
 
-      return sortDirection === "asc" ? aVal - bVal : bVal - aVal;
+      return sortDirection === "asc"
+        ? (aVal as number) - (bVal as number)
+        : (bVal as number) - (aVal as number);
     });
 
     return data;
-  }, [viewMode, filters, sortField, sortDirection]);
+  }, [studentsData, filters, studentSortField, sortDirection]);
+
+  const filteredTeachers = useMemo(() => {
+    let data = [...teachersData];
+
+    if (filters.searchQuery.trim()) {
+      const query = filters.searchQuery.toLowerCase();
+      data = data.filter((item) => item.name.toLowerCase().includes(query));
+    }
+
+    if (filters.grades.length > 0) {
+      data = data.filter((item) => filters.grades.includes(item.grade));
+    }
+
+    data = data.filter(
+      (item) => item.avg_atelier >= filters.atelierRange[0] && item.avg_atelier <= filters.atelierRange[1]
+    );
+
+    data.sort((a, b) => {
+      const aVal = a[teacherSortField];
+      const bVal = b[teacherSortField];
+
+      if (typeof aVal === "string" && typeof bVal === "string") {
+        return sortDirection === "asc" ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      }
+
+      return sortDirection === "asc"
+        ? (aVal as number) - (bVal as number)
+        : (bVal as number) - (aVal as number);
+    });
+
+    return data;
+  }, [teachersData, filters, teacherSortField, sortDirection]);
+
+  const filteredAndSortedData = viewMode === "students" ? filteredStudents : filteredTeachers;
 
   const activeFiltersCount =
     filters.grades.length +
@@ -179,18 +219,26 @@ export function AcademicsPage() {
     });
   };
 
-  const toggleSort = (field: SortField) => {
-    if (sortField === field) {
+  const toggleStudentSort = (field: StudentSortField) => {
+    if (studentSortField === field) {
       setSortDirection(sortDirection === "asc" ? "desc" : "asc");
     } else {
-      setSortField(field);
+      setStudentSortField(field);
+      setSortDirection("asc");
+    }
+  };
+
+  const toggleTeacherSort = (field: TeacherSortField) => {
+    if (teacherSortField === field) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setTeacherSortField(field);
       setSortDirection("asc");
     }
   };
 
   return (
     <div className="h-screen flex overflow-hidden" style={{ background: "#dff3ff" }}>
-      {/* Sidebar */}
       <div className="w-64 p-6 flex flex-col overflow-y-auto" style={{ background: "#ffffff", borderRight: "1px solid #dff3ff" }}>
         <div className="flex items-center gap-3 mb-10">
           <BookOpen className="w-8 h-8" style={{ color: "#004aad" }} />
@@ -211,27 +259,49 @@ export function AcademicsPage() {
         </nav>
 
         <LangToggle />
-        <button onClick={() => navigate("/")} className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm" style={{ color: "#ff5757" }}>
+        <button onClick={handleLogout} className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm" style={{ color: "#ff5757" }}>
           <LogOut className="w-4 h-4" />
           {t("common.logout")}
         </button>
       </div>
 
-      {/* Main */}
       <div className="flex-1 overflow-y-auto p-8">
-        {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <School className="w-5 h-5" style={{ color: "#004aad" }} />
-              <span className="text-sm font-medium" style={{ color: "#004aad" }}>École Laurier-Trudeau</span>
+              <span className="text-sm font-medium" style={{ color: "#004aad" }}>{schoolName || "—"}</span>
             </div>
+            {schoolBoardName && (
+              <p className="text-xs mb-1" style={{ color: "#64748b", marginLeft: 28 }}>{auto(schoolBoardName)}</p>
+            )}
             <h1 className="text-3xl font-bold" style={{ color: "#004aad" }}>{auto("Academics")}</h1>
             <p className="text-sm mt-1" style={{ color: "#666" }}>{auto("Gestion et analyse des élèves et enseignants")}</p>
           </div>
+
+          {yearOptions.length > 0 && (
+            <div className="relative">
+              <select
+                value={year}
+                onChange={(e) => handleYearChange(e.target.value)}
+                className="px-4 py-2.5 pr-9 rounded-xl text-sm font-medium appearance-none cursor-pointer"
+                style={{ background: "#ffffff", border: "1px solid #dff3ff", color: "#004aad" }}
+              >
+                {yearOptions.map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "#004aad" }} />
+            </div>
+          )}
         </div>
 
-        {/* View Toggle & Search */}
+        {error && (
+          <div className="mb-6 px-4 py-3 rounded-xl text-sm" style={{ background: "#fff1f2", color: "#be123c" }}>
+            {error}
+          </div>
+        )}
+
         <div className="rounded-2xl p-5 mb-6" style={{ background: "#ffffff", border: "1px solid #dff3ff" }}>
           <div className="flex items-center justify-between gap-4">
             <div className="flex gap-2">
@@ -253,7 +323,6 @@ export function AcademicsPage() {
               </button>
             </div>
 
-            {/* Search Input */}
             <div className="flex-1 max-w-md relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: "#888" }} />
               <input
@@ -286,7 +355,6 @@ export function AcademicsPage() {
           </div>
         </div>
 
-        {/* Filter Panel */}
         {showFilters && (
           <div className="rounded-2xl p-6 mb-6" style={{ background: "#ffffff", border: "2px solid #38b6ff" }}>
             <div className="flex items-center justify-between mb-5">
@@ -304,11 +372,10 @@ export function AcademicsPage() {
             </div>
 
             <div className="grid grid-cols-3 gap-6">
-              {/* Grade Filter */}
               <div>
                 <label className="block text-xs font-semibold mb-2" style={{ color: "#666" }}>{t("academics.schoolGrade")}</label>
                 <div className="space-y-2">
-                  {grades.map(grade => (
+                  {grades.map((grade) => (
                     <label key={grade} className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
@@ -317,7 +384,7 @@ export function AcademicsPage() {
                           if (e.target.checked) {
                             setFilters({ ...filters, grades: [...filters.grades, grade] });
                           } else {
-                            setFilters({ ...filters, grades: filters.grades.filter(g => g !== grade) });
+                            setFilters({ ...filters, grades: filters.grades.filter((g) => g !== grade) });
                           }
                         }}
                         className="w-4 h-4 rounded"
@@ -329,12 +396,11 @@ export function AcademicsPage() {
                 </div>
               </div>
 
-              {/* Teacher Filter (students only) */}
               {viewMode === "students" && (
                 <div>
                   <label className="block text-xs font-semibold mb-2" style={{ color: "#666" }}>{t("academics.teacher")}</label>
                   <div className="space-y-2 max-h-40 overflow-y-auto">
-                    {allTeachers.map(teacher => (
+                    {allTeachers.map((teacher) => (
                       <label key={teacher} className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="checkbox"
@@ -343,7 +409,7 @@ export function AcademicsPage() {
                             if (e.target.checked) {
                               setFilters({ ...filters, teachers: [...filters.teachers, teacher] });
                             } else {
-                              setFilters({ ...filters, teachers: filters.teachers.filter(t => t !== teacher) });
+                              setFilters({ ...filters, teachers: filters.teachers.filter((t) => t !== teacher) });
                             }
                           }}
                           className="w-4 h-4 rounded"
@@ -356,7 +422,6 @@ export function AcademicsPage() {
                 </div>
               )}
 
-              {/* Atelier Range */}
               <div>
                 <label className="block text-xs font-semibold mb-2" style={{ color: "#666" }}>
                   {viewMode === "students" ? t("academics.currentWorkshop") : t("academics.avgWorkshop")}
@@ -389,7 +454,6 @@ export function AcademicsPage() {
                 </div>
               </div>
 
-              {/* En Voie Only (students) */}
               {viewMode === "students" && (
                 <div>
                   <label className="block text-xs font-semibold mb-2" style={{ color: "#666" }}>{auto("Statut")}</label>
@@ -409,93 +473,70 @@ export function AcademicsPage() {
           </div>
         )}
 
-        {/* Results */}
         <div className="rounded-2xl overflow-hidden" style={{ background: "#ffffff", border: "1px solid #dff3ff" }}>
-          {/* Table Header */}
           <div className="p-5 border-b" style={{ borderColor: "#dff3ff", background: "#f7ffd6" }}>
             <p className="text-sm font-semibold" style={{ color: "#004aad" }}>
-              {auto(`${filteredAndSortedData.length} résultat${filteredAndSortedData.length !== 1 ? "s" : ""}`)}
+              {loading
+                ? t("common.loading")
+                : auto(`${filteredAndSortedData.length} résultat${filteredAndSortedData.length !== 1 ? "s" : ""}`)}
             </p>
           </div>
 
-          {/* Sort Controls */}
           <div className="p-4 border-b flex gap-2" style={{ borderColor: "#dff3ff", background: "#f9fafb" }}>
             <span className="text-xs font-semibold self-center" style={{ color: "#666" }}>{t("academics.sortBy")}</span>
             {viewMode === "students" ? (
               <>
-                <button
-                  onClick={() => toggleSort("name")}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-                  style={{ background: sortField === "name" ? "#004aad" : "#dff3ff", color: sortField === "name" ? "#ffffff" : "#004aad" }}
-                >
-                  {auto("Nom")} {sortField === "name" && (sortDirection === "asc" ? "↑" : "↓")}
-                </button>
-                <button
-                  onClick={() => toggleSort("grade")}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-                  style={{ background: sortField === "grade" ? "#004aad" : "#dff3ff", color: sortField === "grade" ? "#ffffff" : "#004aad" }}
-                >
-                  {t("common.grade")} {sortField === "grade" && (sortDirection === "asc" ? "↑" : "↓")}
-                </button>
-                <button
-                  onClick={() => toggleSort("atelier")}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-                  style={{ background: sortField === "atelier" ? "#004aad" : "#dff3ff", color: sortField === "atelier" ? "#ffffff" : "#004aad" }}
-                >
-                  {t("common.atelier")} {sortField === "atelier" && (sortDirection === "asc" ? "↑" : "↓")}
-                </button>
-                <button
-                  onClick={() => toggleSort("teacher")}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-                  style={{ background: sortField === "teacher" ? "#004aad" : "#dff3ff", color: sortField === "teacher" ? "#ffffff" : "#004aad" }}
-                >
-                  {t("academics.teacher")} {sortField === "teacher" && (sortDirection === "asc" ? "↑" : "↓")}
-                </button>
+                {([
+                  ["name", auto("Nom")],
+                  ["grade", t("common.grade")],
+                  ["atelier", t("common.atelier")],
+                  ["teacher", t("academics.teacher")],
+                ] as const).map(([field, label]) => (
+                  <button
+                    key={field}
+                    onClick={() => toggleStudentSort(field)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                    style={{ background: studentSortField === field ? "#004aad" : "#dff3ff", color: studentSortField === field ? "#ffffff" : "#004aad" }}
+                  >
+                    {label} {studentSortField === field && (sortDirection === "asc" ? "↑" : "↓")}
+                  </button>
+                ))}
               </>
             ) : (
               <>
-                <button
-                  onClick={() => toggleSort("name")}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-                  style={{ background: sortField === "name" ? "#004aad" : "#dff3ff", color: sortField === "name" ? "#ffffff" : "#004aad" }}
-                >
-                  {auto("Nom")} {sortField === "name" && (sortDirection === "asc" ? "↑" : "↓")}
-                </button>
-                <button
-                  onClick={() => toggleSort("grade")}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-                  style={{ background: sortField === "grade" ? "#004aad" : "#dff3ff", color: sortField === "grade" ? "#ffffff" : "#004aad" }}
-                >
-                  {t("common.grade")} {sortField === "grade" && (sortDirection === "asc" ? "↑" : "↓")}
-                </button>
-                <button
-                  onClick={() => toggleSort("students")}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-                  style={{ background: sortField === "students" ? "#004aad" : "#dff3ff", color: sortField === "students" ? "#ffffff" : "#004aad" }}
-                >
-                  {t("common.students")} {sortField === "students" && (sortDirection === "asc" ? "↑" : "↓")}
-                </button>
-                <button
-                  onClick={() => toggleSort("enVoie")}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-                  style={{ background: sortField === "enVoie" ? "#004aad" : "#dff3ff", color: sortField === "enVoie" ? "#ffffff" : "#004aad" }}
-                >
-                  {t("academics.onTrackPct")} {sortField === "enVoie" && (sortDirection === "asc" ? "↑" : "↓")}
-                </button>
+                {([
+                  ["name", auto("Nom")],
+                  ["grade", t("common.grade")],
+                  ["students", t("common.students")],
+                  ["en_voie", t("academics.onTrackPct")],
+                ] as const).map(([field, label]) => (
+                  <button
+                    key={field}
+                    onClick={() => toggleTeacherSort(field)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                    style={{ background: teacherSortField === field ? "#004aad" : "#dff3ff", color: teacherSortField === field ? "#ffffff" : "#004aad" }}
+                  >
+                    {label} {teacherSortField === field && (sortDirection === "asc" ? "↑" : "↓")}
+                  </button>
+                ))}
               </>
             )}
           </div>
 
-          {/* List */}
           <div className="divide-y" style={{ borderColor: "#dff3ff" }}>
-            {filteredAndSortedData.length === 0 ? (
+            {loading ? (
+              <div className="p-12 flex justify-center items-center gap-2" style={{ color: "#64748b" }}>
+                <Loader2 className="animate-spin w-6 h-6" />
+                {t("common.loading")}
+              </div>
+            ) : filteredAndSortedData.length === 0 ? (
               <div className="p-12 text-center">
                 <Filter className="w-12 h-12 mx-auto mb-3 opacity-30" style={{ color: "#004aad" }} />
                 <p className="font-semibold mb-1" style={{ color: "#004aad" }}>{auto("Aucun résultat")}</p>
                 <p className="text-sm" style={{ color: "#666" }}>{auto("Essayez d'ajuster vos filtres")}</p>
               </div>
             ) : viewMode === "students" ? (
-              filteredAndSortedData.map((student: any) => (
+              (filteredAndSortedData as SchoolAcademicsStudent[]).map((student) => (
                 <button
                   key={student.id}
                   onClick={() => navigate(`/student/${student.id}`)}
@@ -504,11 +545,11 @@ export function AcademicsPage() {
                 >
                   <div className="flex items-center gap-4 flex-1">
                     <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold" style={{ background: "#dff3ff", color: "#004aad" }}>
-                      {student.name.split(" ").map((n: string) => n[0]).join("")}
+                      {student.name.split(" ").map((n) => n[0]).join("")}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-sm mb-0.5" style={{ color: "#004aad" }}>{student.name}</p>
-                      <p className="text-xs" style={{ color: "#666" }}>{student.className} • {student.teacher}</p>
+                      <p className="text-xs" style={{ color: "#666" }}>{student.class_name} • {student.teacher}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
@@ -526,8 +567,8 @@ export function AcademicsPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-xs mb-1" style={{ color: "#888" }}>{auto("Statut")}</p>
-                      <span className={`text-xs px-2 py-1 rounded-full font-medium ${student.enVoie ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
-                        {student.enVoie ? t("common.onTrack") : t("common.atRisk")}
+                      <span className={`text-xs px-2 py-1 rounded-full font-medium ${student.en_voie ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
+                        {student.en_voie ? t("common.onTrack") : t("common.atRisk")}
                       </span>
                     </div>
                     <ArrowUpRight className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" style={{ color: "#38b6ff" }} />
@@ -535,7 +576,7 @@ export function AcademicsPage() {
                 </button>
               ))
             ) : (
-              filteredAndSortedData.map((teacher: any) => (
+              (filteredAndSortedData as SchoolAcademicsTeacher[]).map((teacher) => (
                 <div
                   key={teacher.id}
                   className="p-5 flex items-center justify-between hover:bg-opacity-50 transition-all"
@@ -543,7 +584,7 @@ export function AcademicsPage() {
                 >
                   <div className="flex items-center gap-4 flex-1">
                     <div className="w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold" style={{ background: "#004aad", color: "#ffffff" }}>
-                      {teacher.name.split(" ").map((n: string) => n[0]).filter((_: any, i: number, a: any[]) => i === 0 || i === a.length - 1).join("").toUpperCase()}
+                      {teacher.name.split(" ").map((n) => n[0]).filter((_, i, a) => i === 0 || i === a.length - 1).join("").toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-base mb-0.5" style={{ color: "#004aad" }}>{teacher.name}</p>
@@ -563,12 +604,12 @@ export function AcademicsPage() {
                     </div>
                     <div className="text-center">
                       <p className="text-xs mb-1" style={{ color: "#888" }}>{t("academics.avgWorkshop")}</p>
-                      <p className="text-lg font-bold" style={{ color: "#38b6ff" }}>{teacher.avgAtelier.toFixed(1)}</p>
+                      <p className="text-lg font-bold" style={{ color: "#38b6ff" }}>{teacher.avg_atelier.toFixed(1)}</p>
                     </div>
                     <div className="text-center">
                       <p className="text-xs mb-1" style={{ color: "#888" }}>{t("common.onTrack")}</p>
-                      <p className="text-lg font-bold" style={{ color: teacher.enVoie >= 75 ? "#22c55e" : teacher.enVoie >= 65 ? "#f59e0b" : "#ff5757" }}>
-                        {teacher.enVoie}%
+                      <p className="text-lg font-bold" style={{ color: teacher.en_voie >= 75 ? "#22c55e" : teacher.en_voie >= 65 ? "#f59e0b" : "#ff5757" }}>
+                        {teacher.en_voie}%
                       </p>
                     </div>
                   </div>

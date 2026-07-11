@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import {
-  BookOpen, Users, Download,
-  CheckCircle2, TrendingUp, AlertCircle, MinusCircle, ChevronDown, LogOut, Loader2,
+  BookOpen,
+  Users,
+  Download,
+  CheckCircle2, TrendingUp, AlertCircle, MinusCircle, ChevronDown, Loader2,
 } from "lucide-react";
 import { NotificationDropdown } from "../components/NotificationDropdown";
 import { UserAvatar } from "../components/UserAvatar";
-import { LangToggle } from "../components/LangToggle";
+import { TeacherLayout } from "../components/TeacherLayout";
 import { useLanguage, type TranslationKey } from "../i18n";
-import { teacherNavItems } from "../i18n/navHelpers";
-import { usePortalLogout } from "../hooks/usePortalLogout";
 import { teacherReportsApi, type TeacherReportsData } from "../api/client";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -60,14 +60,11 @@ function GradeCard({ labelKey, workshop, subtitleKey }: { labelKey: TranslationK
 export function ReportsPage() {
   const navigate = useNavigate();
   const { t, tp, auto: a } = useLanguage();
-  const handleLogout = usePortalLogout();
   const [reports, setReports] = useState<TeacherReportsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [schoolYear, setSchoolYear] = useState("");
   const [selectedClassId, setSelectedClassId] = useState<number | "all">("all");
-
-  const menuItems = teacherNavItems(t, "reports");
 
   const loadReports = useCallback(async (year?: string, classId?: number | "all") => {
     setLoading(true);
@@ -148,33 +145,8 @@ export function ReportsPage() {
     : a(reports?.classes.find((c) => c.id === selectedClassId)?.name ?? "");
 
   return (
-    <div className="h-screen flex overflow-hidden" style={{ background: "#dff3ff" }}>
-      <div className="w-64 p-6 flex flex-col overflow-y-auto" style={{ background: "#ffffff", borderRight: "1px solid #dff3ff" }}>
-        <div className="flex items-center gap-3 mb-12">
-          <BookOpen className="w-8 h-8" style={{ color: "#004aad" }} />
-          <h1 className="text-xl" style={{ color: "#004aad" }}>Lecture Scientifique</h1>
-        </div>
-        <nav className="flex-1 space-y-2">
-          {menuItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button key={item.path} onClick={() => navigate(item.path)}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
-                style={{ background: item.active ? "#dff3ff" : "transparent", color: item.active ? "#004aad" : "#000000" }}>
-                <Icon className="w-5 h-5" />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-        <LangToggle />
-        <button onClick={handleLogout} className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all" style={{ color: "#ff5757" }}>
-          <LogOut className="w-5 h-5" />
-          <span>{t("common.logout")}</span>
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto" style={{ padding: "40px 48px" }}>
+    <TeacherLayout activeNav="reports" contentClassName="flex-1 overflow-y-auto" >
+      <div style={{ padding: "40px 48px" }}>
         <div className="flex items-start justify-between mb-6">
           <div>
             <h1 className="text-3xl font-bold mb-1" style={{ color: "#004aad" }}>{t("common.reports")}</h1>
@@ -440,6 +412,6 @@ export function ReportsPage() {
           </>
         )}
       </div>
-    </div>
+    </TeacherLayout>
   );
 }

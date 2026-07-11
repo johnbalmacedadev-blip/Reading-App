@@ -96,7 +96,7 @@ class BoardDashboardController extends Controller
                 'on_track' => $this->percent($status['on_track'], $total),
                 'monitor' => $this->percent($status['monitor'], $total),
                 'at_risk' => $this->percent($status['at_risk'], $total),
-                'trend' => $this->formatTrend($status['on_track'], $status['total']),
+                'trend' => '+0%',
             ];
         })->values()->all();
 
@@ -114,6 +114,13 @@ class BoardDashboardController extends Controller
             ? (int) round(collect($schoolRows)->avg('on_track'))
             : 0;
 
+        foreach ($schoolRows as &$row) {
+            $row['trend'] = $this->formatSchoolTrend($row['on_track'], $avgOnTrack);
+        }
+        unset($row);
+
+        $successRateByMonth = $this->successRateByMonth($schoolIds, $yearStart, $yearEnd, $schoolYear);
+
         return response()->json([
             'board' => [
                 'code' => $boardCode,
@@ -126,8 +133,9 @@ class BoardDashboardController extends Controller
                 'total_students' => $totalStudents,
                 'active_teachers' => $totalTeachers,
                 'avg_on_track' => $avgOnTrack,
+                'latest_trend' => collect($successRateByMonth)->last()['rate'] ?? $avgOnTrack,
             ],
-            'success_rate_by_month' => $this->successRateByMonth($schoolIds, $yearStart, $yearEnd, $schoolYear),
+            'success_rate_by_month' => $successRateByMonth,
             'results_by_grade' => $this->resultsByGrade($schoolIds),
             'schools' => $schoolRows,
         ]);
@@ -305,15 +313,11 @@ class BoardDashboardController extends Controller
         return (int) round(($part / $total) * 100);
     }
 
-    private function formatTrend(int $onTrack, int $total): string
+    private function formatSchoolTrend(int $schoolOnTrack, int $boardAvg): string
     {
-        if ($total <= 0) {
-            return '0%';
-        }
+        $delta = $schoolOnTrack - $boardAvg;
 
-        $pct = (int) round(($onTrack / $total) * 100);
-
-        return $pct >= 75 ? '+'.min(8, max(1, $pct - 70)).'%' : '+0%';
+        return ($delta >= 0 ? '+' : '').$delta.'%';
     }
 
     private function currentSchoolYear(): string

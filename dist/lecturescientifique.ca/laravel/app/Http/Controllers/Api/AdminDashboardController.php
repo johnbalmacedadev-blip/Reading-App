@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\LibraryContent;
 use App\Models\School;
 use App\Models\SchoolBoard;
+use App\Models\SchoolYear;
 use App\Models\Student;
 use App\Models\User;
 use Carbon\Carbon;
@@ -20,7 +21,7 @@ class AdminDashboardController extends Controller
     {
         $started = microtime(true);
 
-        $schoolYear = $request->string('school_year')->toString() ?: $this->currentSchoolYear();
+        $schoolYear = SchoolYear::resolve($request->string('school_year')->toString());
         [$yearStart, $yearEnd] = $this->schoolYearRange($schoolYear);
 
         $monthAgo = now()->subMonth();
@@ -69,10 +70,7 @@ class AdminDashboardController extends Controller
 
     private function currentSchoolYear(): string
     {
-        $now = now();
-        $startYear = $now->month >= 9 ? $now->year : $now->year - 1;
-
-        return "{$startYear}-".($startYear + 1);
+        return SchoolYear::defaultLabel();
     }
 
     /** @return array{0: Carbon, 1: Carbon} */

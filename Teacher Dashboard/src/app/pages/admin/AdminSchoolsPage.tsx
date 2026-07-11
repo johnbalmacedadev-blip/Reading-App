@@ -11,6 +11,8 @@ import {
 
 type BoardOption = { code: string; name: string };
 
+const NONE_BOARD: BoardOption = { code: "", name: "None" };
+
 type SchoolForm = {
   id?: number;
   name: string;
@@ -31,10 +33,11 @@ const emptyForm = (defaultBoard = ""): SchoolForm => ({
 });
 
 function modalBoardOptions(activeBoards: BoardOption[], currentBoard: string): BoardOption[] {
-  if (!currentBoard || activeBoards.some((b) => b.code === currentBoard)) {
-    return activeBoards;
+  const boards = [NONE_BOARD, ...activeBoards];
+  if (currentBoard && !boards.some((b) => b.code === currentBoard)) {
+    return [{ code: currentBoard, name: currentBoard }, ...boards];
   }
-  return [{ code: currentBoard, name: currentBoard }, ...activeBoards];
+  return boards;
 }
 
 function Modal({
@@ -180,7 +183,6 @@ function Modal({
             <select
               value={form.board}
               onChange={(e) => set("board", e.target.value)}
-              disabled={boardOptions.length === 0}
               style={{
                 width: "100%",
                 padding: "9px 12px",
@@ -190,15 +192,11 @@ function Modal({
                 outline: "none",
               }}
             >
-              {boardOptions.length === 0 ? (
-                <option value="">No active school boards</option>
-              ) : (
-                boardOptions.map((b) => (
-                  <option key={b.code} value={b.code}>
-                    {b.name} ({b.code})
-                  </option>
-                ))
-              )}
+              {boardOptions.map((b) => (
+                <option key={b.code || "__none__"} value={b.code}>
+                  {b.code ? `${b.name} (${b.code})` : b.name}
+                </option>
+              ))}
             </select>
           </div>
           <div>
@@ -660,7 +658,7 @@ export function AdminSchoolsPage() {
                           color: "#004aad",
                         }}
                       >
-                        {s.board}
+                        {s.board || "None"}
                       </span>
                     </td>
                     <td style={{ padding: "13px 16px", fontSize: 13, color: "#374151" }}>{s.city}</td>

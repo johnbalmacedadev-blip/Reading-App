@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Camera, Loader2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { teacherProfileApi } from "../api/client";
+import { avatarUrl } from "../api/client";
 
 type ProfileAvatarProps = {
   initials: string;
@@ -16,12 +16,13 @@ export function ProfileAvatar({
   onUpload,
   size = "lg",
 }: ProfileAvatarProps) {
-  const { avatarVersion } = useAuth();
+  const { user, avatarVersion } = useAuth();
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const isLarge = size === "lg";
   const dimension = isLarge ? 96 : 48;
   const textSize = isLarge ? "text-3xl" : "text-sm";
+  const imageSrc = avatarUrl(user?.avatar_url, avatarVersion);
 
   const handleFile = async (file: File | undefined) => {
     if (!file) return;
@@ -51,9 +52,9 @@ export function ProfileAvatar({
         className="relative rounded-full overflow-hidden shrink-0 group cursor-pointer disabled:cursor-wait"
         style={{ width: dimension, height: dimension }}
       >
-        {hasAvatar ? (
+        {hasAvatar && imageSrc ? (
           <img
-            src={teacherProfileApi.avatarUrl(avatarVersion)}
+            src={imageSrc}
             alt=""
             className="w-full h-full object-cover"
           />

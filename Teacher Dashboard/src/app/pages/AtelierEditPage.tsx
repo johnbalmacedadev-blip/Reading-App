@@ -1,10 +1,8 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { ArrowLeft, Save, Plus, Trash2, GripVertical, BookOpen, LogOut } from "lucide-react";
-import { useLanguage } from "../i18n";
-import { LangToggle } from "../components/LangToggle";
-import { boardNavItems } from "../i18n/navHelpers";
-import { usePortalLogout } from "../hooks/usePortalLogout";
+import { ArrowLeft, Save, Plus, Trash2, GripVertical } from "lucide-react";
+import { useLanguage, type TranslationKey } from "../i18n";
+import { BoardLayout } from "../components/BoardLayout";
 
 interface AtelierQuestion {
   id: string;
@@ -12,9 +10,17 @@ interface AtelierQuestion {
   type: "checkbox" | "text" | "grid";
 }
 
-const atelierTemplates: Record<number, { title: string; description: string; instructions: string; questions: AtelierQuestion[] }> = {
+const ATELIER_TEMPLATE_TITLE_KEYS: Partial<Record<number, TranslationKey>> = {
+  1: "evaluation.atelier1",
+  2: "evaluation.atelier2",
+  3: "evaluation.atelier3",
+  4: "evaluation.atelier4",
+  5: "evaluation.atelier5",
+  6: "evaluation.atelier6",
+};
+
+const atelierTemplates: Record<number, { titleKey?: TranslationKey; description: string; instructions: string; questions: AtelierQuestion[] }> = {
   1: {
-    title: "Atelier 1 : Reconnaissance du nom des lettres majuscules",
     description: "Évaluation de la capacité à nommer les lettres majuscules",
     instructions: "Présenter les lettres majuscules une à une à l'élève et lui demander de nommer chaque lettre.",
     questions: [
@@ -22,7 +28,6 @@ const atelierTemplates: Record<number, { title: string; description: string; ins
     ],
   },
   2: {
-    title: "Atelier 2 : Reconnaissance du son des lettres majuscules",
     description: "Évaluation de la capacité à identifier le son des lettres majuscules",
     instructions: "Présenter les lettres majuscules une à une à l'élève et lui demander de produire le son de chaque lettre.",
     questions: [
@@ -30,7 +35,6 @@ const atelierTemplates: Record<number, { title: string; description: string; ins
     ],
   },
   3: {
-    title: "Atelier 3 : Reconnaissance du nom des lettres minuscules",
     description: "Évaluation de la capacité à nommer les lettres minuscules",
     instructions: "Présenter les lettres minuscules une à une à l'élève et lui demander de nommer chaque lettre.",
     questions: [
@@ -38,7 +42,6 @@ const atelierTemplates: Record<number, { title: string; description: string; ins
     ],
   },
   4: {
-    title: "Atelier 4 : Reconnaissance du son des lettres minuscules",
     description: "Évaluation de la capacité à identifier le son des lettres minuscules",
     instructions: "Présenter les lettres minuscules une à une à l'élève et lui demander de produire le son de chaque lettre.",
     questions: [
@@ -46,7 +49,6 @@ const atelierTemplates: Record<number, { title: string; description: string; ins
     ],
   },
   5: {
-    title: "Atelier 5 : Grapho majuscule (écriture à l'énoncé)",
     description: "Évaluation de la capacité à écrire les lettres majuscules lorsque l'enseignant énonce le nom de la lettre",
     instructions: "Énoncer le nom de chaque lettre et demander à l'élève d'écrire la lettre majuscule correspondante.",
     questions: [
@@ -54,7 +56,6 @@ const atelierTemplates: Record<number, { title: string; description: string; ins
     ],
   },
   6: {
-    title: "Atelier 6 : Grapho minuscule (écriture à l'énoncé)",
     description: "Évaluation de la capacité à écrire les lettres minuscules lorsque l'enseignant énonce le nom de la lettre",
     instructions: "Énoncer le nom de chaque lettre et demander à l'élève d'écrire la lettre minuscule correspondante.",
     questions: [
@@ -66,21 +67,21 @@ const atelierTemplates: Record<number, { title: string; description: string; ins
 export function AtelierEditPage() {
   const navigate = useNavigate();
   const { t, tp, auto: a } = useLanguage();
-  const handleLogout = usePortalLogout();
   const { atelierNum } = useParams();
   const num = parseInt(atelierNum || "1");
 
-  const menuItems = boardNavItems(t, "ateliers");
-
   // Get template or create default
   const defaultTemplate = atelierTemplates[num] || {
-    title: tp("evaluation.workshopN", { n: num }),
     description: a("Description de l'atelier"),
     instructions: a("Instructions pour l'enseignant"),
     questions: [],
   };
 
-  const [title, setTitle] = useState(defaultTemplate.title);
+  const defaultTitle = ATELIER_TEMPLATE_TITLE_KEYS[num]
+    ? t(ATELIER_TEMPLATE_TITLE_KEYS[num]!)
+    : tp("evaluation.workshopN", { n: num });
+
+  const [title, setTitle] = useState(defaultTitle);
   const [description, setDescription] = useState(defaultTemplate.description);
   const [instructions, setInstructions] = useState(defaultTemplate.instructions);
   const [questions, setQuestions] = useState<AtelierQuestion[]>(defaultTemplate.questions);
@@ -107,34 +108,7 @@ export function AtelierEditPage() {
   };
 
   return (
-    <div className="h-screen flex overflow-hidden" style={{ background: "#dff3ff" }}>
-      {/* Sidebar */}
-      <div className="w-64 p-6 flex flex-col overflow-y-auto" style={{ background: "#ffffff", borderRight: "1px solid #dff3ff" }}>
-        <div className="flex items-center gap-3 mb-10">
-          <BookOpen className="w-8 h-8" style={{ color: "#004aad" }} />
-          <div>
-            <h1 className="text-base font-bold leading-tight" style={{ color: "#004aad" }}>{t("common.appName")}</h1>
-            <p className="text-xs mt-0.5 px-2 py-0.5 rounded-full inline-block" style={{ background: "#dff3ff", color: "#004aad" }}>{t("board.portal")}</p>
-          </div>
-        </div>
-
-        <nav className="flex-1 space-y-1">
-          {menuItems.map(({ icon: Icon, label, active, path }) => (
-            <button key={label} onClick={() => navigate(path)} className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-sm"
-              style={{ background: active ? "#dff3ff" : "transparent", color: active ? "#004aad" : "#444", fontWeight: active ? 600 : 400 }}>
-              <Icon className="w-4 h-4" />
-              {label}
-            </button>
-          ))}
-        </nav>
-
-        <LangToggle />
-        <button onClick={handleLogout} className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm" style={{ color: "#ff5757" }}>
-          <LogOut className="w-4 h-4" />
-          {t("common.logout")}
-        </button>
-      </div>
-
+    <BoardLayout activeNav="ateliers" contentClassName="flex-1 flex flex-col overflow-hidden">
       {/* Main Content Wrapper */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
@@ -328,6 +302,6 @@ export function AtelierEditPage() {
         </div>
       </div>
       </div>
-    </div>
+    </BoardLayout>
   );
 }

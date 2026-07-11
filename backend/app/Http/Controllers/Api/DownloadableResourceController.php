@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\DownloadableCategory;
 use App\Models\DownloadableResource;
+use App\Services\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -55,6 +56,8 @@ class DownloadableResourceController extends Controller
         $downloadableCategory->save();
         $downloadableCategory->load('resources');
 
+        AuditLogger::log('Edit', 'Content', "{$downloadableCategory->title} category updated", 'info', $request, subject: $downloadableCategory);
+
         return response()->json([
             'category' => $this->formatCategory($downloadableCategory, true),
         ]);
@@ -81,6 +84,8 @@ class DownloadableResourceController extends Controller
             'file_size_bytes' => $file->getSize(),
             'sort_order' => $maxSort + 1,
         ]);
+
+        AuditLogger::log('Upload', 'Content', "{$resource->title} uploaded", 'info', $request, subject: $resource);
 
         return response()->json([
             'resource' => $this->formatResource($resource),
@@ -113,20 +118,26 @@ class DownloadableResourceController extends Controller
 
         $downloadableResource->save();
 
+        $action = $request->hasFile('file') ? 'Upload' : 'Edit';
+        AuditLogger::log($action, 'Content', "{$downloadableResource->title} updated", 'info', $request, subject: $downloadableResource);
+
         return response()->json([
             'resource' => $this->formatResource($downloadableResource),
         ]);
     }
 
-    public function destroyResource(DownloadableResource $downloadableResource): JsonResponse
+    public function destroyResource(Request $request, DownloadableResource $downloadableResource): JsonResponse
     {
+        $title = $downloadableResource->title;
         $this->deleteFile($downloadableResource->file_path);
         $downloadableResource->delete();
+
+        AuditLogger::log('Delete', 'Content', "{$title} deleted", 'warning', $request);
 
         return response()->json(['message' => 'Resource deleted.']);
     }
 
-    public function download(DownloadableResource $downloadableResource): StreamedResponse|JsonResponse
+    public function download(Request $request, DownloadableResource $downloadableResource): StreamedResponse|JsonResponse
     {
         if (! $downloadableResource->file_path || ! Storage::disk('public')->exists($downloadableResource->file_path)) {
             return response()->json(['message' => 'File not found.'], 404);
@@ -134,6 +145,8 @@ class DownloadableResourceController extends Controller
 
         $extension = strtolower($downloadableResource->file_format ?? 'pdf');
         $filename = Str::slug($downloadableResource->title).'.'.$extension;
+
+        AuditLogger::export($request, 'Content', "{$downloadableResource->title} downloaded");
 
         return Storage::disk('public')->download($downloadableResource->file_path, $filename);
     }

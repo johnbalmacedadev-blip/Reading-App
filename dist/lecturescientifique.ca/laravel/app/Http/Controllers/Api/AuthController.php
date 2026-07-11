@@ -191,9 +191,16 @@ class AuthController extends Controller
             'role' => $user->role,
             'initials' => $user->initials(),
             'has_avatar' => (bool) $user->avatar_path,
-            'avatar_url' => $user->avatar_path ? '/api/teacher/profile/avatar' : null,
+            'avatar_url' => $user->avatar_path ? $this->avatarUrlFor($user) : null,
             'school' => $user->school?->only(['id', 'name', 'city']),
             'school_board' => $user->school_board,
         ];
+    }
+
+    private function avatarUrlFor(User $user): string
+    {
+        return $user->role === 'board_admin'
+            ? '/api/board/profile/avatar'
+            : '/api/teacher/profile/avatar';
     }
 }

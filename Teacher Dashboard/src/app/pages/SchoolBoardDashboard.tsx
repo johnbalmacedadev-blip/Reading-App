@@ -1,16 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router";
 import {
-  BookOpen, School, LogOut,
-  TrendingUp, CheckCircle2, ChevronDown,
+  School, TrendingUp, CheckCircle2, ChevronDown,
   ArrowUpRight, Users, Building2, Loader2,
 } from "lucide-react";
-import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
-import { boardNavItems } from "../i18n/navHelpers";
 import { useAuth } from "../context/AuthContext";
-import { usePortalLogout } from "../hooks/usePortalLogout";
 import { boardDashboardApi, type BoardDashboardData } from "../api/client";
+import { BoardLayout } from "../components/BoardLayout";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, LineChart, Line, Cell,
@@ -41,16 +37,12 @@ function shortSchoolName(name: string): string {
 }
 
 export function SchoolBoardDashboard() {
-  const navigate = useNavigate();
   const { t, auto: a } = useLanguage();
   const { user } = useAuth();
-  const handleLogout = usePortalLogout();
   const [data, setData] = useState<BoardDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [year, setYear] = useState("");
-
-  const menuItems = boardNavItems(t, "overview");
 
   const loadDashboard = useCallback(async (schoolYear?: string) => {
     setLoading(true);
@@ -118,35 +110,8 @@ export function SchoolBoardDashboard() {
   const yearOptions = data?.available_years?.length ? data.available_years : [year || "2025-2026"];
 
   return (
-    <div className="h-screen flex overflow-hidden" style={{ background: "#dff3ff" }}>
-      <div className="w-64 p-6 flex flex-col overflow-y-auto" style={{ background: "#ffffff", borderRight: "1px solid #dff3ff" }}>
-        <div className="flex items-center gap-3 mb-10">
-          <BookOpen className="w-8 h-8" style={{ color: "#004aad" }} />
-          <div>
-            <h1 className="text-base font-bold leading-tight" style={{ color: "#004aad" }}>{t("common.appName")}</h1>
-            <p className="text-xs mt-0.5 px-2 py-0.5 rounded-full inline-block" style={{ background: "#dff3ff", color: "#004aad" }}>{t("board.portal")}</p>
-          </div>
-        </div>
-
-        <nav className="flex-1 space-y-1">
-          {menuItems.map(({ icon: Icon, label, active, path }) => (
-            <button key={label} onClick={() => navigate(path)} className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-sm"
-              style={{ background: active ? "#dff3ff" : "transparent", color: active ? "#004aad" : "#444", fontWeight: active ? 600 : 400 }}>
-              <Icon className="w-4 h-4" />
-              {label}
-            </button>
-          ))}
-        </nav>
-
-        <LangToggle />
-        <button onClick={handleLogout} className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm" style={{ color: "#ff5757" }}>
-          <LogOut className="w-4 h-4" />
-          {t("common.logout")}
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-8">
-        <div className="flex items-center justify-between mb-8">
+    <BoardLayout activeNav="overview">
+      <div className="flex items-center justify-between mb-8">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <Building2 className="w-5 h-5" style={{ color: "#004aad" }} />
@@ -303,7 +268,10 @@ export function SchoolBoardDashboard() {
                         <td className="py-3" style={{ color: "#d97706" }}>{s.monitor}%</td>
                         <td className="py-3" style={{ color: s.at_risk >= 9 ? "#dc2626" : "#555" }}>{s.at_risk}%</td>
                         <td className="py-3">
-                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: "#f0fff4", color: "#2e7d32" }}>{s.trend}</span>
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{
+                            background: s.trend.startsWith("+") && parseInt(s.trend, 10) >= 0 ? "#f0fff4" : s.trend.startsWith("-") ? "#fff1f2" : "#f8fafc",
+                            color: s.trend.startsWith("+") && parseInt(s.trend, 10) > 0 ? "#2e7d32" : s.trend.startsWith("-") ? "#dc2626" : "#64748b",
+                          }}>{s.trend}</span>
                         </td>
                       </tr>
                     ))}
@@ -313,7 +281,6 @@ export function SchoolBoardDashboard() {
             </div>
           </>
         )}
-      </div>
-    </div>
+    </BoardLayout>
   );
 }

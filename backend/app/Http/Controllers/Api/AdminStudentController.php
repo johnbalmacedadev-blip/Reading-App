@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\School;
 use App\Models\Student;
+use App\Services\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -57,6 +58,8 @@ class AdminStudentController extends Controller
         $student = Student::create($data);
         $student->load('school');
 
+        AuditLogger::log('Create', 'Student', "{$student->fullName()} created", 'info', $request, subject: $student);
+
         return response()->json(['student' => $this->format($student)], 201);
     }
 
@@ -67,14 +70,19 @@ class AdminStudentController extends Controller
         $student->update($data);
         $student->load('school');
 
+        AuditLogger::log('Edit', 'Student', "{$student->fullName()} updated", 'info', $request, subject: $student);
+
         return response()->json(['student' => $this->format($student)]);
     }
 
-    public function destroy(Student $student): JsonResponse
+    public function destroy(Request $request, Student $student): JsonResponse
     {
+        $name = $student->fullName();
         $student->evaluations()->delete();
         $student->classes()->detach();
         $student->delete();
+
+        AuditLogger::log('Delete', 'Student', "{$name} deleted", 'warning', $request);
 
         return response()->json(['message' => 'Student record deleted.']);
     }

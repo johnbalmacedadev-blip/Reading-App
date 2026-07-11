@@ -1,10 +1,25 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import { ArrowLeft, Save, ChevronDown, History, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
 import { teacherApi } from "../api/client";
+import { WorkshopTemplateEvaluator } from "../components/WorkshopTemplateEvaluator";
+import {
+  CHECKBOX_BULK_ACTIONS,
+  EvaluationBulkToolbar,
+} from "../components/EvaluationBulkToolbar";
+import {
+  applySavedResponsesToTemplateState,
+  classGradeToAssessmentGrade,
+  collectTemplateResponses,
+  computeTemplateStatus,
+  initTemplateEvalState,
+  resolveTemplateForAssessment,
+  type TemplateEvalState,
+} from "../evaluation/templateResponseUtils";
+import type { WorkshopTemplateId } from "../evaluation/workshopTemplates";
 import {
   collectResponses,
   computeStatus,
@@ -94,6 +109,21 @@ export function EvaluationDetailPage() {
 
   const [atelier2Upper, setAtelier2Upper] = useState<LetterMark[]>(emptyLetterMarks());
   const [atelier2Lower, setAtelier2Lower] = useState<LetterMark[]>(emptyLetterMarks());
+  const [publishedAssessment, setPublishedAssessment] = useState<{
+    id: number;
+    title: string;
+    template_id: WorkshopTemplateId;
+    template_draft: import("../evaluation/workshopTemplates").TemplateDraft | null;
+  } | null>(null);
+  const [templateEvalState, setTemplateEvalState] = useState<TemplateEvalState | null>(null);
+
+  const templateConfig = useMemo(() => {
+    if (!publishedAssessment?.template_id) return null;
+    return resolveTemplateForAssessment(
+      publishedAssessment.template_id,
+      publishedAssessment.template_draft
+    );
+  }, [publishedAssessment]);
 
   const studentName = evalContext.studentName ?? "—";
   const classId = evalContext.classId;
@@ -186,6 +216,26 @@ export function EvaluationDetailPage() {
     }));
   }, []);
 
+  const handleClearAllCheckboxes = useCallback((workshop: number) => {
+    const count = EVAL_CHECKBOX_COUNTS[workshop];
+    if (!count) return;
+    setCheckboxByWorkshop((prev) => ({
+      ...prev,
+      [workshop]: Array(count).fill(false),
+    }));
+  }, []);
+
+  const renderCheckboxToolbar = (workshop: number) => (
+    <EvaluationBulkToolbar
+      unitNumber={getUnitNumber()}
+      unitColor={getUnitColor()}
+      actions={CHECKBOX_BULK_ACTIONS}
+      onAllPassed={() => handleSelectAllCheckboxes(workshop)}
+      onAllFailed={() => handleClearAllCheckboxes(workshop)}
+      onClearAll={() => handleClearAllCheckboxes(workshop)}
+    />
+  );
+
   const renderEvalCheckbox = (
     className = "w-5 h-5 rounded",
     style: CSSProperties = {}
@@ -213,61 +263,111 @@ export function EvaluationDetailPage() {
   };
 
   useEffect(() => {
-    if (!studentId || !classId) {
+    if (!studentId) {
       setEvaluationLoading(false);
       return;
     }
 
+    let cancelled = false;
     setEvaluationLoading(true);
     resetAtelierMarks();
     setComments("");
     setNotRequired(false);
+    setPublishedAssessment(null);
+    setTemplateEvalState(null);
 
-    teacherApi
-      .getEvaluation(studentId, atelierNum, classId)
-      .then(({ evaluation }) => {
+    (async () => {
+      try {
+        let resolvedClassId = classId;
+        let resolvedGrade: string | null = null;
+
+        if (resolvedClassId) {
+          const { class: classData } = await teacherApi.classDetail(resolvedClassId);
+          resolvedGrade = classData.grade;
+        } else {
+          const { student } = await teacherApi.getStudent(studentId);
+          resolvedClassId = student.class_id;
+          resolvedGrade = student.grade;
+          if (!cancelled) {
+            const context: EvaluationNavState = {
+              studentName: student.name,
+              classId: student.class_id,
+              schoolYear: student.school_year,
+            };
+            sessionStorage.setItem(`eval-context-${studentId}`, JSON.stringify(context));
+            setEvalContext(context);
+          }
+        }
+
+        if (!resolvedClassId) {
+          throw new Error("Missing class context.");
+        }
+
+        if (!resolvedGrade) {
+          const { class: classData } = await teacherApi.classDetail(resolvedClassId);
+          resolvedGrade = classData.grade;
+        }
+
+        const assessmentGrade = classGradeToAssessmentGrade(resolvedGrade);
+        let assessment: typeof publishedAssessment = null;
+        try {
+          const assessmentResponse = await teacherApi.getPublishedAssessment(
+            atelierNum,
+            assessmentGrade
+          );
+          assessment = assessmentResponse.assessment;
+        } catch {
+          assessment = null;
+        }
+
+        let nextTemplateState: TemplateEvalState | null = null;
+        let resolvedTemplate = null;
+        if (assessment?.template_id) {
+          resolvedTemplate = resolveTemplateForAssessment(
+            assessment.template_id,
+            assessment.template_draft
+          );
+          nextTemplateState = initTemplateEvalState(
+            resolvedTemplate.template,
+            resolvedTemplate.draft
+          );
+        }
+
+        const { evaluation } = await teacherApi.getEvaluation(
+          studentId,
+          atelierNum,
+          resolvedClassId
+        );
+        if (cancelled) return;
+
+        setPublishedAssessment(assessment);
         setComments(evaluation.comment ?? "");
         setNotRequired(Boolean(evaluation.not_required));
 
-        const responses = normalizeLoadedResponses(
-          atelierNum,
-          evaluation.responses
-        );
-        if (!responses) return;
-
-        if (responses.type === "workshop1") {
-          setAtelier1UpperName(responses.upperName);
-          setAtelier1UpperSound(responses.upperSound);
-          return;
+        if (assessment?.template_id && resolvedTemplate && nextTemplateState) {
+          setTemplateEvalState(
+            applySavedResponsesToTemplateState(
+              assessment.template_id,
+              resolvedTemplate.draft,
+              evaluation.responses,
+              nextTemplateState
+            )
+          );
         }
-
-        if (responses.type === "workshop2") {
-          setAtelier1LowerName(responses.lowerName);
-          setAtelier1LowerSound(responses.lowerSound);
-          return;
+      } catch {
+        if (!cancelled) {
+          toast.error("Could not load saved evaluation.");
         }
-
-        if (responses.type === "workshop3") {
-          setAtelier2Upper(responses.marks);
-          return;
+      } finally {
+        if (!cancelled) {
+          setEvaluationLoading(false);
         }
+      }
+    })();
 
-        if (responses.type === "workshop4") {
-          setAtelier2Lower(responses.marks);
-          return;
-        }
-
-        if (responses.type === "checkboxes") {
-          setCheckboxByWorkshop((prev) => ({
-            ...prev,
-            [atelierNum]: responses.values,
-          }));
-        }
-      })
-      .catch(() => {
-        toast.error("Could not load saved evaluation.");
-      })
-      .finally(() => setEvaluationLoading(false));
+    return () => {
+      cancelled = true;
+    };
   }, [studentId, classId, atelierNum]);
 
   // Add custom checkbox styling in global <style> below
@@ -288,26 +388,34 @@ export function EvaluationDetailPage() {
   };
 
   const handleSave = async () => {
-    if (!studentId || !classId) {
+    const saveClassId = classId ?? evalContext.classId;
+    if (!studentId || !saveClassId) {
       toast.error("Missing class context. Open this evaluation from the class page.");
+      return;
+    }
+
+    const hasPublishedTemplate = Boolean(publishedAssessment?.template_id && templateEvalState);
+    if (!hasPublishedTemplate && !notRequired) {
+      toast.error(t("evaluation.noAssessmentDesc"));
       return;
     }
 
     setSaving(true);
     try {
-      const responses = collectResponses(atelierNum, {
-        atelier1UpperName,
-        atelier1UpperSound,
-        atelier1LowerName,
-        atelier1LowerSound,
-        atelier2Upper,
-        atelier2Lower,
-        checkboxByWorkshop,
-      });
-      const status = computeStatus(notRequired, responses);
+      const responses = hasPublishedTemplate
+        ? collectTemplateResponses(publishedAssessment!.template_id, templateEvalState!)
+        : null;
+      const status = hasPublishedTemplate && templateConfig
+        ? computeTemplateStatus(
+            templateConfig.template,
+            templateConfig.draft,
+            templateEvalState!,
+            notRequired
+          )
+        : computeStatus(notRequired, responses);
 
       await teacherApi.saveEvaluation(studentId, atelierNum, {
-        class_id: classId,
+        class_id: saveClassId,
         status,
         not_required: notRequired,
         comment: comments,
@@ -785,25 +893,9 @@ export function EvaluationDetailPage() {
   );
   };
 
-  const renderAtelier5 = () => {
-    const unitColor = getUnitColor();
-    const handleSelectAll = () => handleSelectAllCheckboxes(5);
-    return (
+  const renderAtelier5 = () => (
     <>
-      <div className="flex items-center justify-between mb-6">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full" style={{ background: unitColor.bg }}>
-          <span className="text-xs font-semibold" style={{ color: unitColor.text }}>{tp("tracking.unit", { n: getUnitNumber() })}</span>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleSelectAll}
-            className="px-4 py-2 rounded-lg text-sm transition-all"
-            style={{ background: "#2e7d32", color: "#ffffff" }}
-          >
-            ✓ {t("evaluation.allPassed")}
-          </button>
-        </div>
-      </div>
+      {renderCheckboxToolbar(5)}
       <div className="mb-6 p-4 rounded-xl" style={{ background: "#fff9e6", border: "1px solid #ffde59" }}>
         <p className="text-sm" style={{ color: "#004aad" }}>
           <strong>{t("evaluation.instructionsLabel")}</strong> {a("Évaluer la capacité de l'élève à identifier les rimes, segmenter/fusionner et compter les syllabes. Pour chaque section, demander à l'élève d'écouter attentivement et de répondre.")}
@@ -911,30 +1003,10 @@ export function EvaluationDetailPage() {
       </div>
     </>
   );
-  };
 
-  const renderAtelier6 = () => {
-    const unitColor = getUnitColor();
-    const handleSelectAll = () => handleSelectAllCheckboxes(6);
-    return (
+  const renderAtelier6 = () => (
     <>
-      <div className="flex items-center justify-between mb-6">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full" style={{ background: unitColor.bg }}>
-          <span className="text-xs font-semibold" style={{ color: unitColor.text }}>{tp("tracking.unit", { n: getUnitNumber() })}</span>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleSelectAll}
-            className="px-4 py-2 rounded-lg text-sm transition-all"
-            style={{ background: "#2e7d32", color: "#ffffff" }}
-          >
-            ✓ {t("evaluation.allPassed")}
-          </button>
-          <a href="#" className="px-4 py-2 text-sm flex items-center" style={{ color: "#38b6ff" }}>
-            📄 {t("evaluation.supportPdf")}
-          </a>
-        </div>
-      </div>
+      {renderCheckboxToolbar(6)}
       <div className="mb-6 p-4 rounded-xl" style={{ background: "#fff9e6", border: "1px solid #ffde59" }}>
         <p className="text-sm" style={{ color: "#004aad" }}>
           <strong>{t("evaluation.instructionsLabel")}</strong> {a("Demander à l'élève d'identifier les sons au début et à la fin des mots. Dire le mot clairement et demander : « Quel son entends-tu au début/à la fin? »")}
@@ -978,30 +1050,10 @@ export function EvaluationDetailPage() {
       </div>
     </>
   );
-  };
 
-  const renderAtelier7 = () => {
-    const unitColor = getUnitColor();
-    const handleSelectAll = () => handleSelectAllCheckboxes(7);
-    return (
+  const renderAtelier7 = () => (
     <>
-      <div className="flex items-center justify-between mb-6">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full" style={{ background: unitColor.bg }}>
-          <span className="text-xs font-semibold" style={{ color: unitColor.text }}>{tp("tracking.unit", { n: getUnitNumber() })}</span>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleSelectAll}
-            className="px-4 py-2 rounded-lg text-sm transition-all"
-            style={{ background: "#2e7d32", color: "#ffffff" }}
-          >
-            ✓ {t("evaluation.allPassed")}
-          </button>
-          <a href="#" className="px-4 py-2 text-sm flex items-center" style={{ color: "#38b6ff" }}>
-            📄 {t("evaluation.supportPdf")}
-          </a>
-        </div>
-      </div>
+      {renderCheckboxToolbar(7)}
       <div className="mb-6 p-4 rounded-xl" style={{ background: "#fff9e6", border: "1px solid #ffde59" }}>
         <p className="text-sm" style={{ color: "#004aad" }}>
           <strong>{t("evaluation.instructionsLabel")}</strong> {a("Évaluer la lecture de syllabes simples et la correspondance son-lettre. Pour la section correspondance, montrer 3 lettres à l'élève et demander de pointer la lettre qui fait le son indiqué.")}
@@ -1059,30 +1111,10 @@ export function EvaluationDetailPage() {
       </div>
     </>
   );
-  };
 
-  const renderAtelier8 = () => {
-    const unitColor = getUnitColor();
-    const handleSelectAll = () => handleSelectAllCheckboxes(8);
-    return (
+  const renderAtelier8 = () => (
     <>
-      <div className="flex items-center justify-between mb-6">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full" style={{ background: unitColor.bg }}>
-          <span className="text-xs font-semibold" style={{ color: unitColor.text }}>{tp("tracking.unit", { n: getUnitNumber() })}</span>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleSelectAll}
-            className="px-4 py-2 rounded-lg text-sm transition-all"
-            style={{ background: "#2e7d32", color: "#ffffff" }}
-          >
-            ✓ {t("evaluation.allPassed")}
-          </button>
-          <a href="#" className="px-4 py-2 text-sm flex items-center" style={{ color: "#38b6ff" }}>
-            📄 {t("evaluation.supportPdf")}
-          </a>
-        </div>
-      </div>
+      {renderCheckboxToolbar(8)}
       <div className="mb-6 p-4 rounded-xl" style={{ background: "#fff9e6", border: "1px solid #ffde59" }}>
         <p className="text-sm" style={{ color: "#004aad" }}>
           <strong>{t("evaluation.instructionsLabel")}</strong> {a("Évaluer la lecture de différents types de syllabes et de mots usuels.")}
@@ -1131,30 +1163,10 @@ export function EvaluationDetailPage() {
       </div>
     </>
   );
-  };
 
-  const renderAtelier9 = () => {
-    const unitColor = getUnitColor();
-    const handleSelectAll = () => handleSelectAllCheckboxes(9);
-    return (
+  const renderAtelier9 = () => (
     <>
-      <div className="flex items-center justify-between mb-6">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full" style={{ background: unitColor.bg }}>
-          <span className="text-xs font-semibold" style={{ color: unitColor.text }}>{tp("tracking.unit", { n: getUnitNumber() })}</span>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleSelectAll}
-            className="px-4 py-2 rounded-lg text-sm transition-all"
-            style={{ background: "#2e7d32", color: "#ffffff" }}
-          >
-            ✓ {t("evaluation.allPassed")}
-          </button>
-          <a href="#" className="px-4 py-2 text-sm flex items-center" style={{ color: "#38b6ff" }}>
-            📄 {t("evaluation.supportPdf")}
-          </a>
-        </div>
-      </div>
+      {renderCheckboxToolbar(9)}
       <div className="mb-6 p-4 rounded-xl" style={{ background: "#fff9e6", border: "1px solid #ffde59" }}>
         <p className="text-sm" style={{ color: "#004aad" }}>
           <strong>{t("evaluation.instructionsLabel")}</strong> {a("Demander à l'élève de lire les 15 mots usuels suivants.")}
@@ -1175,30 +1187,10 @@ export function EvaluationDetailPage() {
       </div>
     </>
   );
-  };
 
-  const renderAtelier10 = () => {
-    const unitColor = getUnitColor();
-    const handleSelectAll = () => handleSelectAllCheckboxes(10);
-    return (
+  const renderAtelier10 = () => (
     <>
-      <div className="flex items-center justify-between mb-6">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full" style={{ background: unitColor.bg }}>
-          <span className="text-xs font-semibold" style={{ color: unitColor.text }}>{tp("tracking.unit", { n: getUnitNumber() })}</span>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleSelectAll}
-            className="px-4 py-2 rounded-lg text-sm transition-all"
-            style={{ background: "#2e7d32", color: "#ffffff" }}
-          >
-            ✓ {t("evaluation.allPassed")}
-          </button>
-          <a href="#" className="px-4 py-2 text-sm flex items-center" style={{ color: "#38b6ff" }}>
-            📄 {t("evaluation.supportPdf")}
-          </a>
-        </div>
-      </div>
+      {renderCheckboxToolbar(10)}
       <div className="mb-6 p-4 rounded-xl" style={{ background: "#fff9e6", border: "1px solid #ffde59" }}>
         <p className="text-sm" style={{ color: "#004aad" }}>
           <strong>{t("evaluation.instructionsLabel")}</strong> {a("Évaluer la lecture de mots contenant des graphèmes complexes. Demander à l'élève de lire chaque mot à voix haute.")}
@@ -1219,30 +1211,10 @@ export function EvaluationDetailPage() {
       </div>
     </>
   );
-  };
 
-  const renderAtelier11 = () => {
-    const unitColor = getUnitColor();
-    const handleSelectAll = () => handleSelectAllCheckboxes(11);
-    return (
+  const renderAtelier11 = () => (
     <>
-      <div className="flex items-center justify-between mb-6">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full" style={{ background: unitColor.bg }}>
-          <span className="text-xs font-semibold" style={{ color: unitColor.text }}>{tp("tracking.unit", { n: getUnitNumber() })}</span>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleSelectAll}
-            className="px-4 py-2 rounded-lg text-sm transition-all"
-            style={{ background: "#2e7d32", color: "#ffffff" }}
-          >
-            ✓ {t("evaluation.allPassed")}
-          </button>
-          <a href="#" className="px-4 py-2 text-sm flex items-center" style={{ color: "#38b6ff" }}>
-            📄 {t("evaluation.supportPdf")}
-          </a>
-        </div>
-      </div>
+      {renderCheckboxToolbar(11)}
       <div className="mb-6 p-4 rounded-xl" style={{ background: "#fff9e6", border: "1px solid #ffde59" }}>
         <p className="text-sm" style={{ color: "#004aad" }}>
           <strong>{t("evaluation.instructionsLabel")}</strong> {a("Évaluer la capacité de l'élève à lire des familles de mots (variations d'un même mot), des mots avec différentes terminaisons, et des mots usuels.")}
@@ -1295,30 +1267,10 @@ export function EvaluationDetailPage() {
       </div>
     </>
   );
-  };
 
-  const renderAtelier12 = () => {
-    const unitColor = getUnitColor();
-    const handleSelectAll = () => handleSelectAllCheckboxes(12);
-    return (
+  const renderAtelier12 = () => (
     <>
-      <div className="flex items-center justify-between mb-6">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full" style={{ background: unitColor.bg }}>
-          <span className="text-xs font-semibold" style={{ color: unitColor.text }}>{tp("tracking.unit", { n: getUnitNumber() })}</span>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleSelectAll}
-            className="px-4 py-2 rounded-lg text-sm transition-all"
-            style={{ background: "#2e7d32", color: "#ffffff" }}
-          >
-            ✓ {t("evaluation.allPassed")}
-          </button>
-          <a href="#" className="px-4 py-2 text-sm flex items-center" style={{ color: "#38b6ff" }}>
-            📄 {t("evaluation.supportPdf")}
-          </a>
-        </div>
-      </div>
+      {renderCheckboxToolbar(12)}
       <div className="mb-6 p-4 rounded-xl" style={{ background: "#fff9e6", border: "1px solid #ffde59" }}>
         <p className="text-sm" style={{ color: "#004aad" }}>
           <strong>{t("evaluation.instructionsLabel")}</strong> {a("Demander à l'élève de lire les phrases à voix haute en respectant la ponctuation et l'intonation, puis de lire les pseudo-mots pour évaluer le décodage.")}
@@ -1371,30 +1323,10 @@ export function EvaluationDetailPage() {
       </div>
     </>
   );
-  };
 
-  const renderAtelier13 = () => {
-    const unitColor = getUnitColor();
-    const handleSelectAll = () => handleSelectAllCheckboxes(13);
-    return (
+  const renderAtelier13 = () => (
     <>
-      <div className="flex items-center justify-between mb-6">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full" style={{ background: unitColor.bg }}>
-          <span className="text-xs font-semibold" style={{ color: unitColor.text }}>{tp("tracking.unit", { n: getUnitNumber() })}</span>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleSelectAll}
-            className="px-4 py-2 rounded-lg text-sm transition-all"
-            style={{ background: "#2e7d32", color: "#ffffff" }}
-          >
-            ✓ {t("evaluation.allPassed")}
-          </button>
-          <a href="#" className="px-4 py-2 text-sm flex items-center" style={{ color: "#38b6ff" }}>
-            📄 {t("evaluation.supportPdf")}
-          </a>
-        </div>
-      </div>
+      {renderCheckboxToolbar(13)}
       <div className="mb-6 p-4 rounded-xl" style={{ background: "#fff9e6", border: "1px solid #ffde59" }}>
         <p className="text-sm" style={{ color: "#004aad" }}>
           <strong>{t("evaluation.instructionsLabel")}</strong> {a("Évaluer la lecture de mots contenant des graphèmes avancés (ail, eil, euil, ouil). Demander à l'élève de lire chaque mot à voix haute en identifiant le son cible.")}
@@ -1415,27 +1347,10 @@ export function EvaluationDetailPage() {
       </div>
     </>
   );
-  };
 
-  const renderAtelier14 = () => {
-    const unitColor = getUnitColor();
-    const handleSelectAll = () => handleSelectAllCheckboxes(14);
-    return (
+  const renderAtelier14 = () => (
     <>
-      <div className="flex items-center justify-between mb-6">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full" style={{ background: unitColor.bg }}>
-          <span className="text-xs font-semibold" style={{ color: unitColor.text }}>{tp("tracking.unit", { n: getUnitNumber() })}</span>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleSelectAll}
-            className="px-4 py-2 rounded-lg text-sm transition-all"
-            style={{ background: "#2e7d32", color: "#ffffff" }}
-          >
-            ✓ {t("evaluation.allPassed")}
-          </button>
-        </div>
-      </div>
+      {renderCheckboxToolbar(14)}
       <div className="mb-6 p-4 rounded-xl" style={{ background: "#fff9e6", border: "1px solid #ffde59" }}>
         <p className="text-sm" style={{ color: "#004aad" }}>
           <strong>{t("evaluation.instructionsLabel")}</strong> {a("Demander à l'élève de visualiser l'histoire. Dire : « Ferme les yeux et imagine ce que tu entends pendant que je lis. » Lire le texte à voix haute, puis poser les 5 questions de compréhension.")}
@@ -1479,30 +1394,10 @@ export function EvaluationDetailPage() {
       </div>
     </>
   );
-  };
 
-  const renderAtelier15 = () => {
-    const unitColor = getUnitColor();
-    const handleSelectAll = () => handleSelectAllCheckboxes(15);
-    return (
+  const renderAtelier15 = () => (
     <>
-      <div className="flex items-center justify-between mb-6">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full" style={{ background: unitColor.bg }}>
-          <span className="text-xs font-semibold" style={{ color: unitColor.text }}>{tp("tracking.unit", { n: getUnitNumber() })}</span>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleSelectAll}
-            className="px-4 py-2 rounded-lg text-sm transition-all"
-            style={{ background: "#2e7d32", color: "#ffffff" }}
-          >
-            ✓ {t("evaluation.allPassed")}
-          </button>
-          <a href="#" className="px-4 py-2 text-sm flex items-center" style={{ color: "#38b6ff" }}>
-            📄 {t("evaluation.supportPdf")}
-          </a>
-        </div>
-      </div>
+      {renderCheckboxToolbar(15)}
       <div className="mb-6 p-4 rounded-xl" style={{ background: "#fff9e6", border: "1px solid #ffde59" }}>
         <p className="text-sm" style={{ color: "#004aad" }}>
           <strong>{t("evaluation.instructionsLabel")}</strong> {a("Demander à l'élève de lire un court texte de 4-5 phrases de façon autonome, puis poser 5 questions de compréhension.")}
@@ -1549,9 +1444,11 @@ export function EvaluationDetailPage() {
       </div>
     </>
   );
-  };
 
   const getAtelierTitle = () => {
+    if (publishedAssessment?.title) {
+      return publishedAssessment.title;
+    }
     const key = ATELIER_TITLE_KEYS[atelierNum - 1];
     return key ? t(key) : t("tracking.atelier1");
   };
@@ -1588,28 +1485,35 @@ export function EvaluationDetailPage() {
   };
 
   const renderAtelierContent = () => {
-    if (atelierNum >= 5) {
-      checkboxCounters.current[atelierNum] = 0;
+    if (templateConfig && templateEvalState) {
+      return (
+        <WorkshopTemplateEvaluator
+          template={templateConfig.template}
+          draft={templateConfig.draft}
+          state={templateEvalState}
+          onStateChange={setTemplateEvalState}
+          unitNumber={getUnitNumber()}
+          unitColor={getUnitColor()}
+        />
+      );
     }
-    switch (atelierNum) {
-      case 1: return renderAtelier1();
-      case 2: return renderAtelier2();
-      case 3: return renderAtelier3();
-      case 4: return renderAtelier4();
-      case 5: return renderAtelier5();
-      case 6: return renderAtelier6();
-      case 7: return renderAtelier7();
-      case 8: return renderAtelier8();
-      case 9: return renderAtelier9();
-      case 10: return renderAtelier10();
-      case 11: return renderAtelier11();
-      case 12: return renderAtelier12();
-      case 13: return renderAtelier13();
-      case 14: return renderAtelier14();
-      case 15: return renderAtelier15();
-      default: return renderAtelier1();
-    }
+
+    return (
+      <div
+        className="p-12 rounded-xl text-center"
+        style={{ background: "#fff9e6", border: "2px solid #ffde59" }}
+      >
+        <p className="text-2xl mb-3" style={{ color: "#004aad" }}>
+          {t("evaluation.noAssessmentTitle")}
+        </p>
+        <p className="text-lg" style={{ color: "#000000" }}>
+          {t("evaluation.noAssessmentDesc")}
+        </p>
+      </div>
+    );
   };
+
+  const hasPublishedTemplate = Boolean(templateConfig && templateEvalState);
 
   return (
     <div className="h-screen flex flex-col overflow-hidden" style={{ background: "#dff3ff" }}>
@@ -1683,7 +1587,7 @@ export function EvaluationDetailPage() {
 
               <button
                 onClick={handleSave}
-                disabled={saving || evaluationLoading}
+                disabled={saving || evaluationLoading || (!hasPublishedTemplate && !notRequired)}
                 className="px-6 py-3 rounded-xl flex items-center gap-2 transition-all disabled:opacity-60"
                 style={{ background: "#004aad", color: "#ffffff" }}
               >
@@ -1717,7 +1621,7 @@ export function EvaluationDetailPage() {
               <>
                 {renderAtelierContent()}
 
-                {/* Comments Section */}
+                {hasPublishedTemplate && (
                 <div className="mt-8">
                   <label className="block mb-2" style={{ color: "#004aad" }}>
                     {t("evaluation.comments")}
@@ -1731,6 +1635,7 @@ export function EvaluationDetailPage() {
                     placeholder={t("evaluation.addComments")}
                   />
                 </div>
+                )}
               </>
             )}
           </div>

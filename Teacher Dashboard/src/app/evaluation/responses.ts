@@ -1,5 +1,8 @@
 export type LetterMark = "check" | "x" | null;
 
+/** true = passed, false = failed, null = not marked */
+export type CheckboxMark = boolean | null;
+
 export type EvaluationResponses =
   | {
       type: "workshop1";
@@ -22,6 +25,22 @@ export type EvaluationResponses =
   | {
       type: "checkboxes";
       values: boolean[];
+    }
+  | {
+      type: "template_letter_grid";
+      template_id: string;
+      name: LetterMark[];
+      sound: LetterMark[];
+    }
+  | {
+      type: "template_checkboxes";
+      template_id: string;
+      values: CheckboxMark[];
+    }
+  | {
+      type: "template_mcq";
+      template_id: string;
+      selections: Array<number | null>;
     };
 
 /** @deprecated Legacy payloads still loaded for older saved rows. */
@@ -113,6 +132,9 @@ export function normalizeLoadedResponses(
     case "workshop3":
     case "workshop4":
     case "checkboxes":
+    case "template_letter_grid":
+    case "template_checkboxes":
+    case "template_mcq":
       return responses;
     case "atelier1":
       if (atelierNum === 1) {
@@ -177,14 +199,40 @@ export function computeStatus(
     return computeLetterMarksStatus([responses.marks]);
   }
 
-  if (responses.values.length === 0) return null;
-  if (responses.values.every(Boolean)) return "success";
-  if (responses.values.every((v) => !v)) return "needs-improvement";
+  if (responses.type === "template_letter_grid") {
+    return computeLetterMarksStatus([responses.name, responses.sound]);
+  }
 
-  const ratio = responses.values.filter(Boolean).length / responses.values.length;
-  if (ratio >= 0.8) return "success";
-  if (ratio >= 0.5) return "adequate";
-  return "needs-improvement";
+  if (responses.type === "template_checkboxes") {
+    if (responses.values.length === 0) return null;
+    const answered = responses.values.filter((value) => value !== null);
+    if (answered.length === 0) return null;
+    if (answered.every((value) => value === true)) return "success";
+    if (answered.every((value) => value === false)) return "needs-improvement";
+
+    const ratio = responses.values.filter((value) => value === true).length / responses.values.length;
+    if (ratio >= 0.8) return "success";
+    if (ratio >= 0.5) return "adequate";
+    return "needs-improvement";
+  }
+
+  if (responses.type === "template_mcq") {
+    if (responses.selections.every((selection) => selection === null)) return null;
+    return "adequate";
+  }
+
+  if (responses.type === "checkboxes") {
+    if (responses.values.length === 0) return null;
+    if (responses.values.every(Boolean)) return "success";
+    if (responses.values.every((v) => !v)) return "needs-improvement";
+
+    const ratio = responses.values.filter(Boolean).length / responses.values.length;
+    if (ratio >= 0.8) return "success";
+    if (ratio >= 0.5) return "adequate";
+    return "needs-improvement";
+  }
+
+  return null;
 }
 
 function computeLetterMarksStatus(

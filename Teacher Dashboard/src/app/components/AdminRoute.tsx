@@ -1,6 +1,7 @@
 import { Navigate, useLocation } from "react-router";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../i18n";
+import { AdminSchoolYearProvider } from "../context/AdminSchoolYearContext";
 
 export function AdminRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -19,5 +20,5 @@ export function AdminRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/admin/login" replace state={{ from: location.pathname }} />;
   }
 
-  return <>{children}</>;
+  return <AdminSchoolYearProvider>{children}</AdminSchoolYearProvider>;
 }

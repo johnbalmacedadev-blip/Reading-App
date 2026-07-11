@@ -99,6 +99,7 @@ function StudentModal({
   onSave: () => void;
   onDelete?: () => void;
 }) {
+  const { t, tp } = useLanguage();
   const readOnly = mode === "view";
   const expected = gradeExpected[form.grade] || 0;
   const progress = expected > 0 ? Math.min(100, Math.round((form.atelier / expected) * 100)) : 0;
@@ -145,7 +146,7 @@ function StudentModal({
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: "#1e293b" }}>SML Progress</span>
                 <span style={{ fontSize: 13, fontWeight: 700, color: "#004aad" }}>
-                  Atelier {form.atelier} / {expected} expected
+                  {tp("admin.workshopProgress", { current: form.atelier, expected })}
                 </span>
               </div>
               <div style={{ height: 8, background: "#e2e8f0", borderRadius: 4, overflow: "hidden" }}>
@@ -160,7 +161,7 @@ function StudentModal({
                 />
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5 }}>
-                <span style={{ fontSize: 11, color: "#94a3b8" }}>Atelier 1</span>
+                <span style={{ fontSize: 11, color: "#94a3b8" }}>{tp("evaluation.workshopN", { n: 1 })}</span>
                 <span style={{ fontSize: 11, color: "#94a3b8" }}>{progress}% of target</span>
               </div>
             </div>
@@ -212,7 +213,7 @@ function StudentModal({
               )
             )}
             {field(
-              "Current Atelier",
+              t("admin.currentWorkshop"),
               <input
                 readOnly={readOnly}
                 type="number"
@@ -321,7 +322,7 @@ function StudentModal({
 }
 
 export function AdminStudentsPage() {
-  const { auto: a } = useLanguage();
+  const { auto: a, t, tp } = useLanguage();
   const [students, setStudents] = useState<AdminStudentRecord[]>([]);
   const [schools, setSchools] = useState<AdminSchool[]>([]);
   const [loading, setLoading] = useState(true);
@@ -545,7 +546,7 @@ export function AdminStudentsPage() {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: "#f8fafc" }}>
-                  {["Student", "Grade", "School", "Teacher", "Current Atelier", "Target", "Status", "Actions"].map((h) => (
+                  {["Student", "Grade", "School", "Teacher", t("admin.currentWorkshop"), "Target", "Status", "Actions"].map((h) => (
                     <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, color: "#64748b", letterSpacing: 0.3, whiteSpace: "nowrap" }}>
                       {h}
                     </th>

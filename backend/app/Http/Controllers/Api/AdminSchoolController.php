@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\School;
 use App\Models\SchoolBoard;
 use App\Models\User;
+use App\Services\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -50,6 +51,7 @@ class AdminSchoolController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $this->validateSchool($request, true);
+        $data['school_board'] = $this->normalizeSchoolBoard($data['school_board'] ?? null);
 
         $school = DB::transaction(function () use ($data) {
             $school = School::create([
@@ -74,12 +76,15 @@ class AdminSchoolController extends Controller
             return $school;
         });
 
+        AuditLogger::log('Create', 'School', "{$school->name} created", 'info', $request, subject: $school);
+
         return response()->json(['school' => $this->format($school)], 201);
     }
 
     public function update(Request $request, School $school): JsonResponse
     {
         $data = $this->validateSchool($request, false, $school);
+        $data['school_board'] = $this->normalizeSchoolBoard($data['school_board'] ?? null);
 
         DB::transaction(function () use ($school, $data) {
             $schoolUpdates = [
@@ -112,10 +117,12 @@ class AdminSchoolController extends Controller
             }
         });
 
+        AuditLogger::log('Edit', 'School', "{$school->name} updated", 'info', $request, subject: $school);
+
         return response()->json(['school' => $this->format($school->fresh())]);
     }
 
-    public function archive(School $school): JsonResponse
+    public function archive(Request $request, School $school): JsonResponse
     {
         $nextStatus = $school->status === 'archived' ? 'active' : 'archived';
 
@@ -131,6 +138,12 @@ class AdminSchoolController extends Controller
             }
         });
 
+        if ($nextStatus === 'archived') {
+            AuditLogger::log('Archive', 'School', "{$school->name} archived", 'warning', $request, subject: $school);
+        } else {
+            AuditLogger::log('Activate', 'School', "{$school->name} reactivated", 'info', $request, subject: $school);
+        }
+
         return response()->json(['school' => $this->format($school->fresh())]);
     }
 
@@ -142,10 +155,13 @@ class AdminSchoolController extends Controller
         ]);
 
         $defaultBoard = $this->activeBoardCodes()[0] ?? 'CSDM';
+        $board = array_key_exists('school_board', $data)
+            ? $this->normalizeSchoolBoard($data['school_board'])
+            : $defaultBoard;
 
         return response()->json($this->suggestCredentialsFor(
             $data['name'],
-            $data['school_board'] ?? $defaultBoard
+            $board
         ));
     }
 
@@ -156,7 +172,7 @@ class AdminSchoolController extends Controller
         $rules = [
             'name' => ['required', 'string', 'max:255'],
             'city' => ['required', 'string', 'max:255'],
-            'school_board' => ['required', 'string', Rule::in($this->allowedBoardCodes($school))],
+            'school_board' => ['nullable', 'string', Rule::in($this->allowedBoardCodes($school))],
             'grades' => ['nullable', 'string', 'max:50'],
             'portal_username' => [
                 'required',
@@ -168,6 +184,11 @@ class AdminSchoolController extends Controller
         ];
 
         return $request->validate($rules);
+    }
+
+    private function normalizeSchoolBoard(?string $board): string
+    {
+        return $board === null ? '' : trim($board);
     }
 
     private function portalUser(School $school): ?User
@@ -204,7 +225,7 @@ class AdminSchoolController extends Controller
         return [
             'id' => $school->id,
             'name' => $school->name,
-            'board' => $school->school_board,
+            'board' => $school->school_board ?: '',
             'city' => $school->city,
             'grades' => $school->grades ?? '—',
             'teachers' => $teacherCount,
@@ -265,10 +286,10 @@ class AdminSchoolController extends Controller
             ->all();
     }
 
-    /** @return list<string> */
+      /** @return list<string> */
     private function allowedBoardCodes(?School $school = null): array
     {
-        $codes = $this->activeBoardCodes();
+        $codes = array_merge([''], $this->activeBoardCodes());
 
         if ($school?->school_board && ! in_array($school->school_board, $codes, true)) {
             $codes[] = $school->school_board;
@@ -280,7 +301,9 @@ class AdminSchoolController extends Controller
     private function suggestCredentialsFor(string $name, string $board): array
     {
         $slug = Str::slug($name, '.');
-        $baseUsername = "{$slug}.{$board}@portal.local";
+        $baseUsername = $board !== ''
+            ? "{$slug}.{$board}@portal.local"
+            : "{$slug}@portal.local";
         $username = $baseUsername;
         $counter = 1;
 

@@ -14,8 +14,18 @@ class Assessment extends Model
         'atelier',
         'grade',
         'status',
+        'archived_at',
+        'template_id',
+        'template_draft',
         'school_board',
         'source_assessment_id',
+        'school_id',
+        'teacher_id',
+    ];
+
+    protected $casts = [
+        'template_draft' => 'array',
+        'archived_at' => 'datetime',
     ];
 
     public function sourceAssessment(): BelongsTo
@@ -30,7 +40,19 @@ class Assessment extends Model
 
     public function isPlatformOriginal(): bool
     {
-        return $this->school_board === null;
+        return $this->school_board === null
+            && $this->school_id === null
+            && $this->teacher_id === null;
+    }
+
+    public function isSchoolCopy(): bool
+    {
+        return $this->school_id !== null;
+    }
+
+    public function isTeacherCopy(): bool
+    {
+        return $this->teacher_id !== null;
     }
 
     public function questions(): HasMany

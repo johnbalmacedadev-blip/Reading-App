@@ -1,37 +1,38 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import {
-  BookOpen,
-  BarChart3,
-  User,
-  LogOut,
   Users,
   Plus,
   X,
-  Book,
   Pencil,
+  BookOpen,
 } from "lucide-react";
 import { NotificationDropdown } from "../components/NotificationDropdown";
 import { UserAvatar } from "../components/UserAvatar";
-import { LangToggle } from "../components/LangToggle";
+import { TeacherLayout } from "../components/TeacherLayout";
 import { useLanguage } from "../i18n";
 import { useAuth } from "../context/AuthContext";
-import { teacherApi, type ClassSummary } from "../api/client";
+import { teacherApi, schoolYearsApi, type ClassSummary } from "../api/client";
 
 export function TeacherDashboard() {
   const navigate = useNavigate();
   const { t, tp } = useLanguage();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const [classes, setClasses] = useState<ClassSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [showClassModal, setShowClassModal] = useState(false);
   const [editingClass, setEditingClass] = useState<ClassSummary | null>(null);
   const [className, setClassName] = useState("");
   const [classGrade, setClassGrade] = useState("Maternelle");
-  const [classSchoolYear, setClassSchoolYear] = useState("2025-2026");
+  const [classSchoolYear, setClassSchoolYear] = useState("");
   const [saving, setSaving] = useState(false);
+  const [defaultSchoolYear, setDefaultSchoolYear] = useState("");
 
-  const defaultSchoolYear = "2025-2026";
+  useEffect(() => {
+    schoolYearsApi.list()
+      .then(({ default_label }) => setDefaultSchoolYear(default_label))
+      .catch(() => setDefaultSchoolYear("2025-2026"));
+  }, []);
 
   useEffect(() => {
     teacherApi
@@ -40,18 +41,11 @@ export function TeacherDashboard() {
       .finally(() => setLoading(false));
   }, []);
 
-  const menuItems = [
-    { icon: Users, label: t("nav.myClasses"), active: true, path: "/dashboard" },
-    { icon: Book, label: t("nav.library"), active: false, path: "/library" },
-    { icon: BarChart3, label: t("nav.reports"), active: false, path: "/reports" },
-    { icon: User, label: t("nav.profile"), active: false, path: "/profile" },
-  ];
-
   const openAddClassModal = () => {
     setEditingClass(null);
     setClassName("");
     setClassGrade("Maternelle");
-    setClassSchoolYear(defaultSchoolYear);
+    setClassSchoolYear(defaultSchoolYear || "2025-2026");
     setShowClassModal(true);
   };
 
@@ -68,18 +62,19 @@ export function TeacherDashboard() {
     setEditingClass(null);
     setClassName("");
     setClassGrade("Maternelle");
-    setClassSchoolYear(defaultSchoolYear);
+    setClassSchoolYear(defaultSchoolYear || "2025-2026");
   };
 
   const handleSaveClass = async () => {
     if (!className.trim()) return;
 
+    const yearDefault = defaultSchoolYear || "2025-2026";
     setSaving(true);
     try {
       const payload = {
         name: className.trim(),
         grade: classGrade,
-        school_year: classSchoolYear.trim() || defaultSchoolYear,
+        school_year: classSchoolYear.trim() || yearDefault,
       };
 
       if (editingClass) {
@@ -98,11 +93,6 @@ export function TeacherDashboard() {
     }
   };
 
-  const handleLogout = async () => {
-    await logout();
-    navigate("/signin");
-  };
-
   const teacherFirstName = user?.first_name || user?.name?.split(" ")[0] || t("dashboard.defaultTeacher");
 
   const gradeOptions = [
@@ -115,54 +105,7 @@ export function TeacherDashboard() {
     gradeOptions.find((option) => option.value === grade)?.label ?? grade;
 
   return (
-    <div className="h-screen flex overflow-hidden" style={{ background: "#dff3ff" }}>
-      {/* Sidebar */}
-      <div
-        className="w-64 p-6 flex flex-col overflow-y-auto"
-        style={{ background: "#ffffff", borderRight: "1px solid #dff3ff" }}
-      >
-        <div className="flex items-center gap-3 mb-12">
-          <BookOpen className="w-8 h-8" style={{ color: "#004aad" }} />
-          <div>
-            <h1 className="text-xl" style={{ color: "#004aad" }}>
-              {t("common.appName")}
-            </h1>
-          </div>
-        </div>
-
-        <nav className="flex-1 space-y-2">
-          {menuItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.path}
-                onClick={() => navigate(item.path)}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
-                style={{
-                  background: item.active ? "#dff3ff" : "transparent",
-                  color: item.active ? "#004aad" : "#000000",
-                }}
-              >
-                <Icon className="w-5 h-5" />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-
-        <LangToggle />
-        <button
-          onClick={handleLogout}
-          className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
-          style={{ color: "#ff5757" }}
-        >
-          <LogOut className="w-5 h-5" />
-          <span>{t("common.logout")}</span>
-        </button>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 p-12 overflow-y-auto">
+    <TeacherLayout activeNav="classes" contentClassName="flex-1 p-12 overflow-y-auto">
         {/* Header */}
         <div className="flex items-start justify-between mb-12">
           <div>
@@ -272,7 +215,6 @@ export function TeacherDashboard() {
             </div>
           )}
         </div>
-      </div>
 
       {showClassModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -382,6 +324,6 @@ export function TeacherDashboard() {
           </div>
         </div>
       )}
-    </div>
+    </TeacherLayout>
   );
 }

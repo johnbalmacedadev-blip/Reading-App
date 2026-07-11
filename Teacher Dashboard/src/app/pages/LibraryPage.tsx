@@ -1,15 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import {
-  BookOpen,
   FileText,
-  BarChart3,
-  User,
-  LogOut,
-  Users,
   Download,
   FileCheck,
-  Book,
+  BookOpen,
   Volume2,
   Rocket,
   PenLine,
@@ -25,8 +20,9 @@ import {
 } from "lucide-react";
 import { NotificationDropdown } from "../components/NotificationDropdown";
 import { UserAvatar } from "../components/UserAvatar";
-import { LangToggle } from "../components/LangToggle";
+import { TeacherLayout } from "../components/TeacherLayout";
 import { useLanguage } from "../i18n";
+import { formatAtelierLabel } from "../i18n/atelierHelpers";
 import { teacherLibraryApi, teacherUnitsApi, type DownloadableCategoryItem, type PedagogicalUnitItem } from "../api/client";
 
 interface Resource {
@@ -34,12 +30,6 @@ interface Resource {
   title: string;
   description: string;
   icon: React.ReactNode;
-}
-
-function formatAtelierLabel(numbers: number[]): string {
-  if (numbers.length === 0) return "";
-  if (numbers.length === 1) return `Atelier ${numbers[0]}`;
-  return `Ateliers ${numbers.join(", ")}`;
 }
 
 export function LibraryPage() {
@@ -73,62 +63,8 @@ export function LibraryPage() {
     icon: <FileCheck className="w-4 h-4" style={{ color: unit.color }} />,
   }));
 
-  const menuItems = [
-    { icon: Users, label: t("nav.myClasses"), active: false, path: "/dashboard" },
-    { icon: Book, label: t("nav.library"), active: true, path: "/library" },
-    { icon: BarChart3, label: t("nav.reports"), active: false, path: "/reports" },
-    { icon: User, label: t("nav.profile"), active: false, path: "/profile" },
-  ];
-
   return (
-    <div className="h-screen flex overflow-hidden" style={{ background: "#dff3ff" }}>
-      {/* Sidebar */}
-      <div
-        className="w-64 p-6 flex flex-col overflow-y-auto"
-        style={{ background: "#ffffff", borderRight: "1px solid #dff3ff" }}
-      >
-        <div className="flex items-center gap-3 mb-12">
-          <BookOpen className="w-8 h-8" style={{ color: "#004aad" }} />
-          <div>
-            <h1 className="text-xl" style={{ color: "#004aad" }}>
-              {t("common.appName")}
-            </h1>
-          </div>
-        </div>
-
-        <nav className="flex-1 space-y-2">
-          {menuItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.path}
-                onClick={() => navigate(item.path)}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all cursor-pointer"
-                style={{
-                  background: item.active ? "#dff3ff" : "transparent",
-                  color: item.active ? "#004aad" : "#000000",
-                }}
-              >
-                <Icon className="w-5 h-5" />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-
-        <LangToggle />
-        <button
-          onClick={() => navigate("/")}
-          className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all cursor-pointer"
-          style={{ color: "#ff5757" }}
-        >
-          <LogOut className="w-5 h-5" />
-          <span>{t("common.logout")}</span>
-        </button>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 p-12 overflow-y-auto">
+    <TeacherLayout activeNav="library" contentClassName="flex-1 p-12 overflow-y-auto">
         {/* Header */}
         <div className="flex items-start justify-between mb-12">
           <div>
@@ -341,7 +277,7 @@ export function LibraryPage() {
               {units.map((unit) => (
                 <div key={unit.id} className="text-center" style={{ flex: Math.max(unit.atelier_count, 1) }}>
                   <p className="text-xs" style={{ color: "#555" }}>
-                    {formatAtelierLabel(unit.atelier_numbers)}
+                    {formatAtelierLabel(unit.atelier_numbers, (n) => tp("evaluation.workshopN", { n }), t("common.ateliers"))}
                   </p>
                 </div>
               ))}
@@ -574,7 +510,6 @@ export function LibraryPage() {
             })}
           </div>
         </div>
-      </div>
-    </div>
+    </TeacherLayout>
   );
 }

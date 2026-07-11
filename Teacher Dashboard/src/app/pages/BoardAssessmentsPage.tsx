@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router";
 import {
-  BookOpen, LogOut, ClipboardList,
+  ClipboardList,
   Search, ChevronDown, Eye, CheckCircle2, Clock, Edit2, Loader2, X, CheckSquare, Archive, RotateCcw,
 } from "lucide-react";
-import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
-import { boardNavItems } from "../i18n/navHelpers";
-import { usePortalLogout } from "../hooks/usePortalLogout";
+import { BoardLayout } from "../components/BoardLayout";
 import { AssessmentEditModal, type AssessmentEditData } from "../components/AssessmentEditModal";
 import { boardAssessmentsApi, type BoardAssessmentDetail, type BoardAssessmentPayload, type BoardAssessmentRecord } from "../api/client";
+import { getWorkshopTemplate, type TemplateDraft, type WorkshopTemplateId } from "../evaluation/workshopTemplates";
+import { WorkshopTemplatePreview } from "../components/WorkshopTemplatePreview";
 
 const GRADE_FILTER_OPTIONS = [
   { value: "all", labelKey: "assessments.allGrades" as const },
@@ -17,7 +16,14 @@ const GRADE_FILTER_OPTIONS = [
   { value: "garden", labelKey: "grade.garden" as const },
   { value: "grade1", labelKey: "grade.grade1" as const },
   { value: "grade2", labelKey: "grade.grade2" as const },
+  { value: "grade3", labelKey: "grade.grade3" as const },
+  { value: "grade3plus", label: "Grade 3+" },
 ];
+
+function templateLabel(templateId: string | null | undefined): string | null {
+  if (!templateId) return null;
+  return `Template · ${templateId.replace("format_", "Format ")}`;
+}
 
 function AssessmentCard({
   item,
@@ -71,7 +77,12 @@ function AssessmentCard({
 
       <div className="flex items-center justify-between text-xs mb-4" style={{ color: "#94a3b8" }}>
         <span>
-          {item.question_count} {item.question_count === 1 ? a("question") : a("questions")}
+          {templateLabel(item.template_id) ?? (
+            <>
+              {item.question_count} {item.question_count === 1 ? a("question") : a("questions")}
+            </>
+          )}
+          {item.created ? ` · ${item.created}` : ""}
         </span>
         <span style={{ background: "#f1f5f9", padding: "2px 8px", borderRadius: 8, color: "#64748b" }}>
           {assignedLabel(item.assigned_to)}
@@ -135,7 +146,7 @@ function AssessmentViewModal({
       onClick={(e) => e.target === e.currentTarget && !loading && onClose()}
     >
       <div style={{
-        background: "white", borderRadius: 16, width: 680, maxHeight: "90vh",
+        background: "white", borderRadius: 16, width: assessment?.template_id ? 920 : 680, maxHeight: "90vh",
         boxShadow: "0 20px 60px rgba(0,0,0,0.2)", display: "flex", flexDirection: "column", overflow: "hidden",
       }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "22px 24px 16px", borderBottom: "1px solid #f1f5f9", flexShrink: 0 }}>
@@ -170,7 +181,7 @@ function AssessmentViewModal({
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
                 {[
                   { label: a("Niveau"), value: a(assessment.grade) },
-                  { label: tp("evaluation.workshopN", { n: assessment.atelier }), value: `Atelier ${assessment.atelier}` },
+                  { label: t("common.atelier"), value: tp("evaluation.workshopN", { n: assessment.atelier }) },
                   { label: a("Unité"), value: assessment.unit ? a(assessment.unit) : "—" },
                   { label: a("Assignation"), value: assignedLabel(assessment.assigned_to) },
                 ].map((row) => (
@@ -182,32 +193,46 @@ function AssessmentViewModal({
               </div>
 
               <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: 18 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#1e293b", marginBottom: 12 }}>
-                  {a("Questions")} ({assessment.questions.length})
-                </div>
-                {assessment.questions.length === 0 ? (
-                  <p style={{ fontSize: 13, color: "#94a3b8" }}>{a("Aucune question pour cette évaluation.")}</p>
-                ) : (
-                  assessment.questions.map((q, qi) => (
-                    <div key={q.id} style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 14px", marginBottom: 8, border: "1px solid #f1f5f9" }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 8 }}>Q{qi + 1}</div>
-                      <p style={{ fontSize: 13, color: "#1e293b", margin: "0 0 8px", fontWeight: 500 }}>{q.text}</p>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
-                        {q.options.map((opt, oi) => (
-                          <div key={oi} style={{
-                            fontSize: 12, padding: "5px 10px", borderRadius: 6,
-                            background: oi === q.correct ? "#ecfdf5" : "white",
-                            border: `1px solid ${oi === q.correct ? "#a7f3d0" : "#e2e8f0"}`,
-                            color: oi === q.correct ? "#059669" : "#374151",
-                            display: "flex", alignItems: "center", gap: 5,
-                          }}>
-                            {oi === q.correct && <CheckSquare size={11} />}
-                            <span>{String.fromCharCode(65 + oi)}. {opt}</span>
-                          </div>
-                        ))}
-                      </div>
+                {assessment.template_id ? (
+                  <>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#1e293b", marginBottom: 12 }}>
+                      {templateLabel(assessment.template_id)}
                     </div>
-                  ))
+                    <WorkshopTemplatePreview
+                      template={getWorkshopTemplate(assessment.template_id as WorkshopTemplateId)}
+                      draft={assessment.template_draft as TemplateDraft | undefined}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#1e293b", marginBottom: 12 }}>
+                      {a("Questions")} ({assessment.questions.length})
+                    </div>
+                    {assessment.questions.length === 0 ? (
+                      <p style={{ fontSize: 13, color: "#94a3b8" }}>{a("Aucune question pour cette évaluation.")}</p>
+                    ) : (
+                      assessment.questions.map((q, qi) => (
+                        <div key={q.id} style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 14px", marginBottom: 8, border: "1px solid #f1f5f9" }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 8 }}>Q{qi + 1}</div>
+                          <p style={{ fontSize: 13, color: "#1e293b", margin: "0 0 8px", fontWeight: 500 }}>{q.text}</p>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                            {q.options.map((opt, oi) => (
+                              <div key={oi} style={{
+                                fontSize: 12, padding: "5px 10px", borderRadius: 6,
+                                background: oi === q.correct ? "#ecfdf5" : "white",
+                                border: `1px solid ${oi === q.correct ? "#a7f3d0" : "#e2e8f0"}`,
+                                color: oi === q.correct ? "#059669" : "#374151",
+                                display: "flex", alignItems: "center", gap: 5,
+                              }}>
+                                {oi === q.correct && <CheckSquare size={11} />}
+                                <span>{String.fromCharCode(65 + oi)}. {opt}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </>
                 )}
               </div>
             </>
@@ -229,9 +254,7 @@ function AssessmentViewModal({
 }
 
 export function BoardAssessmentsPage() {
-  const navigate = useNavigate();
   const { t, tp, auto: a } = useLanguage();
-  const handleLogout = usePortalLogout();
   const [assessments, setAssessments] = useState<BoardAssessmentRecord[]>([]);
   const [archivedAssessments, setArchivedAssessments] = useState<BoardAssessmentRecord[]>([]);
   const [summary, setSummary] = useState({ total: 0, published: 0, drafts: 0, archived: 0 });
@@ -252,8 +275,6 @@ export function BoardAssessmentsPage() {
   const [editError, setEditError] = useState("");
   const [editingOwnership, setEditingOwnership] = useState<BoardAssessmentRecord["ownership"]>("platform");
   const [savingStatus, setSavingStatus] = useState<"draft" | "publish" | null>(null);
-
-  const menuItems = boardNavItems(t, "assessments");
 
   const loadAssessments = useCallback(async () => {
     setLoading(true);
@@ -323,6 +344,8 @@ export function BoardAssessmentsPage() {
     atelier: assessment.atelier,
     grade: assessment.grade,
     status: assessment.status,
+    template_id: assessment.template_id ?? null,
+    template_draft: (assessment.template_draft as AssessmentEditData["template_draft"]) ?? null,
     questions: assessment.questions.map((q) => ({
       id: q.id,
       text: q.text,
@@ -332,11 +355,13 @@ export function BoardAssessmentsPage() {
   });
 
   const toPayload = (data: AssessmentEditData, status: "Published" | "Draft"): BoardAssessmentPayload => ({
-    title: data.title.trim() || `Atelier ${data.atelier} Assessment`,
+    title: data.title.trim() || tp("assessments.defaultTitle", { n: data.atelier }),
     unit: data.unit ?? "",
     atelier: data.atelier,
     grade: data.grade,
     status,
+    template_id: data.template_id ?? null,
+    template_draft: data.template_draft ?? null,
     questions: data.questions.map((q) => ({
       text: q.text,
       options: q.options,
@@ -381,6 +406,8 @@ export function BoardAssessmentsPage() {
       setEditingOwnership("platform");
       if (result.created_copy) {
         setSaveNotice(t("assessments.copyCreated"));
+      } else {
+        setSaveNotice("");
       }
       await loadAssessments();
     } catch (err) {
@@ -404,37 +431,7 @@ export function BoardAssessmentsPage() {
   };
 
   return (
-    <div className="h-screen flex overflow-hidden" style={{ background: "#fff0f0" }}>
-      <div className="w-64 p-6 flex flex-col overflow-y-auto" style={{ background: "#ffffff", borderRight: "1px solid #ffe0e0" }}>
-        <div className="flex items-center gap-3 mb-4">
-          <BookOpen className="w-8 h-8" style={{ color: "#004aad" }} />
-          <div>
-            <h1 className="text-base font-bold" style={{ color: "#004aad" }}>{t("common.appName")}</h1>
-            <span className="text-xs px-2 py-0.5 rounded-full inline-block mt-0.5" style={{ background: "#fff0f0", color: "#004aad", fontWeight: 600 }}>
-              {t("board.portal")}
-            </span>
-          </div>
-        </div>
-
-        <nav className="flex-1 space-y-1 mt-6">
-          {menuItems.map(({ icon: Icon, label, active, path }) => (
-            <button key={label} onClick={() => navigate(path)}
-              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-sm"
-              style={{ background: active ? "#fff0f0" : "transparent", color: active ? "#004aad" : "#444", fontWeight: active ? 600 : 400 }}>
-              <Icon className="w-4 h-4" />
-              {label}
-            </button>
-          ))}
-        </nav>
-
-        <LangToggle />
-        <button onClick={handleLogout} className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm mt-1" style={{ color: "#ff5757" }}>
-          <LogOut className="w-4 h-4" />
-          {t("common.logout")}
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-10">
+    <BoardLayout activeNav="assessments" pageBackground="#fff0f0" contentClassName="flex-1 overflow-y-auto p-10">
         <div className="mb-8">
           <h1 className="text-3xl font-bold mb-1" style={{ color: "#004aad" }}>{t("assessments.title")}</h1>
           <p className="text-sm" style={{ color: "#6b7280" }}>
@@ -492,7 +489,9 @@ export function BoardAssessmentsPage() {
             <select value={gradeFilter} onChange={(e) => setGradeFilter(e.target.value)}
               style={{ padding: "9px 32px 9px 12px", borderRadius: 8, border: "1px solid #ffe0e0", fontSize: 13, background: "white", cursor: "pointer", outline: "none", appearance: "none" }}>
               {GRADE_FILTER_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
+                <option key={o.value} value={o.value}>
+                  {"labelKey" in o ? t(o.labelKey) : o.label}
+                </option>
               ))}
             </select>
             <ChevronDown size={13} color="#94a3b8" style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
@@ -562,7 +561,6 @@ export function BoardAssessmentsPage() {
             )}
           </>
         )}
-      </div>
 
       {viewOpen && (
         <AssessmentViewModal
@@ -589,6 +587,6 @@ export function BoardAssessmentsPage() {
           notice={editingOwnership === "platform" ? t("assessments.editCreatesCopy") : ""}
         />
       )}
-    </div>
+    </BoardLayout>
   );
 }

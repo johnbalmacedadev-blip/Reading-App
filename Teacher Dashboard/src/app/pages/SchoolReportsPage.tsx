@@ -22,7 +22,7 @@ function getBarColor(pct: number) {
 
 export function SchoolReportsPage() {
   const navigate = useNavigate();
-  const { t } = useLanguage();
+  const { t, auto } = useLanguage();
   const { logout } = useAuth();
   const [reports, setReports] = useState<SchoolReportsData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -75,6 +75,7 @@ export function SchoolReportsPage() {
   const atRiskStudents = reports?.at_risk_students ?? [];
   const skillsData = reports?.skills ?? [];
   const schoolName = reports?.school.name ?? "";
+  const schoolBoardName = reports?.school.school_board?.name ?? null;
 
   const gradeGroups = useMemo(() => {
     const grades = [...new Set(classes.map((c) => c.grade))];
@@ -137,10 +138,13 @@ export function SchoolReportsPage() {
       <main style={{ flex: 1, overflowY: "auto", padding: "32px 36px" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 28 }}>
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: schoolBoardName ? 2 : 4 }}>
               <Building2 size={15} style={{ color: "#38b6ff" }} />
               <span style={{ fontSize: 13, color: "#38b6ff", fontWeight: 500 }}>{schoolName || "—"}</span>
             </div>
+            {schoolBoardName && (
+              <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 6px 21px" }}>{auto(schoolBoardName)}</p>
+            )}
             <h1 style={{ fontSize: 28, fontWeight: 800, color: "#004aad", margin: 0 }}>Reports and Analytics</h1>
             <p style={{ fontSize: 14, color: "#64748b", marginTop: 3 }}>Detailed view of school performance</p>
           </div>

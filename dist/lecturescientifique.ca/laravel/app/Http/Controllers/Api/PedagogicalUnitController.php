@@ -25,7 +25,7 @@ class PedagogicalUnitController extends Controller
             ->get();
 
         return response()->json([
-            'units' => $units->map(fn (PedagogicalUnit $unit) => $this->formatUnit($unit)),
+            'units' => $units->map(fn (PedagogicalUnit $unit) => $this->formatUnit($unit, true)),
         ]);
     }
 

@@ -3,15 +3,33 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Assessment;
 use App\Models\SchoolClass;
+use App\Models\SchoolYear;
 use App\Models\Student;
 use App\Models\StudentEvaluation;
 use App\Models\User;
+use App\Services\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class TeacherClassController extends Controller
 {
+    /** @var array<string, string> */
+    private const GRADE_ALIASES = [
+        'Maternelle' => 'Kindergarten',
+        'Jardin' => 'Kindergarten',
+        '1re année' => 'Grade 1',
+        '2e année' => 'Grade 2',
+        '3e année' => 'Grade 3',
+        '4e année' => 'Grade 3+',
+        '5e année' => 'Grade 3+',
+        '6e année' => 'Grade 3+',
+        'Grade 4' => 'Grade 3+',
+        'Grade 5' => 'Grade 3+',
+        'Grade 6' => 'Grade 3+',
+    ];
+
     public function index(Request $request): JsonResponse
     {
         /** @var User $teacher */
@@ -42,8 +60,10 @@ class TeacherClassController extends Controller
             'school_id' => $teacher->school_id,
             'name' => $data['name'],
             'grade' => $data['grade'],
-            'school_year' => $data['school_year'] ?? '2025-2026',
+            'school_year' => $data['school_year'] ?? SchoolYear::defaultLabel(),
         ]);
+
+        AuditLogger::log('Create', 'Access', "Class {$class->name} created", 'info', $request, subject: $class);
 
         return response()->json([
             'class' => $this->formatClassSummary($class->loadCount('students')),
@@ -66,6 +86,8 @@ class TeacherClassController extends Controller
             'school_year' => $data['school_year'] ?? $schoolClass->school_year,
         ]);
 
+        AuditLogger::log('Edit', 'Access', "Class {$schoolClass->name} updated", 'info', $request, subject: $schoolClass);
+
         return response()->json([
             'class' => $this->formatClassSummary($schoolClass->fresh()->loadCount('students')),
         ]);
@@ -79,6 +101,8 @@ class TeacherClassController extends Controller
             $query->where('class_id', $schoolClass->id);
         }]);
 
+        $publishedWorkshops = $this->publishedWorkshopsForGrade($schoolClass->grade);
+
         return response()->json([
             'class' => [
                 'id' => $schoolClass->id,
@@ -86,6 +110,7 @@ class TeacherClassController extends Controller
                 'grade' => $schoolClass->grade,
                 'school_year' => $schoolClass->school_year,
                 'student_count' => $schoolClass->students->count(),
+                'published_workshops' => $publishedWorkshops,
                 'students' => $schoolClass->students->map(fn (Student $student) => [
                     'id' => $student->id,
                     'name' => $student->fullName(),
@@ -176,6 +201,8 @@ class TeacherClassController extends Controller
             ]);
         }
 
+        AuditLogger::log('Create', 'Student', "{$student->fullName()} added to class {$schoolClass->name}", 'info', $request, subject: $student);
+
         return response()->json([
             'student' => [
                 'id' => $student->id,
@@ -213,9 +240,52 @@ class TeacherClassController extends Controller
 
         $evaluations = [];
         for ($i = 1; $i <= 15; $i++) {
-            $evaluations[] = $byAtelier->get($i)?->status;
+            $evaluations[] = $this->resolveDisplayStatus($byAtelier->get($i));
         }
 
         return $evaluations;
+    }
+
+    private function resolveDisplayStatus(?StudentEvaluation $evaluation): ?string
+    {
+        if (! $evaluation) {
+            return null;
+        }
+
+        if ($evaluation->not_required) {
+            return 'not-required';
+        }
+
+        $responses = $evaluation->responses;
+        if ($responses === null || $responses === []) {
+            return null;
+        }
+
+        return $evaluation->status;
+    }
+
+    /** @return array<int, bool> */
+    private function publishedWorkshopsForGrade(string $grade): array
+    {
+        $normalizedGrade = self::GRADE_ALIASES[$grade] ?? $grade;
+
+        $publishedAteliers = Assessment::query()
+            ->whereNull('school_board')
+            ->whereNull('archived_at')
+            ->where('grade', $normalizedGrade)
+            ->where('status', 'published')
+            ->whereNotNull('template_id')
+            ->pluck('atelier')
+            ->unique()
+            ->all();
+
+        $publishedLookup = array_fill(1, 15, false);
+        foreach ($publishedAteliers as $atelier) {
+            if ($atelier >= 1 && $atelier <= 15) {
+                $publishedLookup[$atelier] = true;
+            }
+        }
+
+        return array_values($publishedLookup);
     }
 }

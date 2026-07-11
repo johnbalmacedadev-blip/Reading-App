@@ -13,6 +13,8 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
+        $this->call(SchoolYearSeeder::class);
+
         $school = School::firstOrCreate(
             ['name' => 'École Saint-Joseph'],
             ['city' => 'Montréal']

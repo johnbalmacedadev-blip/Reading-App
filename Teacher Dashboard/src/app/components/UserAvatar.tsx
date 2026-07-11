@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router";
 import { useAuth } from "../context/AuthContext";
-import { teacherProfileApi } from "../api/client";
+import { avatarUrl } from "../api/client";
 
 type UserAvatarProps = {
   size?: "sm" | "md";
@@ -17,9 +17,11 @@ export function UserAvatar({ size = "sm", className = "", onClick }: UserAvatarP
   const navigate = useNavigate();
   const { user, avatarVersion } = useAuth();
 
-  const handleClick = onClick ?? (() => navigate("/profile"));
+  const profilePath = user?.role === "board_admin" ? "/board/profile" : "/profile";
+  const handleClick = onClick ?? (() => navigate(profilePath));
   const initials = user?.initials ?? "??";
   const hasAvatar = user?.has_avatar ?? false;
+  const imageSrc = avatarUrl(user?.avatar_url, avatarVersion);
 
   return (
     <button
@@ -29,9 +31,9 @@ export function UserAvatar({ size = "sm", className = "", onClick }: UserAvatarP
       style={!hasAvatar ? { background: "#38b6ff", color: "#ffffff" } : undefined}
       title="View profile"
     >
-      {hasAvatar ? (
+      {hasAvatar && imageSrc ? (
         <img
-          src={teacherProfileApi.avatarUrl(avatarVersion)}
+          src={imageSrc}
           alt=""
           className="w-full h-full object-cover"
         />

@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\School;
+use App\Models\SchoolBoard;
 use App\Models\SchoolClass;
+use App\Models\SchoolYear;
 use App\Models\Student;
 use App\Models\StudentEvaluation;
 use App\Models\User;
@@ -160,8 +162,9 @@ class SchoolReportsController extends Controller
             'school' => [
                 'id' => $school->id,
                 'name' => $school->name,
+                'school_board' => $this->formatSchoolBoard($school->school_board),
             ],
-            'school_year' => $schoolYear !== '' ? $schoolYear : ($availableYears[array_key_last($availableYears)] ?? null),
+            'school_year' => $schoolYear !== '' ? $schoolYear : SchoolYear::defaultLabel(),
             'available_years' => $availableYears,
             'summary' => [
                 'total_students' => $distinctStudentIds->unique()->count(),
@@ -304,5 +307,22 @@ class SchoolReportsController extends Controller
             '3e année' => 5,
             default => 99,
         };
+    }
+
+    /** @return array{code: string, name: string}|null */
+    private function formatSchoolBoard(?string $boardCode): ?array
+    {
+        $code = trim((string) ($boardCode ?? ''));
+
+        if ($code === '') {
+            return null;
+        }
+
+        $board = SchoolBoard::query()->where('code', $code)->first();
+
+        return [
+            'code' => $code,
+            'name' => $board?->name ?? $code,
+        ];
     }
 }

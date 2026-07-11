@@ -1,5 +1,11 @@
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
 
+export function avatarUrl(path: string | null | undefined, cacheKey?: number | string): string | null {
+  if (!path) return null;
+  const base = `${API_BASE}${path}`;
+  return cacheKey ? `${base}?v=${cacheKey}` : base;
+}
+
 type ApiOptions = RequestInit & {
   json?: unknown;
 };
@@ -190,6 +196,7 @@ export const teacherApi = {
         grade: string;
         school_year: string;
         student_count: number;
+        published_workshops: boolean[];
         students: ClassStudent[];
       };
     }>(`/api/teacher/classes/${classId}`),
@@ -249,6 +256,18 @@ export const teacherApi = {
       method: "PUT",
       json: payload,
     }),
+  getPublishedAssessment: (atelier: number, grade: string) =>
+    apiRequest<{
+      assessment: {
+        id: number;
+        title: string;
+        unit: string;
+        atelier: number;
+        grade: string;
+        template_id: import("../evaluation/workshopTemplates").WorkshopTemplateId;
+        template_draft: import("../evaluation/workshopTemplates").TemplateDraft | null;
+      } | null;
+    }>(`/api/teacher/assessments/published?atelier=${atelier}&grade=${encodeURIComponent(grade)}`),
   addStudent: (
     classId: number | string,
     payload: { first_name: string; last_name: string }
@@ -297,6 +316,70 @@ export const teacherReportsApi = {
       `/api/teacher/reports${query ? `?${query}` : ""}`
     );
   },
+};
+
+export type TeacherAssessmentRecord = {
+  id: number;
+  title: string;
+  unit: string;
+  atelier: number;
+  grade: string;
+  status: "published" | "draft";
+  question_count: number;
+  template_id?: string | null;
+  assigned_to: "all_schools" | "selected" | "not_assigned" | "board_only" | "school_only" | "teacher_only";
+  ownership: "platform" | "board_copy" | "school_copy" | "teacher_copy";
+  source_assessment_id: number | null;
+  archived?: boolean;
+  created: string;
+};
+
+export type TeacherAssessmentDetail = TeacherAssessmentRecord & {
+  template_draft?: Record<string, unknown> | null;
+  questions: Array<{ id: number; text: string; options: string[]; correct: number }>;
+};
+
+export type TeacherAssessmentsData = {
+  sync_source: "board" | "platform";
+  can_edit: boolean;
+  school_board: { code: string; name: string } | null;
+  school: { id: number; name: string } | null;
+  assessments: TeacherAssessmentRecord[];
+  archived: TeacherAssessmentRecord[];
+  summary: { total: number; published: number; drafts: number; archived: number };
+};
+
+export type TeacherAssessmentPayload = {
+  title: string;
+  unit?: string;
+  atelier: number;
+  grade: string;
+  status: "Published" | "Draft";
+  template_id?: string | null;
+  template_draft?: Record<string, unknown> | null;
+  questions: Array<{ text: string; options: string[]; correct: number }>;
+};
+
+export const teacherAssessmentsApi = {
+  list: (params?: { search?: string; grade?: string; status?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.search) query.set("search", params.search);
+    if (params?.grade) query.set("grade", params.grade);
+    if (params?.status) query.set("status", params.status);
+    const qs = query.toString();
+    return apiRequest<TeacherAssessmentsData>(`/api/teacher/assessments${qs ? `?${qs}` : ""}`);
+  },
+  get: (id: number) =>
+    apiRequest<{ assessment: TeacherAssessmentDetail }>(`/api/teacher/assessments/${id}`),
+  update: (id: number, payload: TeacherAssessmentPayload) =>
+    apiRequest<{ assessment: TeacherAssessmentDetail; created_copy: boolean }>(`/api/teacher/assessments/${id}`, {
+      method: "PUT",
+      json: payload,
+    }),
+  activate: (id: number) =>
+    apiRequest<{ assessment: TeacherAssessmentRecord }>(`/api/teacher/assessments/${id}/activate`, {
+      method: "PATCH",
+    }),
 };
 
 export type LibraryContentItem = {
@@ -542,6 +625,72 @@ export const adminDashboardApi = {
   },
 };
 
+export type AuditLogEntry = {
+  id: number;
+  timestamp: string;
+  user: string;
+  role: string;
+  action: string;
+  category: string;
+  target: string;
+  ip: string;
+  severity: "info" | "warning" | "critical";
+};
+
+export type AuditLogData = {
+  entries: AuditLogEntry[];
+  summary: { total: number; critical: number; warning: number; info: number };
+};
+
+export const auditApi = {
+  list: (params?: { search?: string; category?: string; severity?: string; date_range?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.search) query.set("search", params.search);
+    if (params?.category) query.set("category", params.category);
+    if (params?.severity) query.set("severity", params.severity);
+    if (params?.date_range) query.set("date_range", params.date_range);
+    const qs = query.toString();
+    return apiRequest<AuditLogData>(`/api/admin/audit${qs ? `?${qs}` : ""}`);
+  },
+  exportUrl: (params?: { search?: string; category?: string; severity?: string; date_range?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.search) query.set("search", params.search);
+    if (params?.category) query.set("category", params.category);
+    if (params?.severity) query.set("severity", params.severity);
+    if (params?.date_range) query.set("date_range", params.date_range);
+    const qs = query.toString();
+    return `${API_BASE}/api/admin/audit/export${qs ? `?${qs}` : ""}`;
+  },
+};
+
+export type SchoolYearRecord = {
+  id: number;
+  label: string;
+  is_default: boolean;
+};
+
+export type SchoolYearsData = {
+  school_years: SchoolYearRecord[];
+  default_label: string;
+};
+
+export const schoolYearsApi = {
+  list: () => apiRequest<SchoolYearsData>("/api/school-years"),
+};
+
+export const adminSchoolYearsApi = {
+  list: () => apiRequest<SchoolYearsData>("/api/admin/school-years"),
+  create: (payload: { label: string; is_default?: boolean }) =>
+    apiRequest<{ school_year: SchoolYearRecord; default_label: string }>("/api/admin/school-years", {
+      method: "POST",
+      json: payload,
+    }),
+  setDefault: (id: number) =>
+    apiRequest<{ school_year: SchoolYearRecord; default_label: string }>(`/api/admin/school-years/${id}/default`, {
+      method: "PATCH",
+    }),
+};
+
 export type AdminSchoolRecord = {
   id: number;
   name: string;
@@ -558,7 +707,7 @@ export type AdminSchoolRecord = {
 export type AdminSchoolPayload = {
   name: string;
   city: string;
-  school_board: string;
+  school_board: string | null;
   grades?: string;
   portal_username: string;
   portal_password?: string;
@@ -688,6 +837,21 @@ export type AdminAssessmentRecord = {
   questions: AdminAssessmentQuestion[];
   status: "Published" | "Draft";
   created: string;
+  template_id?: string | null;
+  template_draft?: import("../evaluation/workshopTemplates").TemplateDraft | null;
+  archived_at?: string | null;
+  is_archived?: boolean;
+  has_student_completions?: boolean;
+};
+
+export type AdminAssessmentListResponse = {
+  assessments: AdminAssessmentRecord[];
+  archived: AdminAssessmentRecord[];
+  summary: {
+    published: number;
+    drafts: number;
+    archived: number;
+  };
 };
 
 export type AdminAssessmentPayload = {
@@ -697,6 +861,8 @@ export type AdminAssessmentPayload = {
   grade: string;
   status: "Published" | "Draft";
   questions: AdminAssessmentQuestion[];
+  template_id?: string | null;
+  template_draft?: import("../evaluation/workshopTemplates").TemplateDraft | null;
 };
 
 export const adminAssessmentsApi = {
@@ -706,7 +872,7 @@ export const adminAssessmentsApi = {
     if (params?.grade) query.set("grade", params.grade);
     if (params?.status) query.set("status", params.status);
     const qs = query.toString();
-    return apiRequest<{ assessments: AdminAssessmentRecord[] }>(
+    return apiRequest<AdminAssessmentListResponse>(
       `/api/admin/assessments${qs ? `?${qs}` : ""}`
     );
   },
@@ -721,7 +887,15 @@ export const adminAssessmentsApi = {
       json: payload,
     }),
   remove: (id: number) =>
-    apiRequest<{ message: string }>(`/api/admin/assessments/${id}`, { method: "DELETE" }),
+    apiRequest<{ message: string; can_archive?: boolean }>(`/api/admin/assessments/${id}`, { method: "DELETE" }),
+  archive: (id: number) =>
+    apiRequest<{ assessment: AdminAssessmentRecord; message: string }>(`/api/admin/assessments/${id}/archive`, {
+      method: "PATCH",
+    }),
+  restore: (id: number) =>
+    apiRequest<{ assessment: AdminAssessmentRecord; message: string }>(`/api/admin/assessments/${id}/restore`, {
+      method: "PATCH",
+    }),
   duplicate: (id: number) =>
     apiRequest<{ assessment: AdminAssessmentRecord }>(`/api/admin/assessments/${id}/duplicate`, {
       method: "POST",
@@ -813,7 +987,7 @@ export type SchoolReportAtRiskStudent = {
 };
 
 export type SchoolReportsData = {
-  school: { id: number; name: string };
+  school: { id: number; name: string; school_board: { code: string; name: string } | null };
   school_year: string | null;
   available_years: string[];
   summary: {
@@ -839,6 +1013,108 @@ export const schoolReportsApi = {
   },
 };
 
+export type SchoolAcademicsStudent = {
+  id: number;
+  name: string;
+  class_name: string;
+  grade: string;
+  teacher: string;
+  atelier: number;
+  en_voie: boolean;
+};
+
+export type SchoolAcademicsTeacher = {
+  id: number;
+  name: string;
+  grade: string;
+  classes: string[];
+  students: number;
+  avg_atelier: number;
+  en_voie: number;
+};
+
+export type SchoolAcademicsData = {
+  school: { id: number; name: string; school_board: { code: string; name: string } | null };
+  school_year: string | null;
+  available_years: string[];
+  grades: string[];
+  students: SchoolAcademicsStudent[];
+  teachers: SchoolAcademicsTeacher[];
+  summary: { student_count: number; teacher_count: number };
+};
+
+export const schoolAcademicsApi = {
+  get: (schoolYear?: string) => {
+    const params = new URLSearchParams();
+    if (schoolYear) params.set("school_year", schoolYear);
+    const query = params.toString();
+    return apiRequest<SchoolAcademicsData>(`/api/school/academics${query ? `?${query}` : ""}`);
+  },
+};
+
+export type SchoolAssessmentRecord = {
+  id: number;
+  title: string;
+  unit: string;
+  atelier: number;
+  grade: string;
+  status: "published" | "draft";
+  question_count: number;
+  template_id?: string | null;
+  assigned_to: "all_schools" | "selected" | "not_assigned" | "board_only" | "school_only";
+  ownership: "platform" | "board_copy" | "school_copy";
+  source_assessment_id: number | null;
+  archived?: boolean;
+  created: string;
+};
+
+export type SchoolAssessmentDetail = SchoolAssessmentRecord & {
+  template_draft?: Record<string, unknown> | null;
+  questions: Array<{ id: number; text: string; options: string[]; correct: number }>;
+};
+
+export type SchoolAssessmentsData = {
+  sync_source: "board" | "platform";
+  can_edit: boolean;
+  school_board: { code: string; name: string } | null;
+  assessments: SchoolAssessmentRecord[];
+  archived: SchoolAssessmentRecord[];
+  summary: { total: number; published: number; drafts: number; archived: number };
+};
+
+export type SchoolAssessmentPayload = {
+  title: string;
+  unit?: string;
+  atelier: number;
+  grade: string;
+  status: "Published" | "Draft";
+  template_id?: string | null;
+  template_draft?: Record<string, unknown> | null;
+  questions: Array<{ text: string; options: string[]; correct: number }>;
+};
+
+export const schoolAssessmentsApi = {
+  list: (params?: { search?: string; grade?: string; status?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.search) query.set("search", params.search);
+    if (params?.grade) query.set("grade", params.grade);
+    if (params?.status) query.set("status", params.status);
+    const qs = query.toString();
+    return apiRequest<SchoolAssessmentsData>(`/api/school/assessments${qs ? `?${qs}` : ""}`);
+  },
+  get: (id: number) =>
+    apiRequest<{ assessment: SchoolAssessmentDetail }>(`/api/school/assessments/${id}`),
+  update: (id: number, payload: SchoolAssessmentPayload) =>
+    apiRequest<{ assessment: SchoolAssessmentDetail; created_copy: boolean }>(`/api/school/assessments/${id}`, {
+      method: "PUT",
+      json: payload,
+    }),
+  activate: (id: number) =>
+    apiRequest<{ assessment: SchoolAssessmentRecord }>(`/api/school/assessments/${id}/activate`, {
+      method: "PATCH",
+    }),
+};
+
 export type BoardDashboardSchool = {
   id: number;
   name: string;
@@ -860,6 +1136,7 @@ export type BoardDashboardData = {
     total_students: number;
     active_teachers: number;
     avg_on_track: number;
+    latest_trend?: number;
   };
   success_rate_by_month: Array<{ month: string; rate: number }>;
   results_by_grade: Array<{ grade_key: string; board: number; provincial: number }>;
@@ -875,6 +1152,105 @@ export const boardDashboardApi = {
   },
 };
 
+export type BoardReportsSchool = {
+  id: number;
+  name: string;
+  city: string;
+  students: number;
+  on_track: number;
+  monitor: number;
+  at_risk: number;
+};
+
+export type BoardReportsClass = {
+  id: number;
+  name: string;
+  grade: string;
+  teacher: string;
+  students: number;
+  on_track: number;
+};
+
+export type BoardReportsStudent = {
+  id: number;
+  name: string;
+  grade: string;
+  current_atelier: number;
+  status: "on_track" | "monitor" | "at_risk";
+};
+
+export type BoardReportsData = {
+  board: { code: string; name: string };
+  school_year: string;
+  available_years: string[];
+  summary: {
+    participating_schools: number;
+    total_students: number;
+    avg_on_track: number;
+    latest_trend: number;
+  };
+  success_rate_by_month: Array<{ month: string; rate: number }>;
+  grade_benchmarks: Array<{
+    grade_key: string;
+    target_atelier: number;
+    avg_completed: number;
+    student_count: number;
+  }>;
+  schools: BoardReportsSchool[];
+  school: BoardReportsSchool | null;
+  classes: BoardReportsClass[];
+  students: BoardReportsStudent[];
+};
+
+export const boardReportsApi = {
+  get: (params?: { school_year?: string; school_id?: number; class_id?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.school_year) query.set("school_year", params.school_year);
+    if (params?.school_id) query.set("school_id", String(params.school_id));
+    if (params?.class_id) query.set("class_id", String(params.class_id));
+    const qs = query.toString();
+    return apiRequest<BoardReportsData>(`/api/board/reports${qs ? `?${qs}` : ""}`);
+  },
+};
+
+export type BoardProfile = {
+  id: number;
+  first_name: string | null;
+  last_name: string | null;
+  name: string;
+  email: string;
+  phone: string | null;
+  role: string;
+  initials: string;
+  has_avatar: boolean;
+  avatar_url: string | null;
+  school_board: { code: string; name: string } | null;
+  started_at: string | null;
+  started_at_label: string | null;
+};
+
+export const boardProfileApi = {
+  get: () => apiRequest<{ profile: BoardProfile }>("/api/board/profile"),
+  update: (payload: {
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone?: string;
+    current_password?: string;
+    password?: string;
+    password_confirmation?: string;
+  }) =>
+    apiRequest<{ profile: BoardProfile }>("/api/board/profile", {
+      method: "PUT",
+      json: payload,
+    }),
+  uploadAvatar: (file: File) => {
+    const formData = new FormData();
+    formData.append("avatar", file);
+    return apiFormRequest<{ profile: BoardProfile }>("/api/board/profile/avatar", formData);
+  },
+};
+
 export type BoardAssessmentRecord = {
   id: number;
   title: string;
@@ -883,6 +1259,7 @@ export type BoardAssessmentRecord = {
   grade: string;
   status: "published" | "draft";
   question_count: number;
+  template_id?: string | null;
   assigned_to: "all_schools" | "selected" | "not_assigned" | "board_only";
   ownership: "platform" | "board_copy";
   source_assessment_id: number | null;
@@ -897,6 +1274,7 @@ export type BoardAssessmentsData = {
 };
 
 export type BoardAssessmentDetail = BoardAssessmentRecord & {
+  template_draft?: Record<string, unknown> | null;
   questions: Array<{ id: number; text: string; options: string[]; correct: number }>;
 };
 
@@ -906,6 +1284,8 @@ export type BoardAssessmentPayload = {
   atelier: number;
   grade: string;
   status: "Published" | "Draft";
+  template_id?: string | null;
+  template_draft?: Record<string, unknown> | null;
   questions: Array<{ text: string; options: string[]; correct: number }>;
 };
 

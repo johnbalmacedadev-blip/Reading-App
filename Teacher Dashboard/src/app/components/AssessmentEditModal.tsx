@@ -1,11 +1,14 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { X, Trash2, CheckSquare, Loader2 } from "lucide-react";
-
-const ATELIER_OPTIONS = [
-  "Atelier 1", "Atelier 2", "Atelier 3", "Atelier 4", "Atelier 5",
-  "Atelier 6", "Atelier 7", "Atelier 8", "Atelier 9", "Atelier 10",
-  "Atelier 11", "Atelier 12", "Atelier 13", "Atelier 14", "Atelier 15",
-];
+import { useLanguage } from "../i18n";
+import { workshopOptions } from "../i18n/atelierHelpers";
+import {
+  buildTemplateDrafts,
+  getWorkshopTemplate,
+  type TemplateDraft,
+  type WorkshopTemplateId,
+} from "../evaluation/workshopTemplates";
+import { WorkshopTemplatePreview } from "./WorkshopTemplatePreview";
 
 type Question = {
   id: number;
@@ -21,6 +24,8 @@ export type AssessmentEditData = {
   atelier: number;
   grade: string;
   status?: string;
+  template_id?: string | null;
+  template_draft?: TemplateDraft | null;
   questions: Question[];
 };
 
@@ -43,21 +48,49 @@ export function AssessmentEditModal({
   title?: string;
   notice?: string;
 }) {
+  const { t, tp } = useLanguage();
+  const atelierOptions = workshopOptions((n) => tp("evaluation.workshopN", { n }));
   const [form, setForm] = useState<Partial<AssessmentEditData>>({});
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [templateDraft, setTemplateDraft] = useState<TemplateDraft | null>(null);
   const [newQ, setNewQ] = useState({ text: "", options: ["", "", "", ""], correct: 0 });
   const [addError, setAddError] = useState("");
+
+  const usesTemplate = !!assessment?.template_id;
+  const selectedTemplate = usesTemplate && assessment?.template_id
+    ? getWorkshopTemplate(assessment.template_id as WorkshopTemplateId)
+    : null;
 
   useEffect(() => {
     if (!assessment) return;
     setForm(assessment);
     setQuestions(assessment.questions.map((q, i) => ({ ...q, id: q.id ?? i + 1 })));
+    if (assessment.template_id) {
+      const draft = assessment.template_draft
+        ?? buildTemplateDrafts()[assessment.template_id as WorkshopTemplateId]
+        ?? null;
+      setTemplateDraft(draft);
+    } else {
+      setTemplateDraft(null);
+    }
     setNewQ({ text: "", options: ["", "", "", ""], correct: 0 });
     setAddError("");
   }, [assessment]);
 
   const saving = savingStatus !== null;
   const currentStatus = form.status === "published" || form.status === "Published" ? "Published" : "Draft";
+  const canPublish = usesTemplate ? !!templateDraft : questions.length > 0;
+
+  const buildSaveData = (): AssessmentEditData => ({
+    ...form,
+    title: form.title || "",
+    atelier: form.atelier || 1,
+    grade: form.grade || "Kindergarten",
+    id: assessment?.id,
+    template_id: usesTemplate ? assessment?.template_id ?? null : null,
+    template_draft: usesTemplate ? templateDraft : null,
+    questions: usesTemplate ? [] : questions,
+  });
 
   const addQuestion = () => {
     const text = newQ.text.trim();
@@ -130,7 +163,7 @@ export function AssessmentEditModal({
       onClick={(e) => e.target === e.currentTarget && !saving && !loading && onClose()}
     >
       <div style={{
-        background: "white", borderRadius: 16, width: 680, maxHeight: "90vh",
+        background: "white", borderRadius: 16, width: usesTemplate ? 920 : 680, maxHeight: "90vh",
         boxShadow: "0 20px 60px rgba(0,0,0,0.2)", display: "flex", flexDirection: "column", overflow: "hidden",
       }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "22px 24px 16px", borderBottom: "1px solid #f1f5f9", flexShrink: 0 }}>
@@ -171,7 +204,7 @@ export function AssessmentEditModal({
                   <input
                     value={form.title || ""}
                     onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-                    placeholder="e.g., Atelier 3 Assessment — Vowel Sounds"
+                    placeholder={tp("assessments.defaultTitle", { n: form.atelier || 1 })}
                     style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, outline: "none", boxSizing: "border-box" }}
                   />
                 </div>
@@ -187,24 +220,41 @@ export function AssessmentEditModal({
                     <option>Grade 1</option>
                     <option>Grade 2</option>
                     <option>Grade 3</option>
+                    <option>Grade 3+</option>
                   </select>
                 </div>
 
                 <div>
-                  <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 5 }}>Atelier</label>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 5 }}>{t("common.atelier")}</label>
                   <select
                     value={form.atelier || 1}
                     onChange={(e) => setForm((x) => ({ ...x, atelier: parseInt(e.target.value, 10) }))}
                     style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, outline: "none" }}
                   >
-                    {ATELIER_OPTIONS.map((label, i) => (
-                      <option key={i + 1} value={i + 1}>{label}</option>
+                    {atelierOptions.map(({ value, label }) => (
+                      <option key={value} value={value}>{label}</option>
                     ))}
                   </select>
                 </div>
               </div>
 
               <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: 18 }}>
+                {usesTemplate && selectedTemplate && templateDraft ? (
+                  <>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#1e293b", marginBottom: 12 }}>
+                      Template · {selectedTemplate.id.replace("format_", "Format ")}
+                    </div>
+                    <div style={{ background: "#f8fbff", borderRadius: 12, padding: 20, border: "1px solid #dff3ff" }}>
+                      <WorkshopTemplatePreview
+                        template={selectedTemplate}
+                        draft={templateDraft}
+                        onDraftChange={setTemplateDraft}
+                        editable
+                      />
+                    </div>
+                  </>
+                ) : (
+                <>
                 <div style={{ fontSize: 13, fontWeight: 600, color: "#1e293b", marginBottom: 12 }}>
                   Questions ({questions.length})
                 </div>
@@ -301,6 +351,8 @@ export function AssessmentEditModal({
                     Add Question
                   </button>
                 </div>
+                </>
+                )}
               </div>
 
               {error && <p style={{ marginTop: 12, fontSize: 12, color: "#ef4444" }}>{error}</p>}
@@ -312,7 +364,7 @@ export function AssessmentEditModal({
           <button type="button" onClick={onClose} disabled={saving || loading} style={{ padding: "9px 18px", borderRadius: 8, border: "1px solid #e2e8f0", background: "white", fontSize: 13, cursor: "pointer", color: "#374151" }}>Cancel</button>
           <button
             type="button"
-            onClick={() => onSave({ ...form, title: form.title || "", atelier: form.atelier || 1, grade: form.grade || "Kindergarten", questions, id: assessment?.id }, "Draft")}
+            onClick={() => onSave(buildSaveData(), "Draft")}
             disabled={saving || loading || !assessment}
             style={{ padding: "9px 18px", borderRadius: 8, border: "1px solid #e2e8f0", background: "white", fontSize: 13, cursor: saving ? "wait" : "pointer", fontWeight: 600, color: "#374151", display: "flex", alignItems: "center", gap: 6 }}
           >
@@ -321,10 +373,10 @@ export function AssessmentEditModal({
           </button>
           <button
             type="button"
-            onClick={() => onSave({ ...form, title: form.title || "", atelier: form.atelier || 1, grade: form.grade || "Kindergarten", questions, id: assessment?.id }, "Published")}
-            disabled={saving || loading || !assessment || questions.length === 0}
-            title={questions.length === 0 ? "Add at least one question to publish" : undefined}
-            style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: questions.length === 0 ? "#94a3b8" : "#004aad", color: "white", fontSize: 13, cursor: saving || questions.length === 0 ? "not-allowed" : "pointer", fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}
+            onClick={() => onSave(buildSaveData(), "Published")}
+            disabled={saving || loading || !assessment || !canPublish}
+            title={!canPublish ? (usesTemplate ? "Template content is required to publish" : "Add at least one question to publish") : undefined}
+            style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: !canPublish ? "#94a3b8" : "#004aad", color: "white", fontSize: 13, cursor: saving || !canPublish ? "not-allowed" : "pointer", fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}
           >
             {savingStatus === "publish" && <Loader2 size={14} className="animate-spin" />}
             Publish

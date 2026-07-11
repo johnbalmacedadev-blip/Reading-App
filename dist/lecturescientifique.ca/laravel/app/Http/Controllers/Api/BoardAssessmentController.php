@@ -13,13 +13,15 @@ use Illuminate\Validation\Rule;
 
 class BoardAssessmentController extends Controller
 {
-    private const GRADES = ['Kindergarten', 'Grade 1', 'Grade 2', 'Grade 3'];
+    private const GRADES = ['Kindergarten', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 3+'];
 
     private const GRADE_FILTER_MAP = [
         'kindergarten' => 'Kindergarten',
+        'garden' => 'Kindergarten',
         'grade1' => 'Grade 1',
         'grade2' => 'Grade 2',
         'grade3' => 'Grade 3',
+        'grade3plus' => 'Grade 3+',
     ];
 
     public function index(Request $request): JsonResponse
@@ -36,27 +38,40 @@ class BoardAssessmentController extends Controller
             ->where('school_board', $boardCode)
             ->pluck('assessment_id');
 
+        $activeCopySourceIds = Assessment::query()
+            ->where('school_board', $boardCode)
+            ->whereNotIn('id', $archivedIds)
+            ->whereNotNull('source_assessment_id')
+            ->pluck('source_assessment_id');
+
         $activeQuery = Assessment::query()
             ->withCount('questions')
-            ->where('title', 'like', 'Atelier %')
-            ->where(function ($query) use ($boardCode, $archivedIds) {
+            ->where(function ($query) use ($boardCode, $archivedIds, $activeCopySourceIds) {
                 $query->where(function ($q) use ($boardCode, $archivedIds) {
                     $q->where('school_board', $boardCode)
                         ->whereNotIn('id', $archivedIds);
-                })->orWhere(function ($q) use ($archivedIds) {
+                })->orWhere(function ($q) use ($archivedIds, $activeCopySourceIds) {
                     $q->whereNull('school_board')
-                        ->whereNotIn('id', $archivedIds);
+                        ->whereNull('archived_at')
+                        ->where('status', 'published')
+                        ->whereNotIn('id', $archivedIds)
+                        ->when($activeCopySourceIds->isNotEmpty(), function ($inner) use ($activeCopySourceIds) {
+                            $inner->whereNotIn('id', $activeCopySourceIds);
+                        });
                 });
             })
             ->orderByDesc('created_at');
 
         $archivedQuery = Assessment::query()
             ->withCount('questions')
-            ->where('title', 'like', 'Atelier %')
             ->whereIn('id', $archivedIds)
             ->where(function ($query) use ($boardCode) {
                 $query->where('school_board', $boardCode)
-                    ->orWhereNull('school_board');
+                    ->orWhere(function ($q) {
+                        $q->whereNull('school_board')
+                            ->whereNull('archived_at')
+                            ->where('status', 'published');
+                    });
             })
             ->orderByDesc('created_at');
 
@@ -91,6 +106,7 @@ class BoardAssessmentController extends Controller
         }
 
         $this->authorizeBoardAccess($assessment, $user->school_board);
+        $this->authorizePlatformAssessmentVisible($assessment);
 
         $assessment->load('questions');
 
@@ -114,6 +130,7 @@ class BoardAssessmentController extends Controller
         }
 
         $this->authorizeBoardAccess($assessment, $user->school_board);
+        $this->authorizePlatformAssessmentVisible($assessment);
 
         $data = $this->validateAssessment($request);
         $boardCode = $user->school_board;
@@ -143,8 +160,12 @@ class BoardAssessmentController extends Controller
                     'status' => strtolower($data['status']),
                     'school_board' => $boardCode,
                     'source_assessment_id' => $assessment->id,
+                    'template_id' => $data['template_id'] ?? null,
+                    'template_draft' => $data['template_draft'] ?? null,
                 ]);
-                $this->syncQuestions($copy, $data['questions']);
+                if (empty($data['template_id'])) {
+                    $this->syncQuestions($copy, $data['questions']);
+                }
                 $createdCopy = true;
             } else {
                 $this->applyAssessmentData($copy, $data);
@@ -230,6 +251,17 @@ class BoardAssessmentController extends Controller
         }
     }
 
+    private function authorizePlatformAssessmentVisible(Assessment $assessment): void
+    {
+        if (! $assessment->isPlatformOriginal()) {
+            return;
+        }
+
+        if ($assessment->archived_at !== null || strtolower($assessment->status) !== 'published') {
+            abort(404, 'Assessment not found.');
+        }
+    }
+
     private function applyListFilters($query, Request $request): void
     {
         if ($request->filled('search')) {
@@ -260,15 +292,23 @@ class BoardAssessmentController extends Controller
     /** @param array<string, mixed> $data */
     private function applyAssessmentData(Assessment $assessment, array $data): void
     {
+        $usesTemplate = ! empty($data['template_id']);
+
         $assessment->update([
             'title' => $data['title'],
             'unit' => $data['unit'] ?? null,
             'atelier' => $data['atelier'],
             'grade' => $data['grade'],
             'status' => strtolower($data['status']),
+            'template_id' => $usesTemplate ? $data['template_id'] : null,
+            'template_draft' => $usesTemplate ? ($data['template_draft'] ?? null) : null,
         ]);
 
-        $this->syncQuestions($assessment, $data['questions']);
+        if ($usesTemplate) {
+            $assessment->questions()->delete();
+        } else {
+            $this->syncQuestions($assessment, $data['questions']);
+        }
     }
 
     /** @return array<string, mixed> */
@@ -280,24 +320,48 @@ class BoardAssessmentController extends Controller
             'atelier' => ['required', 'integer', 'min:1', 'max:15'],
             'grade' => ['required', 'string', Rule::in(self::GRADES)],
             'status' => ['required', 'string', Rule::in(['Published', 'Draft', 'published', 'draft'])],
+            'template_id' => ['nullable', 'string', 'max:50'],
+            'template_draft' => ['nullable', 'array'],
             'questions' => ['present', 'array'],
-            'questions.*.text' => ['required', 'string', 'max:1000'],
-            'questions.*.options' => ['required', 'array', 'size:4'],
-            'questions.*.options.*' => ['required', 'string', 'max:500'],
-            'questions.*.correct' => ['required', 'integer', 'min:0', 'max:3'],
+            'questions.*.text' => ['required_with:questions', 'string', 'max:1000'],
+            'questions.*.options' => ['required_with:questions', 'array', 'size:4'],
+            'questions.*.options.*' => ['required_with:questions', 'string', 'max:500'],
+            'questions.*.correct' => ['required_with:questions', 'integer', 'min:0', 'max:3'],
         ]);
 
+        $usesTemplate = ! empty($data['template_id']);
+
+        if (! $usesTemplate) {
+            foreach ($data['questions'] as $index => $question) {
+                if (empty($question['text']) || empty($question['options']) || ! isset($question['correct'])) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        "questions.{$index}" => ['Each question must include text, four options, and a correct answer.'],
+                    ]);
+                }
+            }
+        } else {
+            $data['questions'] = [];
+        }
+
         $atelier = (int) $data['atelier'];
-        if (! preg_match('/^Atelier\s+\d+/i', $data['title'])) {
+        if (! $usesTemplate && ! preg_match('/^Atelier\s+\d+/i', $data['title'])) {
             $data['title'] = "Atelier {$atelier} Assessment";
         }
 
         $data['status'] = ucfirst(strtolower($data['status']));
 
-        if ($data['status'] === 'Published' && count($data['questions']) === 0) {
-            throw \Illuminate\Validation\ValidationException::withMessages([
-                'questions' => ['Add at least one question before publishing.'],
-            ]);
+        if ($data['status'] === 'Published') {
+            if ($usesTemplate && empty($data['template_draft'])) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'template_draft' => ['Template content is required before publishing.'],
+                ]);
+            }
+
+            if (! $usesTemplate && count($data['questions']) === 0) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'questions' => ['Add at least one question before publishing.'],
+                ]);
+            }
         }
 
         return $data;
@@ -323,6 +387,7 @@ class BoardAssessmentController extends Controller
     {
         return [
             ...$this->format($assessment, $boardCode, $archived),
+            'template_draft' => $assessment->template_draft,
             'questions' => $assessment->questions->map(fn ($q) => [
                 'id' => $q->id,
                 'text' => $q->text,
@@ -338,6 +403,7 @@ class BoardAssessmentController extends Controller
         $questionCount = (int) ($assessment->questions_count ?? $assessment->questions()->count());
         $status = strtolower($assessment->status);
         $isBoardCopy = $assessment->school_board === $boardCode;
+        $usesTemplate = ! empty($assessment->template_id);
 
         return [
             'id' => $assessment->id,
@@ -346,8 +412,9 @@ class BoardAssessmentController extends Controller
             'atelier' => $assessment->atelier,
             'grade' => $assessment->grade,
             'status' => $status,
-            'question_count' => $questionCount,
-            'assigned_to' => $this->assignedTo($status, $questionCount, $isBoardCopy),
+            'question_count' => $usesTemplate ? 0 : $questionCount,
+            'template_id' => $assessment->template_id,
+            'assigned_to' => $this->assignedTo($status, $questionCount, $isBoardCopy, $usesTemplate),
             'ownership' => $isBoardCopy ? 'board_copy' : 'platform',
             'source_assessment_id' => $assessment->source_assessment_id,
             'archived' => $archived,
@@ -355,7 +422,7 @@ class BoardAssessmentController extends Controller
         ];
     }
 
-    private function assignedTo(string $status, int $questionCount, bool $isBoardCopy): string
+    private function assignedTo(string $status, int $questionCount, bool $isBoardCopy, bool $usesTemplate = false): string
     {
         if ($isBoardCopy) {
             return 'board_only';
@@ -365,7 +432,7 @@ class BoardAssessmentController extends Controller
             return 'all_schools';
         }
 
-        if ($questionCount > 0) {
+        if ($usesTemplate || $questionCount > 0) {
             return 'selected';
         }
 

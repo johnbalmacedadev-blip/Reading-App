@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Assessment;
+use App\Models\StudentEvaluation;
+use App\Services\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -11,21 +13,32 @@ use Illuminate\Validation\Rule;
 
 class AdminAssessmentController extends Controller
 {
-    private const GRADES = ['Kindergarten', 'Grade 1', 'Grade 2', 'Grade 3'];
+    private const GRADES = ['Kindergarten', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 3+'];
+
+    /** @var array<string, list<string>> */
+    private const CLASS_GRADE_ALIASES = [
+        'Kindergarten' => ['Kindergarten', 'Maternelle', 'Jardin'],
+        'Grade 1' => ['Grade 1', '1re année'],
+        'Grade 2' => ['Grade 2', '2e année'],
+        'Grade 3' => ['Grade 3', '3e année'],
+        'Grade 3+' => ['Grade 3+', '4e année', '5e année', '6e année', 'Grade 4', 'Grade 5', 'Grade 6'],
+    ];
 
     public function index(Request $request): JsonResponse
     {
         $query = Assessment::query()
             ->with('questions')
             ->whereNull('school_board')
-            ->where('title', 'like', 'Atelier %')
+            ->whereNull('school_id')
+            ->whereNull('teacher_id')
             ->orderByDesc('created_at');
 
         if ($request->filled('search')) {
             $search = $request->string('search')->toString();
             $query->where(function ($q) use ($search) {
                 $q->where('title', 'like', "%{$search}%")
-                    ->orWhereRaw('CAST(atelier AS CHAR) LIKE ?', ["%{$search}%"]);
+                    ->orWhereRaw('CAST(atelier AS CHAR) LIKE ?', ["%{$search}%"])
+                    ->orWhere('template_id', 'like', "%{$search}%");
             });
         }
 
@@ -37,8 +50,18 @@ class AdminAssessmentController extends Controller
             $query->where('status', strtolower($request->string('status')->toString()));
         }
 
+        $all = $query->get();
+        $active = $all->whereNull('archived_at')->values();
+        $archived = $all->whereNotNull('archived_at')->values();
+
         return response()->json([
-            'assessments' => $query->get()->map(fn (Assessment $a) => $this->format($a)),
+            'assessments' => $active->map(fn (Assessment $a) => $this->format($a))->all(),
+            'archived' => $archived->map(fn (Assessment $a) => $this->format($a))->all(),
+            'summary' => [
+                'published' => $active->where('status', 'published')->count(),
+                'drafts' => $active->where('status', 'draft')->count(),
+                'archived' => $archived->count(),
+            ],
         ]);
     }
 
@@ -53,12 +76,16 @@ class AdminAssessmentController extends Controller
                 'atelier' => $data['atelier'],
                 'grade' => $data['grade'],
                 'status' => strtolower($data['status']),
+                'template_id' => $data['template_id'] ?? null,
+                'template_draft' => $data['template_draft'] ?? null,
             ]);
 
             $this->syncQuestions($assessment, $data['questions']);
 
             return $assessment->load('questions');
         });
+
+        AuditLogger::log('Create', 'Assessment', "{$assessment->title} created", 'info', $request, subject: $assessment);
 
         return response()->json(['assessment' => $this->format($assessment)], 201);
     }
@@ -74,22 +101,72 @@ class AdminAssessmentController extends Controller
                 'atelier' => $data['atelier'],
                 'grade' => $data['grade'],
                 'status' => strtolower($data['status']),
+                'template_id' => $data['template_id'] ?? null,
+                'template_draft' => $data['template_draft'] ?? null,
             ]);
 
             $this->syncQuestions($assessment, $data['questions']);
         });
 
+        AuditLogger::log('Edit', 'Assessment', "{$assessment->title} updated", 'info', $request, subject: $assessment);
+
         return response()->json(['assessment' => $this->format($assessment->fresh('questions'))]);
     }
 
-    public function destroy(Assessment $assessment): JsonResponse
+    public function destroy(Request $request, Assessment $assessment): JsonResponse
     {
+        if ($this->hasStudentCompletions($assessment)) {
+            return response()->json([
+                'message' => 'This workshop has student evaluation records and cannot be deleted. Archive it instead.',
+                'can_archive' => true,
+            ], 422);
+        }
+
+        $title = $assessment->title;
         $assessment->delete();
+
+        AuditLogger::log('Delete', 'Assessment', "{$title} deleted", 'warning', $request);
 
         return response()->json(['message' => 'Assessment deleted.']);
     }
 
-    public function duplicate(Assessment $assessment): JsonResponse
+    public function archive(Request $request, Assessment $assessment): JsonResponse
+    {
+        if ($assessment->school_board !== null) {
+            abort(403);
+        }
+
+        if ($assessment->archived_at !== null) {
+            return response()->json(['assessment' => $this->format($assessment)]);
+        }
+
+        $assessment->update(['archived_at' => now()]);
+
+        AuditLogger::log('Archive', 'Assessment', "{$assessment->title} archived", 'warning', $request, subject: $assessment);
+
+        return response()->json([
+            'assessment' => $this->format($assessment->fresh('questions')),
+            'message' => 'Assessment archived.',
+        ]);
+    }
+
+    public function restore(Request $request, Assessment $assessment): JsonResponse
+    {
+        if ($assessment->school_board !== null) {
+            abort(403);
+        }
+
+        $assessment->update(['archived_at' => null]);
+
+        AuditLogger::log('Restore', 'Assessment', "{$assessment->title} restored", 'info', $request, subject: $assessment);
+
+        return response()->json([
+            'assessment' => $this->format($assessment->fresh('questions')),
+            'message' => 'Assessment restored.',
+        ]);
+    }
+
+    public function duplicate(Request $request, Assessment $assessment): JsonResponse
     {
         $copy = DB::transaction(function () use ($assessment) {
             $assessment->load('questions');
@@ -100,6 +177,8 @@ class AdminAssessmentController extends Controller
                 'atelier' => $assessment->atelier,
                 'grade' => $assessment->grade,
                 'status' => 'draft',
+                'template_id' => $assessment->template_id,
+                'template_draft' => $assessment->template_draft,
             ]);
 
             foreach ($assessment->questions as $question) {
@@ -114,7 +193,22 @@ class AdminAssessmentController extends Controller
             return $copy->load('questions');
         });
 
+        AuditLogger::log('Duplicate', 'Assessment', "{$copy->title} duplicated from {$assessment->title}", 'info', $request, subject: $copy);
+
         return response()->json(['assessment' => $this->format($copy)], 201);
+    }
+
+    private function hasStudentCompletions(Assessment $assessment): bool
+    {
+        $classGrades = self::CLASS_GRADE_ALIASES[$assessment->grade] ?? [$assessment->grade];
+
+        return StudentEvaluation::query()
+            ->join('classes', 'classes.id', '=', 'student_evaluations.class_id')
+            ->where('student_evaluations.atelier_number', $assessment->atelier)
+            ->whereIn('classes.grade', $classGrades)
+            ->whereNotNull('student_evaluations.responses')
+            ->whereRaw('JSON_LENGTH(student_evaluations.responses) > 0')
+            ->exists();
     }
 
     /** @return array<string, mixed> */
@@ -126,24 +220,48 @@ class AdminAssessmentController extends Controller
             'atelier' => ['required', 'integer', 'min:1', 'max:15'],
             'grade' => ['required', 'string', Rule::in(self::GRADES)],
             'status' => ['required', 'string', Rule::in(['Published', 'Draft', 'published', 'draft'])],
+            'template_id' => ['nullable', 'string', 'max:50'],
+            'template_draft' => ['nullable', 'array'],
             'questions' => ['present', 'array'],
-            'questions.*.text' => ['required', 'string', 'max:1000'],
-            'questions.*.options' => ['required', 'array', 'size:4'],
-            'questions.*.options.*' => ['required', 'string', 'max:500'],
-            'questions.*.correct' => ['required', 'integer', 'min:0', 'max:3'],
+            'questions.*.text' => ['required_with:questions', 'string', 'max:1000'],
+            'questions.*.options' => ['required_with:questions', 'array', 'size:4'],
+            'questions.*.options.*' => ['required_with:questions', 'string', 'max:500'],
+            'questions.*.correct' => ['required_with:questions', 'integer', 'min:0', 'max:3'],
         ]);
 
+        $usesTemplate = ! empty($data['template_id']);
+
+        if (! $usesTemplate) {
+            foreach ($data['questions'] as $index => $question) {
+                if (empty($question['text']) || empty($question['options']) || ! isset($question['correct'])) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        "questions.{$index}" => ['Each question must include text, four options, and a correct answer.'],
+                    ]);
+                }
+            }
+        } else {
+            $data['questions'] = [];
+        }
+
         $atelier = (int) $data['atelier'];
-        if (! preg_match('/^Atelier\s+\d+/i', $data['title'])) {
+        if (! $usesTemplate && ! preg_match('/^Atelier\s+\d+/i', $data['title'])) {
             $data['title'] = "Atelier {$atelier} Assessment";
         }
 
         $data['status'] = ucfirst(strtolower($data['status']));
 
-        if ($data['status'] === 'Published' && count($data['questions']) === 0) {
-            throw \Illuminate\Validation\ValidationException::withMessages([
-                'questions' => ['Add at least one question before publishing.'],
-            ]);
+        if ($data['status'] === 'Published') {
+            if ($usesTemplate && empty($data['template_draft'])) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'template_draft' => ['Template content is required before publishing.'],
+                ]);
+            }
+
+            if (! $usesTemplate && count($data['questions']) === 0) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'questions' => ['Add at least one question before publishing.'],
+                ]);
+            }
         }
 
         return $data;
@@ -175,6 +293,11 @@ class AdminAssessmentController extends Controller
             'grade' => $assessment->grade,
             'status' => ucfirst($assessment->status),
             'created' => $assessment->created_at?->toDateString() ?? '',
+            'template_id' => $assessment->template_id,
+            'template_draft' => $assessment->template_draft,
+            'archived_at' => $assessment->archived_at?->toIso8601String(),
+            'is_archived' => $assessment->archived_at !== null,
+            'has_student_completions' => $this->hasStudentCompletions($assessment),
             'questions' => $assessment->questions->map(fn ($q) => [
                 'id' => $q->id,
                 'text' => $q->text,

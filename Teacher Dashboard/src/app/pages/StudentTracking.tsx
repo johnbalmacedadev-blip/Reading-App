@@ -1,9 +1,18 @@
-import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useCallback, useEffect, useState } from "react";
+import { useLocation, useNavigate, useParams } from "react-router";
 import { ArrowLeft, FileText, Download, Plus, X, Info } from "lucide-react";
 import { useLanguage } from "../i18n";
 import { LangToggle } from "../components/LangToggle";
 import { teacherApi, type ClassStudent, type EvaluationStatus } from "../api/client";
+import {
+  getEvaluationStatusBorder,
+  getEvaluationStatusColor,
+  getEvaluationStatusIcon,
+  getEvaluationStatusLabelKey,
+  getEvaluationStatusTextColor,
+  resolveTrackingDisplayStatus,
+  TRACKING_LEGEND_STATUSES,
+} from "../evaluation/statusDisplay";
 
 interface Student {
   id: number;
@@ -48,26 +57,42 @@ const ATELIER_KEYS: AtelierKey[] = [
 
 export function StudentTracking() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { classId } = useParams();
   const { t, tp } = useLanguage();
   const [className, setClassName] = useState("");
   const [classSchoolYear, setClassSchoolYear] = useState("");
+  const [publishedWorkshops, setPublishedWorkshops] = useState<boolean[]>(
+    Array(15).fill(false)
+  );
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [showAddStudentModal, setShowAddStudentModal] = useState(false);
   const [newStudentFirstName, setNewStudentFirstName] = useState("");
   const [newStudentLastName, setNewStudentLastName] = useState("");
   const [hoveredEvaluation, setHoveredEvaluation] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (!classId) return;
+  const loadClass = useCallback(
+    async (silent = false) => {
+      if (!classId) return;
 
-    teacherApi
-      .classDetail(classId)
-      .then(({ class: classData }) => {
+      if (silent) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
+      try {
+        const { class: classData } = await teacherApi.classDetail(classId);
         setClassName(classData.name);
         setClassSchoolYear(classData.school_year ?? "");
+        setPublishedWorkshops(
+          classData.published_workshops?.length === 15
+            ? classData.published_workshops
+            : Array(15).fill(false)
+        );
         setStudents(
           classData.students.map((student: ClassStudent) => ({
             id: student.id,
@@ -75,25 +100,45 @@ export function StudentTracking() {
             evaluations: student.evaluations,
           }))
         );
-      })
-      .finally(() => setLoading(false));
-  }, [classId]);
+      } finally {
+        if (silent) {
+          setRefreshing(false);
+        } else {
+          setLoading(false);
+        }
+      }
+    },
+    [classId]
+  );
 
-  const getStatusColor = (status: EvaluationStatus) => {
-    if (status === "success") return "#c9e265";
-    if (status === "adequate") return "#ffde59";
-    if (status === "needs-improvement") return "#ff5757";
-    if (status === "not-required") return "#b8a3d6";
-    return "#d1d5db";
-  };
+  useEffect(() => {
+    loadClass();
+  }, [loadClass]);
 
-  const getStatusText = (status: EvaluationStatus) => {
-    if (status === "success") return "✓";
-    if (status === "adequate") return "~";
-    if (status === "needs-improvement") return "!";
-    if (status === "not-required") return "—";
-    return "";
-  };
+  useEffect(() => {
+    if (!classId) return;
+
+    const refresh = () => loadClass(true);
+
+    window.addEventListener("focus", refresh);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refresh();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [classId, loadClass]);
+
+  useEffect(() => {
+    if (classId) {
+      loadClass(true);
+    }
+  }, [location.key, classId, loadClass]);
 
   const handleEvaluationClick = (studentId: number, evaluationNum: number) => {
     const student = students.find((s) => s.id === studentId);
@@ -169,6 +214,11 @@ export function StudentTracking() {
               </h1>
               <p className="text-lg" style={{ color: "#000000" }}>
                 {tp("common.studentCount", { count: students.length })}
+                {refreshing ? (
+                  <span className="text-sm ml-2" style={{ color: "#64748b" }}>
+                    {t("tracking.refreshing")}
+                  </span>
+                ) : null}
               </p>
             </div>
 
@@ -327,7 +377,11 @@ export function StudentTracking() {
                           {student.name}
                         </button>
                       </td>
-                      {student.evaluations.map((status, evalIdx) => (
+                      {student.evaluations.map((status, evalIdx) => {
+                        const hasAssessment = publishedWorkshops[evalIdx] ?? false;
+                        const displayStatus = resolveTrackingDisplayStatus(status, hasAssessment);
+
+                        return (
                         <td
                           key={evalIdx}
                           className="px-4 py-4 text-center"
@@ -338,16 +392,20 @@ export function StudentTracking() {
                         >
                           <button
                             onClick={() => handleEvaluationClick(student.id, evalIdx + 1)}
+                            title={t(getEvaluationStatusLabelKey(displayStatus))}
+                            aria-label={`${student.name} — ${t(ATELIER_KEYS[evalIdx])} — ${t(getEvaluationStatusLabelKey(displayStatus))}`}
                             className="w-10 h-10 rounded-lg flex items-center justify-center mx-auto transition-all hover:opacity-80 cursor-pointer"
                             style={{
-                              background: getStatusColor(status),
-                              color: status === "success" ? "#000000" : "#ffffff",
+                              background: getEvaluationStatusColor(displayStatus),
+                              color: getEvaluationStatusTextColor(displayStatus),
+                              border: getEvaluationStatusBorder(displayStatus),
                             }}
                           >
-                            {getStatusText(status)}
+                            {getEvaluationStatusIcon(displayStatus)}
                           </button>
                         </td>
-                      ))}
+                        );
+                      })}
                     </tr>
                   ))}
                 </tbody>
@@ -356,42 +414,22 @@ export function StudentTracking() {
           </div>
 
           {/* Legend */}
-          <div className="flex gap-6 mt-6">
-            <div className="flex items-center gap-2">
-              <div
-                className="w-8 h-8 rounded-lg"
-                style={{ background: "#c9e265" }}
-              ></div>
-              <span style={{ color: "#000000" }}>{t("common.onTrack")}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div
-                className="w-8 h-8 rounded-lg"
-                style={{ background: "#ffde59" }}
-              ></div>
-              <span style={{ color: "#000000" }}>{t("common.monitor")}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div
-                className="w-8 h-8 rounded-lg"
-                style={{ background: "#ff5757" }}
-              ></div>
-              <span style={{ color: "#000000" }}>{t("common.atRisk")}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div
-                className="w-8 h-8 rounded-lg"
-                style={{ background: "#b8a3d6" }}
-              ></div>
-              <span style={{ color: "#000000" }}>{t("common.notRequired")}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div
-                className="w-8 h-8 rounded-lg"
-                style={{ background: "#d1d5db" }}
-              ></div>
-              <span style={{ color: "#000000" }}>—</span>
-            </div>
+          <div className="flex flex-wrap gap-6 mt-6">
+            {TRACKING_LEGEND_STATUSES.map((status) => (
+              <div key={String(status)} className="flex items-center gap-2">
+                <div
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-semibold"
+                  style={{
+                    background: getEvaluationStatusColor(status),
+                    color: getEvaluationStatusTextColor(status),
+                    border: getEvaluationStatusBorder(status),
+                  }}
+                >
+                  {getEvaluationStatusIcon(status)}
+                </div>
+                <span style={{ color: "#000000" }}>{t(getEvaluationStatusLabelKey(status))}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>

@@ -9,6 +9,7 @@ import {
   ResponsiveContainer, LineChart, Line,
 } from "recharts";
 import { adminDashboardApi, type AdminDashboardData } from "../../api/client";
+import { useAdminSchoolYear } from "../../context/AdminSchoolYearContext";
 
 const kpiConfig = [
   { key: "school_boards" as const, label: "School Boards", icon: Building2, color: "#004aad", bg: "#dff3ff" },
@@ -52,14 +53,8 @@ function formatDelta(delta: number, label: string): string {
   return `+${delta} this month`;
 }
 
-function schoolYearOptions(): string[] {
-  const now = new Date();
-  const startYear = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
-  return [`${startYear}-${startYear + 1}`, `${startYear - 1}-${startYear}`];
-}
-
 export function AdminDashboard() {
-  const [schoolYear, setSchoolYear] = useState(schoolYearOptions()[0]);
+  const { selectedYear } = useAdminSchoolYear();
   const [data, setData] = useState<AdminDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -68,7 +63,7 @@ export function AdminDashboard() {
     setLoading(true);
     setError("");
     try {
-      const result = await adminDashboardApi.get(schoolYear);
+      const result = await adminDashboardApi.get(selectedYear);
       setData(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load dashboard.");
@@ -76,7 +71,7 @@ export function AdminDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [schoolYear]);
+  }, [selectedYear]);
 
   useEffect(() => {
     loadDashboard();
@@ -110,31 +105,16 @@ export function AdminDashboard() {
     return [Math.max(0, min - padding), max + padding];
   }, [growthData]);
 
-  const yearOptions = schoolYearOptions();
-
   return (
     <AdminLayout>
       <div style={{ padding: "32px 36px", maxWidth: 1400 }}>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 32 }}>
+        <div style={{ marginBottom: 32 }}>
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 700, color: "#0a1628", margin: 0 }}>Dashboard</h1>
             <p style={{ color: "#64748b", fontSize: 14, marginTop: 4 }}>
-              Platform overview — School year {schoolYear.replace("-", "–")}
+              Platform overview — School year {selectedYear.replace("-", "–")}
             </p>
           </div>
-          <select
-            value={schoolYear}
-            onChange={(e) => setSchoolYear(e.target.value)}
-            style={{
-              padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0",
-              background: "white", fontSize: 13, color: "#374151", cursor: "pointer",
-              outline: "none",
-            }}
-          >
-            {yearOptions.map((y) => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
         </div>
 
         {error && (

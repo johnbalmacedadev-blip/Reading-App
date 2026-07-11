@@ -5,13 +5,8 @@ import { NotificationDropdown } from "../components/NotificationDropdown";
 import { UserAvatar } from "../components/UserAvatar";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
+import { formatAtelierLabel } from "../i18n/atelierHelpers";
 import { teacherUnitsApi, type PedagogicalUnitItem } from "../api/client";
-
-function formatAtelierLabel(numbers: number[]): string {
-  if (numbers.length === 0) return "";
-  if (numbers.length === 1) return `Atelier ${numbers[0]}`;
-  return `Ateliers ${numbers.join(", ")}`;
-}
 
 export function ResourceDetailPage() {
   const navigate = useNavigate();
@@ -79,7 +74,7 @@ export function ResourceDetailPage() {
                   style={{ background: unitColor, color: unit.text_color }}
                 >
                   <p>
-                    {a(formatAtelierLabel(unit.atelier_numbers))}
+                    {formatAtelierLabel(unit.atelier_numbers, (n) => tp("evaluation.workshopN", { n }), t("common.ateliers"))}
                   </p>
                 </div>
               )}

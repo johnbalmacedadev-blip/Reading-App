@@ -14,8 +14,16 @@ class Assessment extends Model
         'atelier',
         'grade',
         'status',
+        'archived_at',
+        'template_id',
+        'template_draft',
         'school_board',
         'source_assessment_id',
+    ];
+
+    protected $casts = [
+        'template_draft' => 'array',
+        'archived_at' => 'datetime',
     ];
 
     public function sourceAssessment(): BelongsTo

@@ -2,12 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import {
-  BookOpen,
-  FileText,
-  BarChart3,
-  User,
-  LogOut,
-  Users,
   Mail,
   Phone,
   Building,
@@ -15,13 +9,23 @@ import {
   Edit,
   Lock,
   Landmark,
-  Book,
   GraduationCap,
   Settings,
   Loader2,
+  BookOpen,
+  FileText,
+  BarChart3,
+  User,
+  LogOut,
+  Users,
+  Book,
+  PanelLeftClose,
+  PanelLeft,
 } from "lucide-react";
 import { NotificationDropdown } from "../components/NotificationDropdown";
 import { LangToggle } from "../components/LangToggle";
+import { TeacherLayout } from "../components/TeacherLayout";
+import { useCollapsibleSidebar } from "../hooks/useCollapsibleSidebar";
 import { useLanguage } from "../i18n";
 import { useAuth } from "../context/AuthContext";
 import { teacherProfileApi, type TeacherProfile, ApiError } from "../api/client";
@@ -84,6 +88,7 @@ export function ProfilePage() {
 
   const [searchParams] = useSearchParams();
   const isSchoolPortal = searchParams.get("portal") === "school";
+  const { collapsed, collapse, expand } = useCollapsibleSidebar("school-sidebar-collapsed");
 
   const loadProfile = useCallback(async () => {
     if (!user) {
@@ -222,61 +227,8 @@ export function ProfilePage() {
     );
   }
 
-  return (
-    <div className="h-screen flex overflow-hidden" style={{ background: "#dff3ff" }}>
-      {/* Sidebar */}
-      <div
-        className="w-64 p-6 flex flex-col overflow-y-auto"
-        style={{ background: "#ffffff", borderRight: "1px solid #dff3ff" }}
-      >
-        <div className="flex items-center gap-3 mb-8">
-          <BookOpen className="w-8 h-8" style={{ color: "#004aad" }} />
-          <div>
-            <h1 className="text-xl" style={{ color: "#004aad" }}>{t("common.appName")}</h1>
-            {isSchoolPortal && (
-              <span className="text-xs px-2 py-0.5 rounded-full inline-block mt-0.5" style={{ background: "#dff3ff", color: "#004aad", fontWeight: 600 }}>
-                School Portal
-              </span>
-            )}
-          </div>
-        </div>
-
-        <nav className="flex-1 space-y-2">
-          {menuItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.path}
-                onClick={() => navigate(item.path)}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
-                style={{
-                  background: item.active ? "#dff3ff" : "transparent",
-                  color: item.active ? "#004aad" : "#000000",
-                }}
-              >
-                <Icon className="w-5 h-5" />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-
-        <LangToggle />
-        <button
-          onClick={async () => {
-            await logout();
-            navigate("/");
-          }}
-          className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
-          style={{ color: "#ff5757" }}
-        >
-          <LogOut className="w-5 h-5" />
-          <span>{t("common.logout")}</span>
-        </button>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 p-12 overflow-y-auto">
+  const profileContent = (
+    <>
         <div className="flex items-start justify-between mb-12">
           <div>
             <h1 className="text-3xl mb-2" style={{ color: "#004aad" }}>
@@ -634,6 +586,97 @@ export function ProfilePage() {
               </div>
             </>
           )}
+        </div>
+    </>
+  );
+
+  if (!isSchoolPortal) {
+    return (
+      <TeacherLayout activeNav="profile" contentClassName="flex-1 p-12 overflow-y-auto">
+        {profileContent}
+      </TeacherLayout>
+    );
+  }
+
+  return (
+    <div className="h-screen flex overflow-hidden" style={{ background: "#dff3ff" }}>
+      <aside
+        className="flex flex-col overflow-hidden shrink-0 transition-[width,padding,opacity] duration-300 ease-in-out"
+        style={{
+          width: collapsed ? 0 : 256,
+          background: "#ffffff",
+          borderRight: collapsed ? "none" : "1px solid #dff3ff",
+          padding: collapsed ? 0 : 24,
+          opacity: collapsed ? 0 : 1,
+        }}
+        aria-hidden={collapsed}
+      >
+        <div className="w-64 flex flex-col overflow-y-auto min-h-full">
+          <div className="flex items-center justify-between gap-2 mb-8">
+            <div className="flex items-center gap-3 min-w-0">
+              <BookOpen className="w-8 h-8 shrink-0" style={{ color: "#004aad" }} />
+              <div>
+                <h1 className="text-xl" style={{ color: "#004aad" }}>{t("common.appName")}</h1>
+                <span className="text-xs px-2 py-0.5 rounded-full inline-block mt-0.5" style={{ background: "#dff3ff", color: "#004aad", fontWeight: 600 }}>
+                  School Portal
+                </span>
+              </div>
+            </div>
+            <button type="button" onClick={collapse} title="Hide menu" aria-label="Hide menu" className="shrink-0 p-1.5 rounded-lg hover:bg-slate-100">
+              <PanelLeftClose className="w-5 h-5" style={{ color: "#64748b" }} />
+            </button>
+          </div>
+
+          <nav className="flex-1 space-y-2">
+            {menuItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.path}
+                  onClick={() => navigate(item.path)}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
+                  style={{
+                    background: item.active ? "#dff3ff" : "transparent",
+                    color: item.active ? "#004aad" : "#000000",
+                  }}
+                >
+                  <Icon className="w-5 h-5" />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          <LangToggle />
+          <button
+            onClick={async () => {
+              await logout();
+              navigate("/");
+            }}
+            className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
+            style={{ color: "#ff5757" }}
+          >
+            <LogOut className="w-5 h-5" />
+            <span>{t("common.logout")}</span>
+          </button>
+        </div>
+      </aside>
+
+      <div className="flex-1 flex flex-col min-w-0 relative">
+        {collapsed && (
+          <button
+            type="button"
+            onClick={expand}
+            title="Show menu"
+            aria-label="Show menu"
+            className="absolute top-4 left-4 z-20 p-2.5 rounded-xl shadow-sm hover:bg-slate-50"
+            style={{ background: "#ffffff", border: "1px solid #dff3ff" }}
+          >
+            <PanelLeft className="w-5 h-5" style={{ color: "#004aad" }} />
+          </button>
+        )}
+        <div className={`flex-1 p-12 overflow-y-auto${collapsed ? " pt-14" : ""}`}>
+          {profileContent}
         </div>
       </div>
     </div>

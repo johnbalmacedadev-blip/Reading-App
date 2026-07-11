@@ -16,7 +16,7 @@ function isPdf(format: string) {
 export function ContentViewerPage() {
   const { contentId } = useParams();
   const navigate = useNavigate();
-  const { t } = useLanguage();
+  const { t, tp } = useLanguage();
   const pptxContainerRef = useRef<HTMLDivElement>(null);
   const pptxViewerRef = useRef<ReturnType<typeof init> | null>(null);
 
@@ -127,7 +127,7 @@ export function ContentViewerPage() {
           <div>
             <h1 className="text-lg font-bold" style={{ color: "#004aad" }}>{content.title}</h1>
             <p className="text-xs" style={{ color: "#64748b" }}>
-              {content.type} • {content.unit}{content.atelier > 0 ? ` • Atelier ${content.atelier}` : ""}
+              {content.type} • {content.unit}{content.atelier > 0 ? ` • ${tp("evaluation.workshopN", { n: content.atelier })}` : ""}
             </p>
           </div>
         </div>

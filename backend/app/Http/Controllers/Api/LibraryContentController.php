@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\LibraryContent;
+use App\Services\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -72,6 +73,8 @@ class LibraryContentController extends Controller
       'interactive_view' => $interactiveView && $this->formatSupportsView($extension),
     ]);
 
+    AuditLogger::log('Upload', 'Content', "{$content->title} uploaded", 'info', $request, subject: $content);
+
     return response()->json([
       'content' => $this->format($content),
     ], 201);
@@ -114,29 +117,37 @@ class LibraryContentController extends Controller
 
     $libraryContent->save();
 
+    $action = $request->hasFile('file') ? 'Upload' : 'Edit';
+    AuditLogger::log($action, 'Content', "{$libraryContent->title} updated", 'info', $request, subject: $libraryContent);
+
     return response()->json([
       'content' => $this->format($libraryContent),
     ]);
   }
 
-  public function destroy(LibraryContent $libraryContent): JsonResponse
+  public function destroy(Request $request, LibraryContent $libraryContent): JsonResponse
   {
+    $title = $libraryContent->title;
     if ($libraryContent->file_path && Storage::disk('public')->exists($libraryContent->file_path)) {
       Storage::disk('public')->delete($libraryContent->file_path);
     }
 
     $libraryContent->delete();
 
+    AuditLogger::log('Delete', 'Content', "{$title} deleted", 'warning', $request);
+
     return response()->json(['message' => 'Content deleted.']);
   }
 
   private const CONTINUUM_PDF_PATH = 'library/continuum-sml.pdf';
 
-  public function downloadContinuum(): StreamedResponse|JsonResponse
+  public function downloadContinuum(Request $request): StreamedResponse|JsonResponse
   {
     if (! Storage::disk('public')->exists(self::CONTINUUM_PDF_PATH)) {
       return response()->json(['message' => 'Continuum PDF not found.'], 404);
     }
+
+    AuditLogger::export($request, 'Content', 'Continuum PDF downloaded');
 
     return Storage::disk('public')->download(
       self::CONTINUUM_PDF_PATH,
@@ -144,7 +155,7 @@ class LibraryContentController extends Controller
     );
   }
 
-  public function download(LibraryContent $libraryContent): StreamedResponse|JsonResponse
+  public function download(Request $request, LibraryContent $libraryContent): StreamedResponse|JsonResponse
   {
     if (! $libraryContent->file_path || ! Storage::disk('public')->exists($libraryContent->file_path)) {
       return response()->json(['message' => 'File not found.'], 404);
@@ -152,6 +163,8 @@ class LibraryContentController extends Controller
 
     $extension = strtolower($libraryContent->format);
     $filename = Str::slug($libraryContent->title).'.'.$extension;
+
+    AuditLogger::export($request, 'Content', "{$libraryContent->title} downloaded");
 
     return Storage::disk('public')->download($libraryContent->file_path, $filename);
   }

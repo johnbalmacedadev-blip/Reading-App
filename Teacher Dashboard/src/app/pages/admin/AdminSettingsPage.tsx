@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AdminLayout } from "./AdminLayout";
 import { Save, Globe, Shield, Bell, Database, Palette, ChevronRight, Check, AlertCircle } from "lucide-react";
+import { useAdminSchoolYear } from "../../context/AdminSchoolYearContext";
 
 type SettingSection = "general" | "language" | "permissions" | "notifications" | "backup" | "appearance";
 
@@ -42,13 +43,13 @@ function SettingRow({ label, desc, children }: { label: string; desc?: string; c
 }
 
 export function AdminSettingsPage() {
+  const { defaultLabel, years } = useAdminSchoolYear();
   const [activeSection, setActiveSection] = useState<SettingSection>("general");
   const [saved, setSaved] = useState(false);
 
   // General settings state
   const [platformName, setPlatformName] = useState("Lecture Scientifique");
   const [supportEmail, setSupportEmail] = useState("support@lecturesci.ca");
-  const [schoolYear, setSchoolYear] = useState("2025-2026");
 
   // Language settings
   const [defaultLang, setDefaultLang] = useState("French (fr)");
@@ -89,11 +90,13 @@ export function AdminSettingsPage() {
               <input value={supportEmail} onChange={(e) => setSupportEmail(e.target.value)}
                 style={{ width: 260, padding: "8px 10px", borderRadius: 7, border: "1px solid #e2e8f0", fontSize: 13, outline: "none" }} />
             </SettingRow>
-            <SettingRow label="Active School Year" desc="Reference period for data">
-              <select value={schoolYear} onChange={(e) => setSchoolYear(e.target.value)}
-                style={{ width: 160, padding: "8px 10px", borderRadius: 7, border: "1px solid #e2e8f0", fontSize: 13, outline: "none" }}>
-                <option>2025-2026</option><option>2024-2025</option>
-              </select>
+            <SettingRow label="Default School Year" desc="Used when creating new classes and as the initial portal view">
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#004aad" }}>{defaultLabel || "—"}</div>
+                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
+                  {years.length} school year{years.length === 1 ? "" : "s"} configured — use the selector at the top right to add or change default
+                </div>
+              </div>
             </SettingRow>
             <SettingRow label="Maintenance Mode" desc="Disables access for all non-admin portals">
               <Toggle checked={false} onChange={() => {}} />

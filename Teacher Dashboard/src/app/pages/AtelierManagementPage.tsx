@@ -1,11 +1,9 @@
 import { useNavigate } from "react-router";
 import {
-  BookOpen, LogOut, ArrowLeft, Edit2,
+  ArrowLeft, Edit2, BookOpen,
 } from "lucide-react";
-import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
-import { boardNavItems } from "../i18n/navHelpers";
-import { usePortalLogout } from "../hooks/usePortalLogout";
+import { BoardLayout } from "../components/BoardLayout";
 
 const ateliers = [
   // Unité 1: Ateliers 1-6
@@ -38,9 +36,6 @@ const ateliers = [
 export function AtelierManagementPage() {
   const navigate = useNavigate();
   const { t, tp, auto: a } = useLanguage();
-  const handleLogout = usePortalLogout();
-
-  const menuItems = boardNavItems(t, "ateliers");
 
   // Group ateliers by unit ranges for display
   const unite1Ateliers = ateliers.filter(a => a.unit === 1);
@@ -48,36 +43,7 @@ export function AtelierManagementPage() {
   const unite6to10Ateliers = ateliers.filter(a => a.unit >= 6 && a.unit <= 10);
 
   return (
-    <div className="h-screen flex overflow-hidden" style={{ background: "#dff3ff" }}>
-      {/* Sidebar */}
-      <div className="w-64 p-6 flex flex-col overflow-y-auto" style={{ background: "#ffffff", borderRight: "1px solid #dff3ff" }}>
-        <div className="flex items-center gap-3 mb-10">
-          <BookOpen className="w-8 h-8" style={{ color: "#004aad" }} />
-          <div>
-            <h1 className="text-base font-bold leading-tight" style={{ color: "#004aad" }}>{t("common.appName")}</h1>
-            <p className="text-xs mt-0.5 px-2 py-0.5 rounded-full inline-block" style={{ background: "#dff3ff", color: "#004aad" }}>{t("board.portal")}</p>
-          </div>
-        </div>
-
-        <nav className="flex-1 space-y-1">
-          {menuItems.map(({ icon: Icon, label, active, path }) => (
-            <button key={label} onClick={() => navigate(path)} className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-sm"
-              style={{ background: active ? "#dff3ff" : "transparent", color: active ? "#004aad" : "#444", fontWeight: active ? 600 : 400 }}>
-              <Icon className="w-4 h-4" />
-              {label}
-            </button>
-          ))}
-        </nav>
-
-        <LangToggle />
-        <button onClick={handleLogout} className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm" style={{ color: "#ff5757" }}>
-          <LogOut className="w-4 h-4" />
-          {t("common.logout")}
-        </button>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 overflow-y-auto p-8">
+    <BoardLayout activeNav="ateliers">
         {/* Header */}
         <button onClick={() => navigate("/board")} className="flex items-center gap-2 mb-6 text-sm" style={{ color: "#38b6ff" }}>
           <ArrowLeft className="w-4 h-4" />
@@ -209,7 +175,6 @@ export function AtelierManagementPage() {
             ))}
           </div>
         </div>
-      </div>
-    </div>
+    </BoardLayout>
   );
 }

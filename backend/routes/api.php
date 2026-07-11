@@ -1,20 +1,28 @@
 <?php
 
 use App\Http\Controllers\Api\AdminAssessmentController;
+use App\Http\Controllers\Api\AdminAuditController;
 use App\Http\Controllers\Api\AdminDashboardController;
 use App\Http\Controllers\Api\AdminSchoolController;
 use App\Http\Controllers\Api\AdminSchoolBoardController;
+use App\Http\Controllers\Api\AdminSchoolYearController;
 use App\Http\Controllers\Api\AdminStudentController;
 use App\Http\Controllers\Api\AdminTeacherController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BoardAssessmentController;
 use App\Http\Controllers\Api\BoardDashboardController;
+use App\Http\Controllers\Api\BoardProfileController;
+use App\Http\Controllers\Api\BoardReportsController;
 use App\Http\Controllers\Api\DownloadableResourceController;
 use App\Http\Controllers\Api\LibraryContentController;
 use App\Http\Controllers\Api\PedagogicalUnitController;
+use App\Http\Controllers\Api\SchoolAcademicsController;
+use App\Http\Controllers\Api\SchoolAssessmentController;
 use App\Http\Controllers\Api\SchoolReportsController;
+use App\Http\Controllers\Api\SchoolYearController;
 use App\Http\Controllers\Api\TeacherReportsController;
 use App\Http\Controllers\Api\StudentEvaluationController;
+use App\Http\Controllers\Api\TeacherAssessmentController;
 use App\Http\Controllers\Api\TeacherClassController;
 use App\Http\Controllers\Api\TeacherProfileController;
 use Illuminate\Support\Facades\Route;
@@ -62,11 +70,26 @@ Route::get('/library/continuum/download', [LibraryContentController::class, 'dow
 
 Route::get('/admin/dashboard', [AdminDashboardController::class, 'index']);
 
+Route::prefix('admin/audit')->group(function () {
+    Route::get('/', [AdminAuditController::class, 'index']);
+    Route::get('/export', [AdminAuditController::class, 'export']);
+});
+
+Route::get('/school-years', [SchoolYearController::class, 'index']);
+
+Route::prefix('admin/school-years')->group(function () {
+    Route::get('/', [AdminSchoolYearController::class, 'index']);
+    Route::post('/', [AdminSchoolYearController::class, 'store']);
+    Route::patch('/{schoolYear}/default', [AdminSchoolYearController::class, 'setDefault']);
+});
+
 Route::prefix('admin/assessments')->group(function () {
     Route::get('/', [AdminAssessmentController::class, 'index']);
     Route::post('/', [AdminAssessmentController::class, 'store']);
     Route::put('/{assessment}', [AdminAssessmentController::class, 'update']);
     Route::delete('/{assessment}', [AdminAssessmentController::class, 'destroy']);
+    Route::patch('/{assessment}/archive', [AdminAssessmentController::class, 'archive']);
+    Route::patch('/{assessment}/restore', [AdminAssessmentController::class, 'restore']);
     Route::post('/{assessment}/duplicate', [AdminAssessmentController::class, 'duplicate']);
 });
 
@@ -129,6 +152,11 @@ Route::middleware(['auth:sanctum'])->prefix('teacher')->group(function () {
     Route::get('/profile/avatar', [TeacherProfileController::class, 'showAvatar']);
     Route::post('/profile/avatar', [TeacherProfileController::class, 'uploadAvatar']);
     Route::get('/classes', [TeacherClassController::class, 'index']);
+    Route::get('/assessments', [TeacherAssessmentController::class, 'index']);
+    Route::get('/assessments/published', [TeacherAssessmentController::class, 'published']);
+    Route::get('/assessments/{assessment}', [TeacherAssessmentController::class, 'show']);
+    Route::put('/assessments/{assessment}', [TeacherAssessmentController::class, 'update']);
+    Route::patch('/assessments/{assessment}/activate', [TeacherAssessmentController::class, 'activate']);
     Route::post('/classes', [TeacherClassController::class, 'store']);
     Route::get('/classes/{schoolClass}', [TeacherClassController::class, 'show']);
     Route::put('/classes/{schoolClass}', [TeacherClassController::class, 'update']);
@@ -141,10 +169,20 @@ Route::middleware(['auth:sanctum'])->prefix('teacher')->group(function () {
 
 Route::middleware(['auth:sanctum'])->prefix('school')->group(function () {
     Route::get('/reports', [SchoolReportsController::class, 'index']);
+    Route::get('/academics', [SchoolAcademicsController::class, 'index']);
+    Route::get('/assessments', [SchoolAssessmentController::class, 'index']);
+    Route::get('/assessments/{assessment}', [SchoolAssessmentController::class, 'show']);
+    Route::put('/assessments/{assessment}', [SchoolAssessmentController::class, 'update']);
+    Route::patch('/assessments/{assessment}/activate', [SchoolAssessmentController::class, 'activate']);
 });
 
 Route::middleware(['auth:sanctum'])->prefix('board')->group(function () {
     Route::get('/dashboard', [BoardDashboardController::class, 'index']);
+    Route::get('/reports', [BoardReportsController::class, 'index']);
+    Route::get('/profile', [BoardProfileController::class, 'show']);
+    Route::put('/profile', [BoardProfileController::class, 'update']);
+    Route::get('/profile/avatar', [BoardProfileController::class, 'showAvatar']);
+    Route::post('/profile/avatar', [BoardProfileController::class, 'uploadAvatar']);
     Route::get('/assessments', [BoardAssessmentController::class, 'index']);
     Route::get('/assessments/{assessment}', [BoardAssessmentController::class, 'show']);
     Route::put('/assessments/{assessment}', [BoardAssessmentController::class, 'update']);

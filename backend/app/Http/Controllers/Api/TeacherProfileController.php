@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\SchoolBoard;
 use App\Models\User;
+use App\Services\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -68,6 +69,8 @@ class TeacherProfileController extends Controller
         $teacher->save();
         $teacher->load('school');
 
+        AuditLogger::log('Edit', 'Teacher', "{$teacher->displayName()} profile updated", 'info', $request, subject: $teacher);
+
         return response()->json([
             'profile' => $this->formatProfile($teacher),
         ]);
@@ -93,6 +96,8 @@ class TeacherProfileController extends Controller
         $teacher->avatar_path = $path;
         $teacher->save();
         $teacher->load('school');
+
+        AuditLogger::log('Upload', 'Teacher', "{$teacher->displayName()} avatar uploaded", 'info', $request, subject: $teacher);
 
         return response()->json([
             'profile' => $this->formatProfile($teacher),

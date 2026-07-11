@@ -319,7 +319,7 @@ export function StudentDetailPage() {
                   {t("student.progressVsBenchmark")}
                 </h2>
                 <p className="text-sm" style={{ color: "#000000" }}>
-                  {auto(`Attendu pour ${t(currentBenchmark.labelKey)}: ${currentBenchmark.expected} ateliers`)}
+                  {tp("student.expectedForBenchmark", { benchmark: t(currentBenchmark.labelKey), count: currentBenchmark.expected })}
                 </p>
               </div>
               <div

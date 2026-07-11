@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\School;
 use App\Models\SchoolBoard;
 use App\Models\User;
+use App\Services\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -66,6 +67,8 @@ class AdminSchoolBoardController extends Controller
             return $board;
         });
 
+        AuditLogger::log('Create', 'Board', "{$board->name} created", 'info', $request, subject: $board);
+
         return response()->json([
             'board' => $this->format($board, $this->emptyStats()),
         ], 201);
@@ -119,12 +122,14 @@ class AdminSchoolBoardController extends Controller
 
         $stats = $this->statsForBoards(collect([$schoolBoard->code]));
 
+        AuditLogger::log('Edit', 'Board', "{$schoolBoard->name} updated", 'info', $request, subject: $schoolBoard);
+
         return response()->json([
             'board' => $this->format($schoolBoard->fresh(), $stats[$schoolBoard->code] ?? $this->emptyStats()),
         ]);
     }
 
-    public function archive(SchoolBoard $schoolBoard): JsonResponse
+    public function archive(Request $request, SchoolBoard $schoolBoard): JsonResponse
     {
         $nextStatus = $schoolBoard->status === 'archived' ? 'active' : 'archived';
 
@@ -141,6 +146,12 @@ class AdminSchoolBoardController extends Controller
         });
 
         $stats = $this->statsForBoards(collect([$schoolBoard->code]));
+
+        if ($nextStatus === 'archived') {
+            AuditLogger::log('Archive', 'Board', "{$schoolBoard->name} archived", 'warning', $request, subject: $schoolBoard);
+        } else {
+            AuditLogger::log('Activate', 'Board', "{$schoolBoard->name} reactivated", 'info', $request, subject: $schoolBoard);
+        }
 
         return response()->json([
             'board' => $this->format($schoolBoard->fresh(), $stats[$schoolBoard->code] ?? $this->emptyStats()),

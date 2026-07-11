@@ -49,7 +49,13 @@ export function resetAutoTranslateCache(): void {
  */
 export function autoTranslate(text: string, lang: Lang): string {
   if (lang === "fr" || !text) return text;
-  return getMap().get(text) ?? text;
+  const exact = getMap().get(text);
+  if (exact) return exact;
+  return text
+    .replace(/\bAteliers\b/g, "Workshops")
+    .replace(/\bAtelier\b/g, "Workshop")
+    .replace(/\bateliers\b/g, "workshops")
+    .replace(/\batelier\b/g, "workshop");
 }
 
 /** Merge i18n translation table into the auto-translate map. */

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\PedagogicalLesson;
 use App\Models\PedagogicalUnit;
+use App\Services\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -25,7 +26,7 @@ class PedagogicalUnitController extends Controller
             ->get();
 
         return response()->json([
-            'units' => $units->map(fn (PedagogicalUnit $unit) => $this->formatUnit($unit)),
+            'units' => $units->map(fn (PedagogicalUnit $unit) => $this->formatUnit($unit, true)),
         ]);
     }
 
@@ -59,6 +60,8 @@ class PedagogicalUnitController extends Controller
 
         $unit->load('lessons');
 
+        AuditLogger::log('Create', 'Content', "{$unit->title} created", 'info', $request, subject: $unit);
+
         return response()->json(['unit' => $this->formatUnit($unit, true)], 201);
     }
 
@@ -87,11 +90,15 @@ class PedagogicalUnitController extends Controller
         $pedagogicalUnit->save();
         $pedagogicalUnit->load('lessons');
 
+        $action = $request->hasFile('quick_sheet') ? 'Upload' : 'Edit';
+        AuditLogger::log($action, 'Content', "{$pedagogicalUnit->title} updated", 'info', $request, subject: $pedagogicalUnit);
+
         return response()->json(['unit' => $this->formatUnit($pedagogicalUnit, true)]);
     }
 
-    public function destroy(PedagogicalUnit $pedagogicalUnit): JsonResponse
+    public function destroy(Request $request, PedagogicalUnit $pedagogicalUnit): JsonResponse
     {
+        $title = $pedagogicalUnit->title;
         $this->deleteFile($pedagogicalUnit->quick_sheet_path);
 
         foreach ($pedagogicalUnit->lessons as $lesson) {
@@ -99,6 +106,8 @@ class PedagogicalUnitController extends Controller
         }
 
         $pedagogicalUnit->delete();
+
+        AuditLogger::log('Delete', 'Content', "{$title} deleted", 'warning', $request);
 
         return response()->json(['message' => 'Unit deleted.']);
     }
@@ -145,10 +154,14 @@ class PedagogicalUnitController extends Controller
         $lesson->refresh();
         $pedagogicalUnit->load('lessons');
 
+        $hasUpload = $request->hasFile('interactive') || $request->hasFile('activity_sheet');
+        $action = $hasUpload ? 'Upload' : 'Edit';
+        AuditLogger::log($action, 'Content', "{$pedagogicalUnit->title} lesson {$lessonNumber} updated", 'info', $request, subject: $pedagogicalUnit);
+
         return response()->json(['unit' => $this->formatUnit($pedagogicalUnit, true)]);
     }
 
-    public function downloadQuickSheet(PedagogicalUnit $pedagogicalUnit): StreamedResponse|JsonResponse
+    public function downloadQuickSheet(Request $request, PedagogicalUnit $pedagogicalUnit): StreamedResponse|JsonResponse
     {
         if (! $pedagogicalUnit->quick_sheet_path || ! Storage::disk('public')->exists($pedagogicalUnit->quick_sheet_path)) {
             return response()->json(['message' => 'Quick sheet not found.'], 404);
@@ -156,6 +169,8 @@ class PedagogicalUnitController extends Controller
 
         $extension = strtolower($pedagogicalUnit->quick_sheet_format ?? 'pdf');
         $filename = Str::slug($pedagogicalUnit->title).'-quick-sheet.'.$extension;
+
+        AuditLogger::export($request, 'Content', "{$pedagogicalUnit->title} quick sheet downloaded");
 
         return Storage::disk('public')->download($pedagogicalUnit->quick_sheet_path, $filename);
     }
@@ -179,7 +194,7 @@ class PedagogicalUnitController extends Controller
         );
     }
 
-    public function downloadActivitySheet(PedagogicalUnit $pedagogicalUnit, int $lessonNumber): StreamedResponse|JsonResponse
+    public function downloadActivitySheet(Request $request, PedagogicalUnit $pedagogicalUnit, int $lessonNumber): StreamedResponse|JsonResponse
     {
         $lesson = $pedagogicalUnit->lessons()->where('lesson_number', $lessonNumber)->firstOrFail();
 
@@ -189,6 +204,8 @@ class PedagogicalUnitController extends Controller
 
         $extension = strtolower($lesson->activity_sheet_format ?? 'pdf');
         $filename = Str::slug($pedagogicalUnit->title).'-lesson-'.$lessonNumber.'-activity.'.$extension;
+
+        AuditLogger::export($request, 'Content', "{$pedagogicalUnit->title} lesson {$lessonNumber} activity sheet downloaded");
 
         return Storage::disk('public')->download($lesson->activity_sheet_path, $filename);
     }
