@@ -34,6 +34,10 @@ class TeacherReportsController extends Controller
             abort(403, 'Teacher portal access required.');
         }
 
+        if (! $teacher->canAccessReports()) {
+            abort(403, 'Reports require an active Insights subscription.');
+        }
+
         $classesQuery = SchoolClass::query()
             ->with(['students'])
             ->where('teacher_id', $teacher->id)

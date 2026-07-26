@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\SchoolBoard;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\EmailLocale;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -44,6 +45,7 @@ class TeacherProfileController extends Controller
                 Rule::unique('users', 'email')->ignore($teacher->id),
             ],
             'phone' => ['nullable', 'string', 'max:50'],
+            'preferred_language' => ['sometimes', 'in:en,fr'],
             'current_password' => ['required_with:password', 'nullable', 'string'],
             'password' => ['nullable', 'string', 'min:8', 'confirmed'],
         ]);
@@ -59,13 +61,19 @@ class TeacherProfileController extends Controller
             $teacher->portal_password_encrypted = Crypt::encryptString($data['password']);
         }
 
-        $teacher->fill([
+        $fill = [
             'first_name' => $data['first_name'],
             'last_name' => $data['last_name'],
             'email' => $data['email'],
             'phone' => $data['phone'] ?? null,
             'name' => trim("{$data['first_name']} {$data['last_name']}"),
-        ]);
+        ];
+
+        if (array_key_exists('preferred_language', $data)) {
+            $fill['preferred_language'] = $data['preferred_language'];
+        }
+
+        $teacher->fill($fill);
         $teacher->save();
         $teacher->load('school');
 
@@ -130,7 +138,12 @@ class TeacherProfileController extends Controller
     private function formatProfile(User $teacher): array
     {
         $classes = $teacher->classes()->withCount('students')->orderBy('name')->get();
-        $primaryClass = $classes->first();
+        $gradesTaught = $classes
+            ->pluck('grade')
+            ->filter(fn ($grade) => filled($grade))
+            ->unique()
+            ->values()
+            ->all();
 
         return [
             'id' => $teacher->id,
@@ -146,7 +159,9 @@ class TeacherProfileController extends Controller
             'school_board' => $this->formatSchoolBoard($teacher),
             'started_at' => $teacher->started_at?->format('Y-m-d'),
             'started_at_label' => $this->formatStartedAt($teacher),
-            'grade_taught' => $primaryClass?->grade,
+            'preferred_language' => EmailLocale::resolve($teacher),
+            'grade_taught' => $gradesTaught !== [] ? implode(', ', $gradesTaught) : null,
+            'grades_taught' => $gradesTaught,
             'class_count' => $classes->count(),
             'student_count' => (int) $classes->sum('students_count'),
         ];

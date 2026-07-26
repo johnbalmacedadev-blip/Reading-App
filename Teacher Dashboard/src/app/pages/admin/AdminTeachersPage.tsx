@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { AdminLayout } from "./AdminLayout";
 import {
-  Plus, Search, Edit2, Archive, X, ChevronDown, User, Mail, Phone, Loader2, Eye, EyeOff,
+  Plus, Search, Edit2, Archive, X, ChevronDown, User, Mail, Phone, Loader2, Eye, EyeOff, Send, UserCheck, Trash2, Bell,
 } from "lucide-react";
 import {
   adminTeachersApi,
@@ -12,13 +13,75 @@ import {
 } from "../../api/client";
 
 const TITLES = ["Mr.", "Mrs.", "Mme", "M."];
-const STATUSES = ["Active", "Inactive", "Archived"];
+const STATUSES = ["Active", "Pending activation", "Inactive", "Archived"];
+const ACTIVE_STATUS_FILTERS = ["Active", "Pending activation", "Inactive"];
+const ACCESS_FILTERS = ["All access", "Trial", "Trial ending soon", "Trial expired", "Subscribed", "Institutional"];
+const LOGIN_INACTIVE_DAYS = 30;
+const LIST_TABS = [
+  { id: "active" as const, label: "Teachers" },
+  { id: "archived" as const, label: "Archived" },
+  { id: "inactive" as const, label: "Inactive" },
+];
+const PAGE_SIZE = 20;
 
 const statusColors: Record<string, { bg: string; color: string }> = {
   Active: { bg: "#ecfdf5", color: "#059669" },
+  "Pending activation": { bg: "#fff7ed", color: "#c2410c" },
   Inactive: { bg: "#fffbeb", color: "#d97706" },
   Archived: { bg: "#f8fafc", color: "#94a3b8" },
 };
+
+const accessColors: Record<string, { bg: string; color: string }> = {
+  Trial: { bg: "#eff6ff", color: "#1d4ed8" },
+  "Trial expired": { bg: "#fff1f2", color: "#be123c" },
+  Essentials: { bg: "#ecfdf5", color: "#059669" },
+  Insights: { bg: "#f5f3ff", color: "#6d28d9" },
+  Institutional: { bg: "#f0fdf4", color: "#15803d" },
+  "Pending join": { bg: "#fff7ed", color: "#c2410c" },
+  None: { bg: "#f8fafc", color: "#94a3b8" },
+};
+
+function formatTrialEnd(iso: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" });
+}
+
+function formatLastLogin(teacher: AdminTeacherRecord): { label: string; detail: string; warn: boolean } {
+  const days = teacher.days_since_last_login;
+  if (days === null || days === undefined) {
+    return { label: "Never", detail: "No login recorded", warn: true };
+  }
+  if (!teacher.last_login_at && days === 0) {
+    return { label: "Today", detail: "Account created today", warn: false };
+  }
+  if (days === 0) {
+    return { label: "Today", detail: formatTrialEnd(teacher.last_login_at), warn: false };
+  }
+  if (days === 1) {
+    return {
+      label: "1 day ago",
+      detail: teacher.last_login_at ? formatTrialEnd(teacher.last_login_at) : "Never logged in",
+      warn: false,
+    };
+  }
+  return {
+    label: `${days} days ago`,
+    detail: teacher.last_login_at ? formatTrialEnd(teacher.last_login_at) : "Never logged in",
+    warn: teacher.login_inactive || days >= LOGIN_INACTIVE_DAYS,
+  };
+}
+
+function matchesAccessFilter(teacher: AdminTeacherRecord, filter: string): boolean {
+  if (filter === "All access") return true;
+  if (filter === "Trial") return teacher.access === "Trial";
+  if (filter === "Trial expired") return teacher.access === "Trial expired";
+  if (filter === "Institutional") return teacher.access === "Institutional";
+  if (filter === "Subscribed") return teacher.access === "Essentials" || teacher.access === "Insights";
+  if (filter === "Trial ending soon") {
+    return teacher.access === "Trial" && teacher.trial_days_remaining <= 7;
+  }
+  return true;
+}
 
 function TeacherAvatar({ teacher, initials }: { teacher: AdminTeacherRecord; initials: string }) {
   const [failed, setFailed] = useState(false);
@@ -76,9 +139,20 @@ type FormState = {
   board: string;
   status: string;
   since: string;
+  trial_ends_at: string;
+  access: string;
+  is_trial_active: boolean;
+  trial_days_remaining: number;
   portal_username: string;
   portal_password: string;
+  activation_pending: boolean;
+  affiliation_type: string | null;
 };
+
+function toDateInput(value: string | null | undefined): string {
+  if (!value) return "";
+  return value.slice(0, 10);
+}
 
 const emptyForm = (schoolId = 0, defaultBoard = "CSDM"): FormState => ({
   title: "Mrs.",
@@ -90,8 +164,14 @@ const emptyForm = (schoolId = 0, defaultBoard = "CSDM"): FormState => ({
   board: defaultBoard,
   status: "Active",
   since: new Date().toISOString().slice(0, 10),
+  trial_ends_at: "",
+  access: "None",
+  is_trial_active: false,
+  trial_days_remaining: 0,
   portal_username: "",
   portal_password: "",
+  activation_pending: false,
+  affiliation_type: null,
 });
 
 function toPayload(form: FormState, isCreate: boolean): AdminTeacherPayload {
@@ -106,6 +186,9 @@ function toPayload(form: FormState, isCreate: boolean): AdminTeacherPayload {
     started_at: form.since || undefined,
     portal_username: form.portal_username.trim(),
   };
+  if (!isCreate) {
+    payload.trial_ends_at = form.trial_ends_at.trim() || null;
+  }
   if (isCreate || form.portal_password.trim()) {
     payload.portal_password = form.portal_password.trim();
   }
@@ -125,8 +208,14 @@ function fromRecord(teacher: AdminTeacherRecord): FormState {
     board: teacher.board ?? "",
     status: teacher.status,
     since: teacher.since,
+    trial_ends_at: toDateInput(teacher.trial_ends_at),
+    access: teacher.access,
+    is_trial_active: teacher.is_trial_active,
+    trial_days_remaining: teacher.trial_days_remaining,
     portal_username: username,
     portal_password: teacher.portal_password ?? "",
+    activation_pending: teacher.activation_pending,
+    affiliation_type: teacher.affiliation_type ?? null,
   };
 }
 
@@ -137,8 +226,14 @@ function TeacherModal({
   boardOptions,
   saving,
   error,
+  message,
+  activationAction,
+  billingNoticeAction,
   onClose,
   onSave,
+  onResendActivation,
+  onActivateAccount,
+  onSendBillingNotice,
 }: {
   mode: "create" | "edit";
   initialForm: FormState;
@@ -146,12 +241,19 @@ function TeacherModal({
   boardOptions: BoardOption[];
   saving: boolean;
   error: string;
+  message: string;
+  activationAction: "resend" | "activate" | null;
+  billingNoticeAction: "trial_ending" | "trial_expired" | null;
   onClose: () => void;
   onSave: (form: FormState) => void;
+  onResendActivation: () => void;
+  onActivateAccount: () => void;
+  onSendBillingNotice: (type: "trial_ending" | "trial_expired") => void;
 }) {
   const [form, setForm] = useState(initialForm);
   const [suggesting, setSuggesting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [loadingPassword, setLoadingPassword] = useState(false);
   const isCreate = mode === "create";
 
   useEffect(() => {
@@ -167,7 +269,6 @@ function TeacherModal({
       setForm((f) => ({
         ...f,
         portal_username: creds.portal_username,
-        email: creds.portal_username,
         portal_password: isCreate ? creds.portal_password : f.portal_password,
       }));
     } catch {
@@ -177,14 +278,32 @@ function TeacherModal({
     }
   }, [isCreate]);
 
-  useEffect(() => {
-    if (isCreate && form.first_name.trim() && form.last_name.trim()) {
-      const timer = setTimeout(() => {
-        suggestCredentials(form.first_name, form.last_name, form.board);
-      }, 400);
-      return () => clearTimeout(timer);
+  const loadPassword = useCallback(async () => {
+    if (isCreate || !form.id || form.portal_password.trim()) return true;
+    setLoadingPassword(true);
+    try {
+      const { teacher } = await adminTeachersApi.get(form.id);
+      setForm((f) => ({ ...f, portal_password: teacher.portal_password ?? "" }));
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setLoadingPassword(false);
     }
-  }, [form.first_name, form.last_name, form.board, isCreate, suggestCredentials]);
+  }, [form.id, form.portal_password, isCreate]);
+
+  const togglePasswordVisibility = useCallback(async () => {
+    if (showPassword) {
+      setShowPassword(false);
+      return;
+    }
+    if (!form.portal_password.trim() && form.id) {
+      const loaded = await loadPassword();
+      if (!loaded) return;
+    }
+    setShowPassword(true);
+  }, [showPassword, form.portal_password, form.id, loadPassword]);
+
   const inputStyle = {
     width: "100%",
     padding: "9px 12px 9px 32px",
@@ -200,7 +319,6 @@ function TeacherModal({
   return (
     <div
       style={{ position: "fixed", inset: 0, background: "rgba(10,22,40,0.55)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}
-      onClick={(e) => e.target === e.currentTarget && !saving && onClose()}
     >
       <div style={{ background: "white", borderRadius: 16, width: 520, maxHeight: "90vh", overflow: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "22px 24px 16px", borderBottom: "1px solid #f1f5f9" }}>
@@ -319,6 +437,53 @@ function TeacherModal({
             </div>
           </div>
 
+          {!isCreate && (
+            <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: 14 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: "#0a1628", margin: 0 }}>Trial &amp; subscription follow-up</p>
+                <span style={{ fontSize: 11, fontWeight: 600, color: "#475569", background: "#e2e8f0", borderRadius: 999, padding: "3px 8px" }}>
+                  {form.access || "None"}
+                  {form.is_trial_active ? ` · ${form.trial_days_remaining}d left` : ""}
+                </span>
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 5 }}>
+                  Trial end date
+                </label>
+                <input
+                  type="date"
+                  value={form.trial_ends_at}
+                  onChange={(e) => setForm((prev) => ({ ...prev, trial_ends_at: e.target.value }))}
+                  style={plainInputStyle}
+                />
+                <p style={{ fontSize: 11, color: "#64748b", margin: "6px 0 0", lineHeight: 1.45 }}>
+                  Set a past date to test expiry, or a near future date to test ending-soon notices. Save before sending.
+                  Soft-lock applies to individual (non-institutional) teachers only.
+                </p>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() => onSendBillingNotice("trial_ending")}
+                  disabled={saving || billingNoticeAction !== null}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 11px", borderRadius: 7, border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+                >
+                  {billingNoticeAction === "trial_ending" ? <Loader2 size={13} className="animate-spin" /> : <Bell size={13} />}
+                  Send trial ending soon
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSendBillingNotice("trial_expired")}
+                  disabled={saving || billingNoticeAction !== null}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 11px", borderRadius: 7, border: "1px solid #fecdd3", background: "#fff1f2", color: "#be123c", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+                >
+                  {billingNoticeAction === "trial_expired" ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+                  Send trial expired
+                </button>
+              </div>
+            </div>
+          )}
+
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 5 }}>Status</label>
             <select
@@ -353,7 +518,7 @@ function TeacherModal({
                   value={form.portal_username}
                   onChange={(e) => {
                     const value = e.target.value;
-                    setForm((prev) => ({ ...prev, portal_username: value, email: value }));
+                    setForm((prev) => ({ ...prev, portal_username: value }));
                   }}
                   placeholder="teacher.name@portal.local"
                   style={plainInputStyle}
@@ -373,7 +538,8 @@ function TeacherModal({
                   />
                   <button
                     type="button"
-                    onClick={() => setShowPassword((v) => !v)}
+                    onClick={togglePasswordVisibility}
+                    disabled={loadingPassword}
                     style={{
                       position: "absolute",
                       right: 10,
@@ -389,13 +555,51 @@ function TeacherModal({
                     }}
                     aria-label={showPassword ? "Hide password" : "Show password"}
                   >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    {loadingPassword ? <Loader2 size={16} className="animate-spin" /> : showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
               </div>
             </div>
           </div>
 
+          {!isCreate && form.activation_pending && (
+            <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 10, padding: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#9a3412", marginBottom: 4 }}>
+                {form.status === "Pending activation" || form.affiliation_type === "school" || form.affiliation_type === "board"
+                  ? "School / board activation pending"
+                  : "Email activation pending"}
+              </div>
+              <p style={{ fontSize: 12, color: "#9a3412", margin: "0 0 12px", lineHeight: 1.5 }}>
+                {form.status === "Pending activation" || form.affiliation_type === "school" || form.affiliation_type === "board"
+                  ? "This teacher requested to join through a school or school board and is waiting for approval."
+                  : "This teacher has not activated the account from the email link yet."}
+              </p>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {!(form.status === "Pending activation" || form.affiliation_type === "school" || form.affiliation_type === "board") && (
+                  <button
+                    type="button"
+                    onClick={onResendActivation}
+                    disabled={saving || activationAction !== null}
+                    style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 11px", borderRadius: 7, border: "1px solid #fdba74", background: "white", color: "#c2410c", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+                  >
+                    {activationAction === "resend" ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+                    Resend activation email
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={onActivateAccount}
+                  disabled={saving || activationAction !== null}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 11px", borderRadius: 7, border: "none", background: "#059669", color: "white", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+                >
+                  {activationAction === "activate" ? <Loader2 size={13} className="animate-spin" /> : <UserCheck size={13} />}
+                  Activate account now
+                </button>
+              </div>
+            </div>
+          )}
+
+          {message && <p style={{ fontSize: 12, color: "#047857", background: "#ecfdf5", borderRadius: 8, padding: "9px 11px", margin: 0 }}>{message}</p>}
           {error && <p style={{ fontSize: 12, color: "#ef4444", margin: 0 }}>{error}</p>}
         </div>
         <div style={{ padding: "16px 24px", borderTop: "1px solid #f1f5f9", display: "flex", justifyContent: "flex-end", gap: 10 }}>
@@ -407,6 +611,7 @@ function TeacherModal({
             Cancel
           </button>
           <button
+            type="button"
             onClick={() => onSave(form)}
             disabled={saving}
             style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "#004aad", color: "white", fontSize: 13, cursor: "pointer", fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}
@@ -429,11 +634,24 @@ export function AdminTeachersPage() {
   const [search, setSearch] = useState("");
   const [schoolFilter, setSchoolFilter] = useState("All Schools");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [accessFilter, setAccessFilter] = useState("All access");
+  const [listTab, setListTab] = useState<"active" | "archived" | "inactive">("active");
+  const [page, setPage] = useState(1);
   const [modalMode, setModalMode] = useState<"create" | "edit" | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm());
+  const [loadingTeacher, setLoadingTeacher] = useState(false);
   const [saving, setSaving] = useState(false);
   const [modalError, setModalError] = useState("");
+  const [modalNotice, setModalNotice] = useState("");
+  const [activationAction, setActivationAction] = useState<"resend" | "activate" | null>(null);
+  const [billingNoticeAction, setBillingNoticeAction] = useState<"trial_ending" | "trial_expired" | null>(null);
+  const [notice, setNotice] = useState("");
   const [archivingId, setArchivingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [inactivityEmailAction, setInactivityEmailAction] = useState<{
+    id: number;
+    type: "inactive_reminder" | "suspension_reminder";
+  } | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -463,31 +681,140 @@ export function AdminTeachersPage() {
 
   const schoolOptions = ["All Schools", ...schools.map((s) => s.name)];
 
-  const filtered = teachers.filter((t) => {
+  const archivedTeachers = teachers.filter((t) => t.status === "Archived");
+  const inactiveTeachers = teachers.filter((t) => t.status !== "Archived" && t.login_inactive);
+  const activeTeachers = teachers.filter((t) => t.status !== "Archived" && !t.login_inactive);
+  const tabTeachers =
+    listTab === "archived" ? archivedTeachers : listTab === "inactive" ? inactiveTeachers : activeTeachers;
+
+  const filtered = tabTeachers.filter((t) => {
     const matchSearch =
       t.name.toLowerCase().includes(search.toLowerCase()) ||
       t.email.toLowerCase().includes(search.toLowerCase());
     const matchSchool = schoolFilter === "All Schools" || t.school === schoolFilter;
-    const matchStatus = statusFilter === "All" || t.status === statusFilter;
-    return matchSearch && matchSchool && matchStatus;
+    if (listTab === "archived" || listTab === "inactive") {
+      return matchSearch && matchSchool;
+    }
+    const displayStatus = t.activation_pending ? "Pending activation" : t.status;
+    const matchStatus = statusFilter === "All" || displayStatus === statusFilter;
+    const matchAccess = matchesAccessFilter(t, accessFilter);
+    return matchSearch && matchSchool && matchStatus && matchAccess;
   });
 
-  const activeCount = teachers.filter((t) => t.status === "Active").length;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const paged = filtered.slice(pageStart, pageStart + PAGE_SIZE);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, schoolFilter, statusFilter, accessFilter, listTab]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const trialCount = activeTeachers.filter((t) => t.access === "Trial").length;
+  const trialEndingSoonCount = activeTeachers.filter((t) => t.access === "Trial" && t.trial_days_remaining <= 7).length;
+  const trialExpiredCount = activeTeachers.filter((t) => t.access === "Trial expired").length;
+
+  const archivedCount = archivedTeachers.length;
+  const inactiveCount = inactiveTeachers.length;
 
   const openCreate = () => {
     setForm(emptyForm(schools[0]?.id ?? 0, boardOptions[0]?.code ?? "CSDM"));
     setModalError("");
+    setModalNotice("");
     setModalMode("create");
   };
 
-  const openEdit = (teacher: AdminTeacherRecord) => {
+  const openEdit = async (teacher: AdminTeacherRecord) => {
     setForm(fromRecord(teacher));
     setModalError("");
+    setModalNotice("");
     setModalMode("edit");
+    setLoadingTeacher(true);
+    try {
+      const { teacher: full } = await adminTeachersApi.get(teacher.id);
+      setForm(fromRecord(full));
+    } catch (err) {
+      setModalError(err instanceof Error ? err.message : "Failed to load teacher details.");
+    } finally {
+      setLoadingTeacher(false);
+    }
   };
 
   const closeModal = () => {
-    if (!saving) setModalMode(null);
+    if (!saving && activationAction === null && billingNoticeAction === null) setModalMode(null);
+  };
+
+  const handleResendActivation = async () => {
+    if (!form.id) return;
+    setActivationAction("resend");
+    setModalError("");
+    setModalNotice("");
+    try {
+      const result = await adminTeachersApi.resendActivation(form.id);
+      setTeachers((prev) => prev.map((teacher) => teacher.id === result.teacher.id ? result.teacher : teacher));
+      setForm(fromRecord(result.teacher));
+      setModalNotice(result.message);
+    } catch (err) {
+      setModalError(err instanceof Error ? err.message : "Unable to resend the activation email.");
+    } finally {
+      setActivationAction(null);
+    }
+  };
+
+  const handleActivateAccount = async () => {
+    if (!form.id) return;
+    setActivationAction("activate");
+    setModalError("");
+    setModalNotice("");
+    try {
+      const result = await adminTeachersApi.activateAccount(form.id);
+      setTeachers((prev) => prev.map((teacher) => teacher.id === result.teacher.id ? result.teacher : teacher));
+      setForm(fromRecord(result.teacher));
+      setModalNotice(result.message);
+    } catch (err) {
+      setModalError(err instanceof Error ? err.message : "Unable to activate the account.");
+    } finally {
+      setActivationAction(null);
+    }
+  };
+
+  const handleSendBillingNotice = async (type: "trial_ending" | "trial_expired") => {
+    if (!form.id) return;
+    setBillingNoticeAction(type);
+    setModalError("");
+    setModalNotice("");
+    try {
+      const result = await adminTeachersApi.sendBillingNotice(form.id, type);
+      setTeachers((prev) => prev.map((teacher) => teacher.id === result.teacher.id ? result.teacher : teacher));
+      setForm(fromRecord(result.teacher));
+      setModalNotice(result.message);
+      toast.success(result.message);
+    } catch (err) {
+      setModalError(err instanceof Error ? err.message : "Unable to send the billing notice.");
+    } finally {
+      setBillingNoticeAction(null);
+    }
+  };
+
+  const handleSendInactivityNotice = async (
+    teacherId: number,
+    type: "inactive_reminder" | "suspension_reminder",
+  ) => {
+    setInactivityEmailAction({ id: teacherId, type });
+    try {
+      const result = await adminTeachersApi.sendInactivityNotice(teacherId, type);
+      setTeachers((prev) => prev.map((teacher) => (teacher.id === result.teacher.id ? result.teacher : teacher)));
+      setNotice(result.message);
+      toast.success(result.message);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Unable to send inactivity email.");
+    } finally {
+      setInactivityEmailAction(null);
+    }
   };
 
   const handleSave = async (form: FormState) => {
@@ -509,11 +836,17 @@ export function AdminTeachersPage() {
     try {
       const payload = toPayload(form, modalMode === "create");
       if (modalMode === "create") {
-        const { teacher } = await adminTeachersApi.create(payload);
-        setTeachers((prev) => [...prev, teacher].sort((a, b) => a.name.localeCompare(b.name)));
+        const result = await adminTeachersApi.create(payload);
+        setTeachers((prev) => [...prev, result.teacher].sort((a, b) => a.name.localeCompare(b.name)));
+        setNotice(
+          result.email_sent
+            ? "Teacher created. An activation email was sent to their address."
+            : result.message || "Teacher created, but the activation email could not be sent."
+        );
       } else if (modalMode === "edit" && form.id) {
         const { teacher } = await adminTeachersApi.update(form.id, payload);
         setTeachers((prev) => prev.map((t) => (t.id === teacher.id ? teacher : t)));
+        setNotice("");
       }
       setModalMode(null);
     } catch (err) {
@@ -528,10 +861,38 @@ export function AdminTeachersPage() {
     try {
       const { teacher } = await adminTeachersApi.archive(id);
       setTeachers((prev) => prev.map((t) => (t.id === teacher.id ? teacher : t)));
+      if (teacher.status === "Archived") {
+        setNotice("Teacher archived.");
+        setListTab("archived");
+      } else {
+        setNotice("Teacher restored.");
+        setListTab("active");
+      }
     } catch (err) {
       alert(err instanceof Error ? err.message : "Archive failed.");
     } finally {
       setArchivingId(null);
+    }
+  };
+
+  const handleDelete = async (teacher: AdminTeacherRecord) => {
+    if (
+      !window.confirm(
+        `Permanently delete ${teacher.name}? This cannot be undone and will remove their classes.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeletingId(teacher.id);
+    try {
+      await adminTeachersApi.remove(teacher.id);
+      setTeachers((prev) => prev.filter((t) => t.id !== teacher.id));
+      setNotice("Teacher permanently deleted.");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Delete failed.");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -545,16 +906,24 @@ export function AdminTeachersPage() {
           <div>
             <h1 style={{ fontSize: 24, fontWeight: 700, color: "#0a1628", margin: 0 }}>Teachers</h1>
             <p style={{ color: "#64748b", fontSize: 14, marginTop: 4 }}>
-              {loading ? "Loading…" : `${activeCount} active teachers`}
+              {loading
+                ? "Loading…"
+                : listTab === "archived"
+                  ? `${archivedCount} archived teacher${archivedCount === 1 ? "" : "s"}`
+                  : listTab === "inactive"
+                    ? `${inactiveCount} inactive teacher${inactiveCount === 1 ? "" : "s"} (no login for ${LOGIN_INACTIVE_DAYS}+ days)`
+                    : `${activeTeachers.length} active teachers · ${inactiveCount} inactive · ${archivedCount} archived`}
             </p>
           </div>
-          <button
-            onClick={openCreate}
-            disabled={loading || schools.length === 0}
-            style={{ display: "flex", alignItems: "center", gap: 7, padding: "10px 18px", borderRadius: 9, border: "none", background: "#004aad", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
-          >
-            <Plus size={15} /> New Teacher
-          </button>
+          {listTab === "active" && (
+            <button
+              onClick={openCreate}
+              disabled={loading || schools.length === 0}
+              style={{ display: "flex", alignItems: "center", gap: 7, padding: "10px 18px", borderRadius: 9, border: "none", background: "#004aad", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+            >
+              <Plus size={15} /> New Teacher
+            </button>
+          )}
         </div>
 
         {error && (
@@ -566,19 +935,122 @@ export function AdminTeachersPage() {
           </div>
         )}
 
+        {notice && (
+          <div style={{ marginBottom: 16, padding: "12px 16px", borderRadius: 8, background: "#ecfdf5", color: "#047857", fontSize: 13, display: "flex", justifyContent: "space-between", gap: 12 }}>
+            <span>{notice}</span>
+            <button type="button" onClick={() => setNotice("")} style={{ background: "none", border: "none", cursor: "pointer", color: "#047857", fontWeight: 600 }}>
+              ✕
+            </button>
+          </div>
+        )}
+
+        {listTab === "active" && !loading && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 18 }}>
+            {[
+              { label: "On trial", value: trialCount, filter: "Trial", bg: "#eff6ff", color: "#1d4ed8" },
+              { label: "Ending in ≤7 days", value: trialEndingSoonCount, filter: "Trial ending soon", bg: "#fffbeb", color: "#b45309" },
+              { label: "Trial expired", value: trialExpiredCount, filter: "Trial expired", bg: "#fff1f2", color: "#be123c" },
+            ].map((card) => (
+              <button
+                key={card.label}
+                type="button"
+                onClick={() => setAccessFilter(card.filter)}
+                style={{
+                  textAlign: "left",
+                  padding: "14px 16px",
+                  borderRadius: 12,
+                  border: accessFilter === card.filter ? `2px solid ${card.color}` : "1px solid #e2e8f0",
+                  background: card.bg,
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ fontSize: 11, fontWeight: 700, color: card.color, textTransform: "uppercase", letterSpacing: 0.4 }}>{card.label}</div>
+                <div style={{ fontSize: 28, fontWeight: 800, color: "#0f172a", marginTop: 4 }}>{card.value}</div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, borderBottom: "1px solid #e2e8f0" }}>
+          {LIST_TABS.map((tab) => {
+            const active = listTab === tab.id;
+            const count =
+              tab.id === "archived"
+                ? archivedCount
+                : tab.id === "inactive"
+                  ? inactiveCount
+                  : activeTeachers.length;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => {
+                  setListTab(tab.id);
+                  setStatusFilter("All");
+                  setAccessFilter("All access");
+                  setPage(1);
+                }}
+                style={{
+                  padding: "10px 16px",
+                  border: "none",
+                  borderBottom: active ? "2px solid #004aad" : "2px solid transparent",
+                  background: "transparent",
+                  color: active ? "#004aad" : "#64748b",
+                  fontSize: 13,
+                  fontWeight: active ? 700 : 500,
+                  cursor: "pointer",
+                  marginBottom: -1,
+                }}
+              >
+                {tab.label}
+                <span
+                  style={{
+                    marginLeft: 8,
+                    padding: "2px 8px",
+                    borderRadius: 999,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    background: active ? "#dff3ff" : "#f1f5f9",
+                    color: active ? "#004aad" : "#64748b",
+                  }}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {listTab === "inactive" && (
+          <p style={{ margin: "0 0 14px", fontSize: 13, color: "#64748b" }}>
+            Teachers with no login activity for {LOGIN_INACTIVE_DAYS}+ days are tagged as Inactive.
+          </p>
+        )}
+
         <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
           <div style={{ position: "relative", flex: 1, minWidth: 220 }}>
             <Search size={14} color="#94a3b8" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search for a teacher..."
+              placeholder={
+                listTab === "archived"
+                  ? "Search archived teachers..."
+                  : listTab === "inactive"
+                    ? "Search inactive teachers..."
+                    : "Search for a teacher..."
+              }
               style={{ width: "100%", padding: "9px 12px 9px 34px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, outline: "none", boxSizing: "border-box" }}
             />
           </div>
           {[
             { value: schoolFilter, onChange: setSchoolFilter, options: schoolOptions },
-            { value: statusFilter, onChange: setStatusFilter, options: ["All", ...STATUSES] },
+            ...(listTab === "active"
+              ? [
+                  { value: statusFilter, onChange: setStatusFilter, options: ["All", ...ACTIVE_STATUS_FILTERS] },
+                  { value: accessFilter, onChange: setAccessFilter, options: ACCESS_FILTERS },
+                ]
+              : []),
           ].map((sel, i) => (
             <div key={i} style={{ position: "relative" }}>
               <select
@@ -604,7 +1076,7 @@ export function AdminTeachersPage() {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: "#f8fafc" }}>
-                  {["Teacher", "Email", "School", "Board", "Classes", "Students", "Status", "Actions"].map((h) => (
+                  {["Teacher", "Email", "School", "Board", "Access", "Trial", "Last login", "Status", "Actions"].map((h) => (
                     <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, color: "#64748b", letterSpacing: 0.3, whiteSpace: "nowrap" }}>
                       {h}
                     </th>
@@ -612,8 +1084,15 @@ export function AdminTeachersPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((t, i) => {
-                  const sc = statusColors[t.status] || statusColors.Archived;
+                {paged.map((t, i) => {
+                  const displayStatus = t.activation_pending
+                    ? "Pending activation"
+                    : t.login_inactive
+                      ? "Inactive"
+                      : t.status;
+                  const sc = statusColors[displayStatus] || statusColors.Archived;
+                  const ac = accessColors[t.access] || accessColors.None;
+                  const lastLogin = formatLastLogin(t);
                   return (
                     <tr key={t.id} style={{ borderTop: "1px solid #f1f5f9", background: i % 2 === 0 ? "white" : "#fafbfc" }}>
                       <td style={{ padding: "13px 16px" }}>
@@ -640,31 +1119,122 @@ export function AdminTeachersPage() {
                           {t.board || "None"}
                         </span>
                       </td>
-                      <td style={{ padding: "13px 16px", fontSize: 13, color: "#374151", fontWeight: 500 }}>{t.classes}</td>
-                      <td style={{ padding: "13px 16px", fontSize: 13, color: "#374151", fontWeight: 500 }}>{t.students}</td>
                       <td style={{ padding: "13px 16px" }}>
-                        <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 12, background: sc.bg, color: sc.color }}>{t.status}</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 12, background: ac.bg, color: ac.color, whiteSpace: "nowrap" }}>
+                          {t.access}
+                        </span>
+                      </td>
+                      <td style={{ padding: "13px 16px", fontSize: 12, color: "#374151", whiteSpace: "nowrap" }}>
+                        {t.access === "Trial" ? (
+                          <span style={{ fontWeight: 700, color: t.trial_days_remaining <= 7 ? "#b45309" : "#1d4ed8" }}>
+                            {t.trial_days_remaining}d left
+                            <span style={{ display: "block", fontWeight: 500, color: "#94a3b8", fontSize: 11 }}>
+                              ends {formatTrialEnd(t.trial_ends_at)}
+                            </span>
+                          </span>
+                        ) : t.access === "Trial expired" ? (
+                          <span style={{ color: "#be123c", fontWeight: 600 }}>Expired {formatTrialEnd(t.trial_ends_at)}</span>
+                        ) : (
+                          <span style={{ color: "#94a3b8" }}>—</span>
+                        )}
+                      </td>
+                      <td style={{ padding: "13px 16px", fontSize: 12, whiteSpace: "nowrap" }}>
+                        <span style={{ fontWeight: 700, color: lastLogin.warn ? "#b45309" : "#334155" }}>
+                          {lastLogin.label}
+                        </span>
+                        <span style={{ display: "block", fontWeight: 500, color: "#94a3b8", fontSize: 11 }}>
+                          {lastLogin.detail}
+                        </span>
                       </td>
                       <td style={{ padding: "13px 16px" }}>
-                        <div style={{ display: "flex", gap: 6 }}>
-                          <button
-                            onClick={() => openEdit(t)}
-                            style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#374151" }}
-                          >
-                            <Edit2 size={12} /> Edit
-                          </button>
-                          <button
-                            onClick={() => handleArchive(t.id)}
-                            disabled={archivingId === t.id}
-                            style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #fee2e2", background: "#fff5f5", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#ef4444" }}
-                          >
-                            {archivingId === t.id ? (
-                              <Loader2 size={12} className="animate-spin" />
-                            ) : (
-                              <Archive size={12} />
-                            )}
-                            {t.status === "Archived" ? "Restore" : "Archive"}
-                          </button>
+                        <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 12, background: sc.bg, color: sc.color, whiteSpace: "nowrap" }}>{displayStatus}</span>
+                      </td>
+                      <td style={{ padding: "13px 16px" }}>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {listTab === "active" ? (
+                            <>
+                              <button
+                                onClick={() => openEdit(t)}
+                                style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#374151" }}
+                              >
+                                <Edit2 size={12} /> Edit
+                              </button>
+                              <button
+                                onClick={() => handleArchive(t.id)}
+                                disabled={archivingId === t.id}
+                                style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #fee2e2", background: "#fff5f5", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#ef4444" }}
+                              >
+                                {archivingId === t.id ? (
+                                  <Loader2 size={12} className="animate-spin" />
+                                ) : (
+                                  <Archive size={12} />
+                                )}
+                                Archive
+                              </button>
+                            </>
+                          ) : listTab === "inactive" ? (
+                            <>
+                              <button
+                                onClick={() => handleSendInactivityNotice(t.id, "inactive_reminder")}
+                                disabled={inactivityEmailAction?.id === t.id}
+                                title="Inactive Account Reminder"
+                                style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #dbeafe", background: "#eff6ff", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#1d4ed8" }}
+                              >
+                                {inactivityEmailAction?.id === t.id && inactivityEmailAction.type === "inactive_reminder" ? (
+                                  <Loader2 size={12} className="animate-spin" />
+                                ) : (
+                                  <Bell size={12} />
+                                )}
+                                Inactive reminder
+                              </button>
+                              <button
+                                onClick={() => handleSendInactivityNotice(t.id, "suspension_reminder")}
+                                disabled={inactivityEmailAction?.id === t.id}
+                                title="Account Suspension Reminder"
+                                style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #ffedd5", background: "#fff7ed", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#c2410c" }}
+                              >
+                                {inactivityEmailAction?.id === t.id && inactivityEmailAction.type === "suspension_reminder" ? (
+                                  <Loader2 size={12} className="animate-spin" />
+                                ) : (
+                                  <Send size={12} />
+                                )}
+                                Suspension reminder
+                              </button>
+                              <button
+                                onClick={() => openEdit(t)}
+                                style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#374151" }}
+                              >
+                                <Edit2 size={12} /> Edit
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => handleArchive(t.id)}
+                                disabled={archivingId === t.id || deletingId === t.id}
+                                style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #d1fae5", background: "#ecfdf5", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#059669" }}
+                              >
+                                {archivingId === t.id ? (
+                                  <Loader2 size={12} className="animate-spin" />
+                                ) : (
+                                  <Archive size={12} />
+                                )}
+                                Restore
+                              </button>
+                              <button
+                                onClick={() => handleDelete(t)}
+                                disabled={deletingId === t.id || archivingId === t.id}
+                                style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #fecdd3", background: "#fff1f2", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#be123c" }}
+                              >
+                                {deletingId === t.id ? (
+                                  <Loader2 size={12} className="animate-spin" />
+                                ) : (
+                                  <Trash2 size={12} />
+                                )}
+                                Delete
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -674,7 +1244,70 @@ export function AdminTeachersPage() {
             </table>
           )}
           {!loading && filtered.length === 0 && (
-            <div style={{ padding: "40px 0", textAlign: "center", color: "#94a3b8", fontSize: 14 }}>No teacher found.</div>
+            <div style={{ padding: "40px 0", textAlign: "center", color: "#94a3b8", fontSize: 14 }}>
+              {listTab === "archived"
+                ? "No archived teachers."
+                : listTab === "inactive"
+                  ? `No teachers inactive for ${LOGIN_INACTIVE_DAYS}+ days.`
+                  : "No teacher found."}
+            </div>
+          )}
+          {!loading && filtered.length > 0 && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+                padding: "12px 16px",
+                borderTop: "1px solid #f1f5f9",
+                background: "#f8fafc",
+              }}
+            >
+              <span style={{ fontSize: 12, color: "#64748b" }}>
+                Showing {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, filtered.length)} of {filtered.length}
+              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage <= 1}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    border: "1px solid #e2e8f0",
+                    background: currentPage <= 1 ? "#f1f5f9" : "white",
+                    color: currentPage <= 1 ? "#94a3b8" : "#334155",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: currentPage <= 1 ? "not-allowed" : "pointer",
+                  }}
+                >
+                  Previous
+                </button>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#334155", minWidth: 80, textAlign: "center" }}>
+                  Page {currentPage} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage >= totalPages}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    border: "1px solid #e2e8f0",
+                    background: currentPage >= totalPages ? "#f1f5f9" : "white",
+                    color: currentPage >= totalPages ? "#94a3b8" : "#334155",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: currentPage >= totalPages ? "not-allowed" : "pointer",
+                  }}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </div>
@@ -685,10 +1318,16 @@ export function AdminTeachersPage() {
           initialForm={form}
           schools={schools}
           boardOptions={boardOptions}
-          saving={saving}
+          saving={saving || loadingTeacher}
           error={modalError}
+          message={modalNotice}
+          activationAction={activationAction}
+          billingNoticeAction={billingNoticeAction}
           onClose={closeModal}
           onSave={handleSave}
+          onResendActivation={handleResendActivation}
+          onActivateAccount={handleActivateAccount}
+          onSendBillingNotice={handleSendBillingNotice}
         />
       )}
     </AdminLayout>

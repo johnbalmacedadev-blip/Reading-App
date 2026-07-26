@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { Navigate, useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import {
   Mail,
@@ -21,6 +21,8 @@ import {
   Book,
   PanelLeftClose,
   PanelLeft,
+  UserPlus,
+  Globe,
 } from "lucide-react";
 import { NotificationDropdown } from "../components/NotificationDropdown";
 import { LangToggle } from "../components/LangToggle";
@@ -31,12 +33,14 @@ import { useAuth } from "../context/AuthContext";
 import { teacherProfileApi, type TeacherProfile, ApiError } from "../api/client";
 import { ProfileAvatar } from "../components/ProfileAvatar";
 import { UserAvatar } from "../components/UserAvatar";
+import { teacherIsAccountDeactivated } from "../utils/teacherAccess";
 
 type ProfileForm = {
   firstName: string;
   lastName: string;
   username: string;
   phone: string;
+  preferredLanguage: "en" | "fr";
   currentPassword: string;
   newPassword: string;
   confirmPassword: string;
@@ -64,6 +68,7 @@ function profileToForm(profile: TeacherProfile): ProfileForm {
     lastName: profile.last_name ?? "",
     username: profile.email,
     phone: profile.phone ?? "",
+    preferredLanguage: profile.preferred_language === "en" ? "en" : "fr",
     ...emptyPasswordFields(),
   };
 }
@@ -78,11 +83,13 @@ export function ProfilePage() {
     lastName: "",
     username: "",
     phone: "",
+    preferredLanguage: "fr",
     ...emptyPasswordFields(),
   });
   const [savedForm, setSavedForm] = useState<ProfileForm | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingLanguage, setSavingLanguage] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [error, setError] = useState("");
 
@@ -155,6 +162,7 @@ export function ProfilePage() {
         last_name: form.lastName.trim(),
         email: form.username.trim(),
         phone: form.phone.trim() || undefined,
+        preferred_language: form.preferredLanguage,
       };
 
       if (changingPassword) {
@@ -194,10 +202,48 @@ export function ProfilePage() {
     }
   };
 
+  const handleLanguageChange = async (nextLang: "en" | "fr") => {
+    if (!profile || nextLang === form.preferredLanguage || savingLanguage) return;
+
+    const previous = form.preferredLanguage;
+    setForm((f) => ({ ...f, preferredLanguage: nextLang }));
+    setSavingLanguage(true);
+    try {
+      const { profile: updated } = await teacherProfileApi.update({
+        first_name: profile.first_name ?? form.firstName.trim(),
+        last_name: profile.last_name ?? form.lastName.trim(),
+        email: profile.email,
+        phone: profile.phone ?? undefined,
+        preferred_language: nextLang,
+      });
+      setProfile(updated);
+      const nextForm = profileToForm(updated);
+      setForm((f) => ({
+        ...nextForm,
+        currentPassword: f.currentPassword,
+        newPassword: f.newPassword,
+        confirmPassword: f.confirmPassword,
+      }));
+      setSavedForm((prev) =>
+        prev
+          ? { ...profileToForm(updated), currentPassword: prev.currentPassword, newPassword: prev.newPassword, confirmPassword: prev.confirmPassword }
+          : profileToForm(updated)
+      );
+      await refreshUser();
+      toast.success(t("profile.languageUpdated"));
+    } catch (err) {
+      setForm((f) => ({ ...f, preferredLanguage: previous }));
+      toast.error(err instanceof Error ? err.message : t("profile.languageUpdateFailed"));
+    } finally {
+      setSavingLanguage(false);
+    }
+  };
+
   const menuItems = isSchoolPortal ? [
     { icon: BarChart3,     label: "Overview",     active: false, path: "/school/reports" },
     { icon: GraduationCap, label: "Academics",    active: false, path: "/school/academics" },
     { icon: FileText,      label: "Assessments",  active: false, path: "/school/assessments" },
+    { icon: UserPlus,      label: t("nav.teacherRequests"), active: false, path: "/school/teachers" },
     { icon: User,          label: "Profile",      active: true,  path: "/profile?portal=school" },
     { icon: Settings,      label: "Settings",     active: false, path: "/school/settings" },
   ] : [
@@ -225,6 +271,10 @@ export function ProfilePage() {
         </button>
       </div>
     );
+  }
+
+  if (!isSchoolPortal && teacherIsAccountDeactivated(user)) {
+    return <Navigate to="/account-status" replace />;
   }
 
   const profileContent = (
@@ -554,6 +604,59 @@ export function ProfilePage() {
                 className="rounded-2xl p-8 shadow-lg"
                 style={{ background: "#ffffff", border: "1px solid #dff3ff" }}
               >
+                <div className="flex items-start gap-3 mb-2">
+                  <Globe className="w-5 h-5 mt-1" style={{ color: "#38b6ff" }} />
+                  <div>
+                    <h2 className="text-xl" style={{ color: "#004aad" }}>
+                      {t("profile.emailNotificationLanguage")}
+                    </h2>
+                    <p className="text-sm mt-1" style={{ color: "#64748b" }}>
+                      {t("profile.emailNotificationLanguageHint")}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-3 mt-6">
+                  {([
+                    { value: "fr" as const, label: t("profile.languageFrench") },
+                    { value: "en" as const, label: t("profile.languageEnglish") },
+                  ]).map((option) => {
+                    const selected = form.preferredLanguage === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        disabled={savingLanguage}
+                        onClick={() => handleLanguageChange(option.value)}
+                        style={{
+                          padding: "12px 20px",
+                          borderRadius: 12,
+                          border: selected ? "2px solid #004aad" : "1.5px solid #dff3ff",
+                          background: selected ? "#dff3ff" : "#f8ffdb",
+                          color: selected ? "#004aad" : "#374151",
+                          fontWeight: selected ? 700 : 500,
+                          fontSize: 14,
+                          cursor: savingLanguage ? "wait" : "pointer",
+                          opacity: savingLanguage && !selected ? 0.7 : 1,
+                          minWidth: 140,
+                        }}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                  {savingLanguage && (
+                    <span className="flex items-center gap-2 text-sm" style={{ color: "#64748b" }}>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {t("common.saving")}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div
+                className="rounded-2xl p-8 shadow-lg"
+                style={{ background: "#ffffff", border: "1px solid #dff3ff" }}
+              >
                 <h2 className="text-xl mb-6" style={{ color: "#004aad" }}>
                   {t("profile.teachingInfo")}
                 </h2>
@@ -562,9 +665,31 @@ export function ProfilePage() {
                     <p className="text-sm mb-2" style={{ color: "#000000" }}>
                       {t("profile.gradeLevel")}
                     </p>
-                    <p className="text-2xl" style={{ color: "#004aad" }}>
-                      {auto(profile.grade_taught ?? "—")}
-                    </p>
+                    {(profile.grades_taught?.length ?? 0) > 0 ? (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        {profile.grades_taught.map((grade) => (
+                          <span
+                            key={grade}
+                            style={{
+                              display: "inline-block",
+                              padding: "6px 12px",
+                              borderRadius: 999,
+                              background: "#ffffff",
+                              color: "#004aad",
+                              fontSize: profile.grades_taught.length > 2 ? 14 : 18,
+                              fontWeight: 700,
+                              lineHeight: 1.3,
+                            }}
+                          >
+                            {auto(grade)}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-2xl" style={{ color: "#004aad" }}>
+                        {auto(profile.grade_taught ?? "—")}
+                      </p>
+                    )}
                   </div>
                   <div className="p-6 rounded-xl" style={{ background: "#dff3ff" }}>
                     <p className="text-sm mb-2" style={{ color: "#000000" }}>

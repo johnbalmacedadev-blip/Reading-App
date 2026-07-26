@@ -6,6 +6,15 @@ import { useLanguage } from "../i18n";
 import { teacherNavItems, type TeacherNavActive } from "../i18n/navHelpers";
 import { usePortalLogout } from "../hooks/usePortalLogout";
 import { useCollapsibleSidebar } from "../hooks/useCollapsibleSidebar";
+import { useAuth } from "../context/AuthContext";
+import {
+  teacherCanAccessAssessments,
+  teacherCanAccessClassroom,
+  teacherIsAccountDeactivated,
+  teacherIsInstitutional,
+} from "../utils/teacherAccess";
+import { TeacherTrialBanner } from "./TeacherTrialBanner";
+import { TeacherLoginAlertModal } from "./TeacherLoginAlertModal";
 
 const STORAGE_KEY = "teacher-sidebar-collapsed";
 
@@ -20,12 +29,20 @@ export function TeacherLayout({
 }) {
   const navigate = useNavigate();
   const { t } = useLanguage();
+  const { user } = useAuth();
   const handleLogout = usePortalLogout();
   const { collapsed, collapse, expand } = useCollapsibleSidebar(STORAGE_KEY);
-  const menuItems = teacherNavItems(t, activeNav);
+  const deactivated = teacherIsAccountDeactivated(user);
+  const menuItems = teacherNavItems(t, activeNav, {
+    includeClasses: deactivated || teacherCanAccessClassroom(user),
+    includeAssessments: !deactivated && teacherCanAccessAssessments(user),
+    includeReports: deactivated || Boolean(user?.subscription?.can_access_reports),
+    includeSubscription: !deactivated && !teacherIsInstitutional(user),
+  });
 
   return (
     <div className="h-screen flex overflow-hidden" style={{ background: "#dff3ff" }}>
+      <TeacherLoginAlertModal />
       <aside
         className="flex flex-col overflow-hidden shrink-0 transition-[width,padding,opacity] duration-300 ease-in-out"
         style={{
@@ -55,16 +72,39 @@ export function TeacherLayout({
           </button>
         </div>
 
+        {deactivated && (
+          <div
+            className="min-w-[208px] mb-4 px-3 py-2 rounded-xl text-xs font-bold"
+            style={{ background: "#fff1f2", color: "#be123c", border: "1px solid #fecdd3" }}
+          >
+            {t("account.deactivated.badge")}
+          </div>
+        )}
+
+        {!deactivated && (
+          <div className="min-w-[208px] mb-4">
+            <TeacherTrialBanner compact />
+          </div>
+        )}
+
         <nav className="flex-1 space-y-2 min-w-[208px] overflow-y-auto">
           {menuItems.map(({ icon: Icon, label, active, path }) => (
             <button
               key={path}
-              onClick={() => navigate(path)}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all cursor-pointer"
-              style={{
-                background: active ? "#dff3ff" : "transparent",
-                color: active ? "#004aad" : "#000000",
+              type="button"
+              disabled={deactivated}
+              onClick={() => {
+                if (!deactivated) navigate(path);
               }}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
+              style={{
+                background: active && !deactivated ? "#dff3ff" : "transparent",
+                color: deactivated ? "#94a3b8" : active ? "#004aad" : "#000000",
+                cursor: deactivated ? "not-allowed" : "pointer",
+                opacity: deactivated ? 0.55 : 1,
+              }}
+              aria-disabled={deactivated}
+              title={deactivated ? t("account.deactivated.menuLocked") : undefined}
             >
               <Icon className="w-5 h-5" />
               <span>{label}</span>
@@ -75,6 +115,7 @@ export function TeacherLayout({
         <div className="min-w-[208px]">
           <LangToggle />
           <button
+            type="button"
             onClick={handleLogout}
             className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all cursor-pointer w-full"
             style={{ color: "#ff5757" }}
@@ -98,7 +139,14 @@ export function TeacherLayout({
             <PanelLeft className="w-5 h-5" style={{ color: "#004aad" }} />
           </button>
         )}
-        <div className={`${contentClassName}${collapsed ? " pt-14" : ""}`}>{children}</div>
+        <div className={`${contentClassName}${collapsed ? " pt-14" : ""}`}>
+          {!deactivated && collapsed && (
+            <div className="px-4 pb-3">
+              <TeacherTrialBanner />
+            </div>
+          )}
+          {children}
+        </div>
       </div>
     </div>
   );

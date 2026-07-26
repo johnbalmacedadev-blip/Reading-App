@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from "react-router";
 import {
   LayoutDashboard, Building2, School, Users, GraduationCap,
   Library, ClipboardList, History, Settings, LogOut, BookOpen, ShieldCheck,
-  FileDown, ChevronDown, ChevronRight, PanelLeftClose, PanelLeft,
+  FileDown, ChevronDown, ChevronRight, PanelLeftClose, PanelLeft, Database,
 } from "lucide-react";
 import { LangToggle } from "../../components/LangToggle";
 import { useLanguage } from "../../i18n";
@@ -16,11 +16,16 @@ const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/admin" },
   { icon: Building2, label: "School Boards", path: "/admin/school-boards" },
   { icon: School, label: "Schools", path: "/admin/schools" },
-  { icon: Users, label: "Teachers", path: "/admin/teachers" },
   { icon: GraduationCap, label: "Student Records", path: "/admin/students" },
   { icon: Library, label: "Content Library", path: "/admin/content" },
   { icon: History, label: "Audit Log", path: "/admin/audit" },
+  { icon: Database, label: "Backup", path: "/admin/backup" },
   { icon: Settings, label: "Settings", path: "/admin/settings" },
+];
+
+const teacherSubItems = [
+  { label: "All Teachers", path: "/admin/teachers" },
+  { label: "Classes", path: "/admin/teachers/classes" },
 ];
 
 interface AdminLayoutProps {
@@ -40,6 +45,9 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   const [assessmentsOpen, setAssessmentsOpen] = useState(
     () => location.pathname.startsWith("/admin/assessments")
   );
+  const [teachersOpen, setTeachersOpen] = useState(
+    () => location.pathname.startsWith("/admin/teachers")
+  );
 
   const assessmentSubItems = [
     { label: "Workshops", path: "/admin/assessments/workshops" },
@@ -57,15 +65,25 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     if (location.pathname.startsWith("/admin/assessments")) {
       setAssessmentsOpen(true);
     }
+    if (location.pathname.startsWith("/admin/teachers")) {
+      setTeachersOpen(true);
+    }
   }, [location.pathname]);
 
   const isActive = (path: string) => {
     if (path === "/admin") return location.pathname === "/admin";
+    if (path === "/admin/teachers") return location.pathname === "/admin/teachers";
     return location.pathname.startsWith(path);
   };
 
   const isDownloadableActive = location.pathname.startsWith("/admin/downloadable-resources");
   const isAssessmentsActive = location.pathname.startsWith("/admin/assessments");
+  const isTeachersActive = location.pathname.startsWith("/admin/teachers");
+
+  // First 3 items: Dashboard, School Boards, Schools — then Teachers submenu — then rest of top slice
+  const topNavItems = navItems.slice(0, 3);
+  const midNavItems = navItems.slice(3, 5); // Student Records, Content Library
+  const bottomNavItems = navItems.slice(5);
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "#f0f4f8", fontFamily: "'Inter', sans-serif" }}>
@@ -129,7 +147,96 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
         {/* Nav */}
         <nav style={{ flex: 1, padding: "12px 12px" }}>
-          {navItems.slice(0, 6).map((item) => {
+          {topNavItems.map((item) => {
+            const active = isActive(item.path);
+            return (
+              <button
+                key={item.path}
+                onClick={() => navigate(item.path)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  width: "100%", padding: "9px 12px", borderRadius: 8,
+                  border: "none", cursor: "pointer", textAlign: "left",
+                  marginBottom: 2,
+                  background: active ? "rgba(56,182,255,0.15)" : "transparent",
+                  color: active ? "#38b6ff" : "rgba(255,255,255,0.6)",
+                  fontWeight: active ? 600 : 400,
+                  fontSize: 13,
+                  transition: "all 0.15s",
+                  borderLeft: active ? "2px solid #38b6ff" : "2px solid transparent",
+                }}
+                onMouseEnter={(e) => {
+                  if (!active) {
+                    (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.05)";
+                    (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.85)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!active) {
+                    (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+                    (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.6)";
+                  }
+                }}
+              >
+                <item.icon size={16} />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+
+          {/* Teachers with sub-links */}
+          <div style={{ marginBottom: 2 }}>
+            <button
+              onClick={() => {
+                setTeachersOpen((o) => !o);
+                if (!isTeachersActive) navigate("/admin/teachers");
+              }}
+              style={{
+                display: "flex", alignItems: "center", gap: 10,
+                width: "100%", padding: "9px 12px", borderRadius: 8,
+                border: "none", cursor: "pointer", textAlign: "left",
+                background: isTeachersActive ? "rgba(56,182,255,0.15)" : "transparent",
+                color: isTeachersActive ? "#38b6ff" : "rgba(255,255,255,0.6)",
+                fontWeight: isTeachersActive ? 600 : 400,
+                fontSize: 13,
+                transition: "all 0.15s",
+                borderLeft: isTeachersActive ? "2px solid #38b6ff" : "2px solid transparent",
+              }}
+            >
+              <Users size={16} />
+              <span style={{ flex: 1 }}>Teachers</span>
+              {teachersOpen
+                ? <ChevronDown size={14} style={{ opacity: 0.6 }} />
+                : <ChevronRight size={14} style={{ opacity: 0.6 }} />}
+            </button>
+            {teachersOpen && (
+              <div style={{ marginLeft: 12, marginTop: 2, paddingLeft: 8, borderLeft: "1px solid rgba(255,255,255,0.1)" }}>
+                {teacherSubItems.map((item) => {
+                  const subActive = location.pathname === item.path;
+                  return (
+                    <button
+                      key={item.path}
+                      onClick={() => navigate(item.path)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        width: "100%", padding: "7px 10px", borderRadius: 6,
+                        border: "none", cursor: "pointer", textAlign: "left",
+                        marginBottom: 1,
+                        background: subActive ? "rgba(56,182,255,0.12)" : "transparent",
+                        color: subActive ? "#38b6ff" : "rgba(255,255,255,0.5)",
+                        fontWeight: subActive ? 600 : 400,
+                        fontSize: 12,
+                      }}
+                    >
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {midNavItems.map((item) => {
             const active = isActive(item.path);
             return (
               <button
@@ -275,7 +382,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
             )}
           </div>
 
-          {navItems.slice(6).map((item) => {
+          {bottomNavItems.map((item) => {
             const active = isActive(item.path);
             return (
               <button

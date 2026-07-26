@@ -1,25 +1,37 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { BookOpen, Eye, EyeOff, ArrowRight } from "lucide-react";
 import classroomPhoto from "../../imports/image-1.png";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
 import { useAuth } from "../context/AuthContext";
 import { ApiError } from "../api/client";
+import { teacherHomePath } from "../utils/teacherAccess";
 
 export function TeacherSignInPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { t } = useLanguage();
   const { login, user, loading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    const activation = searchParams.get("activation");
+    if (activation === "success") {
+      setInfo(t("login.activationSuccess") || "Your account is activated. You can sign in now.");
+    } else if (activation === "invalid" || activation === "archived") {
+      setError(t("login.activationInvalid") || "This activation link is invalid or expired.");
+    }
+  }, [searchParams, t]);
+
+  useEffect(() => {
     if (!loading && user?.role === "teacher") {
-      navigate("/dashboard", { replace: true });
+      navigate(teacherHomePath(user), { replace: true });
     }
   }, [user, loading, navigate]);
 
@@ -34,8 +46,8 @@ export function TeacherSignInPage() {
     setError("");
 
     try {
-      await login(email, password);
-      navigate("/dashboard");
+      const loggedIn = await login(email, password, "teacher");
+      navigate(teacherHomePath(loggedIn));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t("login.loginFailed"));
     } finally {
@@ -89,6 +101,11 @@ export function TeacherSignInPage() {
             {t("login.welcomeBack")}
           </p>
 
+          {info && (
+            <div style={{ background: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#047857", marginBottom: 16 }}>
+              {info}
+            </div>
+          )}
           {error && (
             <div style={{ background: "#fff1f2", border: "1px solid #fecdd3", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#e11d48", marginBottom: 16 }}>
               {error}

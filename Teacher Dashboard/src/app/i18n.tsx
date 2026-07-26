@@ -14,6 +14,7 @@ const translations = {
   "common.download":       { fr: "Télécharger",         en: "Download" },
   "common.downloadPdf":    { fr: "Télécharger (PDF)",   en: "Download (PDF)" },
   "common.save":           { fr: "Sauvegarder",         en: "Save" },
+  "common.saving":         { fr: "Enregistrement…",     en: "Saving…" },
   "common.cancel":         { fr: "Annuler",             en: "Cancel" },
   "common.back":           { fr: "Retour",              en: "Back" },
   "common.logout":         { fr: "Se déconnecter",      en: "Log out" },
@@ -67,6 +68,7 @@ const translations = {
   "nav.smlAteliers":       { fr: "Ateliers SML",        en: "SML Workshops" },
   "nav.settings":          { fr: "Paramètres",          en: "Settings" },
   "nav.assessments":       { fr: "Évaluations",         en: "Assessments" },
+  "nav.subscription":      { fr: "Abonnement",          en: "Subscription" },
 
   // ── Login ──────────────────────────────────────────────────────────────────
   "login.tagline":         { fr: "Simple pour les enseignants. Essentiel pour les élèves.", en: "Simple for teachers. Essential for students." },
@@ -93,6 +95,8 @@ const translations = {
   "login.signingIn":       { fr: "Connexion...",          en: "Signing in..." },
   "login.fillAllFields":   { fr: "Veuillez remplir tous les champs.", en: "Please fill in all fields." },
   "login.loginFailed":     { fr: "Connexion impossible.", en: "Unable to sign in." },
+  "login.activationSuccess": { fr: "Votre compte est activé. Vous pouvez vous connecter.", en: "Your account is activated. You can sign in now." },
+  "login.activationInvalid": { fr: "Ce lien d'activation est invalide ou expiré.", en: "This activation link is invalid or expired." },
   "login.noAccount":       { fr: "Vous n'avez pas encore de compte ?", en: "Don't have an account yet?" },
   "login.createAccount":   { fr: "Créer un compte",       en: "Create an account" },
   "login.schoolBoardAccess": { fr: "Accès école ou conseil scolaire ?", en: "School or board access?" },
@@ -116,10 +120,24 @@ const translations = {
   "dashboard.schoolYear":  { fr: "Année scolaire",      en: "School Year" },
   "dashboard.schoolYearPlaceholder": { fr: "Ex: 2025-2026", en: "E.g. 2025-2026" },
   "dashboard.viewClass":   { fr: "Voir la classe",      en: "View Class" },
+  "dashboard.deleteClass": { fr: "Supprimer la classe", en: "Delete class" },
+  "dashboard.deleteClassConfirm": { fr: "Supprimer la classe « {name} » ? Cette action est irréversible.", en: "Delete class \"{name}\"? This cannot be undone." },
+  "dashboard.classDeleted.toast": { fr: "Classe supprimée", en: "Class deleted" },
+  "dashboard.classDeleteFailed": { fr: "Impossible de supprimer la classe.", en: "Could not delete the class." },
   "dashboard.myClass":     { fr: "Ma classe",           en: "My Class" },
   "dashboard.myClasses":   { fr: "Mes classes",         en: "My Classes" },
   "dashboard.loadingClasses": { fr: "Chargement des classes...", en: "Loading classes..." },
   "dashboard.noClasses": { fr: "Aucune classe pour le moment. Créez votre première classe.", en: "No classes yet. Create your first class." },
+  "dashboard.firstClass.title": { fr: "Petite étape !", en: "Quick step!" },
+  "dashboard.firstClass.body": { fr: "Avant d'utiliser les évaluations, créez votre première classe. Cela ne prend qu'une minute.", en: "Before you can use assessments, create your first class. It only takes a minute." },
+  "dashboard.firstClass.cta": { fr: "J'y vais !", en: "I'm on it!" },
+  "dashboard.classCreated.title": { fr: "Encore une étape !", en: "One more step!" },
+  "dashboard.classCreated.body": { fr: "Votre classe a été créée avec succès. Lorsque le bouton Voir la classe apparaît, cliquez dessus pour ouvrir votre liste de classe et accéder aux évaluations.", en: "Your class has been created successfully. When the View Class button appears, click it to open your class list and access assessments." },
+  "dashboard.classCreated.cta": { fr: "J'y vais !", en: "I'm on it!" },
+  "dashboard.classCreated.toast": { fr: "Classe créée avec succès", en: "Class created successfully" },
+  "dashboard.classUpdated.toast": { fr: "Classe mise à jour", en: "Class updated successfully" },
+  "dashboard.classSaveFailed": { fr: "Impossible de créer la classe. Veuillez réessayer.", en: "Could not create the class. Please try again." },
+  "dashboard.classUpdateFailed": { fr: "Impossible de mettre à jour la classe. Veuillez réessayer.", en: "Could not update the class. Please try again." },
   "dashboard.classNamePlaceholder": { fr: "Ex: 1re année Mme Gisèle", en: "E.g. Grade 1 Ms. Gisèle" },
   "dashboard.defaultTeacher": { fr: "Enseignant",       en: "Teacher" },
 
@@ -127,6 +145,11 @@ const translations = {
   "tracking.fundamentals": { fr: "Les habiletés fondamentales en lecture", en: "Fundamental Reading Skills" },
   "tracking.decoding":     { fr: "Le décodage",         en: "Decoding" },
   "tracking.addStudent":   { fr: "Ajouter un élève",    en: "Add Student" },
+  "tracking.studentAdded.toast": { fr: "Élève ajouté avec succès", en: "Student added successfully" },
+  "tracking.studentLimitUsage": { fr: "Total enseignant : {used}/{max}", en: "Teacher total: {used}/{max}" },
+  "tracking.studentLimitUnlimited": { fr: "Aucune limite d'élèves (Insights)", en: "No student limit (Insights)" },
+  "tracking.studentLimitReached": { fr: "Limite atteinte ({max} élèves). L'ajout est désactivé.", en: "Limit reached ({max} students). Adding is disabled." },
+  "tracking.studentAddFailed": { fr: "Impossible d'ajouter l'élève. Veuillez réessayer.", en: "Could not add the student. Please try again." },
   "tracking.export":       { fr: "Exporter la liste",   en: "Export List" },
   "tracking.student":      { fr: "Élève",               en: "Student" },
   "tracking.backToClasses":{ fr: "Retour aux classes",  en: "Back to Classes" },
@@ -170,6 +193,7 @@ const translations = {
   "grade.grade1":          { fr: "1re année",           en: "Grade 1" },
   "grade.grade2":          { fr: "2e année",            en: "Grade 2" },
   "grade.grade3":          { fr: "3e année",            en: "Grade 3" },
+  "grade.grade3plus":      { fr: "3e année+",           en: "Grade 3+" },
   "grade.garden":          { fr: "Jardin",              en: "Pre-K" },
 
   // ── Sign up ───────────────────────────────────────────────────────────────
@@ -199,8 +223,8 @@ const translations = {
   "signup.province":       { fr: "Province",            en: "Province" },
   "signup.role":           { fr: "Rôle",                en: "Role" },
   "signup.role.teacher":   { fr: "Enseignant(e)",       en: "Teacher" },
-  "signup.role.reading":   { fr: "Enseignant(e) ressource en lecture", en: "Reading specialist teacher" },
-  "signup.role.specialEd": { fr: "Enseignant(e) en adaptation scolaire", en: "Special education teacher" },
+  "signup.role.reading":   { fr: "Enseignant(e) ressource en lecture", en: "Reading Specialist Teacher" },
+  "signup.role.specialEd": { fr: "Enseignant(e) en adaptation scolaire", en: "Special Education Teacher" },
   "signup.gradesTaught":   { fr: "Niveaux enseignés",   en: "Grades taught" },
   "signup.gradesHint":     { fr: "(sélectionnez tous les niveaux applicables)", en: "(select all that apply)" },
   "signup.numStudents":    { fr: "Nombre d'élèves",     en: "Number of students" },
@@ -216,6 +240,49 @@ const translations = {
   "signup.individualNotify": { fr: "Vous choisirez un plan d'abonnement à l'étape suivante.", en: "You will choose a subscription plan in the next step." },
   "signup.continue":       { fr: "Continuer",           en: "Continue" },
   "signup.continueToPlans": { fr: "Continuer vers les plans", en: "Continue to plans" },
+  "signup.continueToJoin": { fr: "Continuer vers l'invitation", en: "Continue to invitation" },
+  "signup.join.title":     { fr: "Qui vous a invité ?", en: "Who invited you?" },
+  "signup.join.subtitle":  { fr: "Recherchez l'école ou le conseil scolaire qui vous a invité. Votre compte restera désactivé jusqu'à leur approbation.", en: "Search for the school or school board that invited you. Your account stays deactivated until they approve it." },
+  "signup.join.bySchool":  { fr: "Invité par une école", en: "Invited by a school" },
+  "signup.join.byBoard":   { fr: "Invité par un conseil scolaire", en: "Invited by a school board" },
+  "signup.join.searchSchool": { fr: "Rechercher une école", en: "Search for a school" },
+  "signup.join.searchBoard": { fr: "Rechercher un conseil scolaire", en: "Search for a school board" },
+  "signup.join.placeholderSchool": { fr: "Tapez le nom de l'école…", en: "Type the school name…" },
+  "signup.join.placeholderBoard": { fr: "Tapez le nom ou le code du conseil…", en: "Type the board name or code…" },
+  "signup.join.submit":    { fr: "Soumettre la demande d'accès", en: "Submit access request" },
+  "signup.join.selected":  { fr: "Sélectionné", en: "Selected" },
+  "signup.join.noResults": { fr: "Aucun résultat. Essayez un autre nom.", en: "No results. Try another name." },
+  "signup.join.minChars":  { fr: "Tapez au moins 2 caractères pour rechercher.", en: "Type at least 2 characters to search." },
+  "signup.join.successTitle": { fr: "Demande envoyée", en: "Request submitted" },
+  "signup.join.successBody": { fr: "Votre compte a été créé et est désactivé en attendant l'approbation de votre école ou conseil scolaire.", en: "Your account was created and is deactivated until your school or school board approves it." },
+  "signup.join.goSignIn":  { fr: "Aller à la connexion", en: "Go to sign in" },
+  "signup.err.inviteType": { fr: "Choisissez qui vous a invité.", en: "Choose who invited you." },
+  "signup.err.inviteTarget": { fr: "Sélectionnez l'école ou le conseil scolaire.", en: "Select the school or school board." },
+  "account.deactivated.badge": { fr: "Compte désactivé", en: "Account deactivated" },
+  "account.deactivated.title": { fr: "Votre compte est désactivé", en: "Your account is deactivated" },
+  "account.deactivated.body": { fr: "Votre demande d'accès a été envoyée. Les menus restent verrouillés jusqu'à ce que votre école ou conseil scolaire active votre compte.", en: "Your access request was sent. Menus stay locked until your school or school board activates your account." },
+  "account.deactivated.menuLocked": { fr: "Disponible après activation du compte", en: "Available after account activation" },
+  "trial.banner.daysLeft": { fr: "{days} jour(s) restant(s) d'essai", en: "{days} day(s) left in your free trial" },
+  "trial.banner.activeHint": { fr: "Cliquez pour voir les forfaits. Aucune carte requise pendant l'essai.", en: "Click to view plans. No card required during the trial." },
+  "loginAlert.dismiss": { fr: "Continuer", en: "Continue" },
+  "loginAlert.active.title": { fr: "Bon retour !", en: "Welcome back!" },
+  "loginAlert.active.body": { fr: "Votre essai gratuit est actif. Il reste {days} jour(s), jusqu'au {date}.", en: "Your free trial is active. You have {days} day(s) left, until {date}." },
+  "loginAlert.active.cta": { fr: "Voir les forfaits", en: "View plans" },
+  "loginAlert.ending.title": { fr: "Essai bientôt terminé", en: "Trial ending soon" },
+  "loginAlert.ending.body": { fr: "Votre essai gratuit se termine dans {days} jour(s), le {date}. Choisissez un forfait pour conserver l'accès.", en: "Your free trial ends in {days} day(s) on {date}. Choose a plan to keep access." },
+  "loginAlert.ending.cta": { fr: "Choisir un forfait", en: "Choose a plan" },
+  "loginAlert.expired.title": { fr: "Essai terminé", en: "Trial expired" },
+  "loginAlert.expired.body": { fr: "Votre essai gratuit s'est terminé le {date}. Activez un forfait pour retrouver l'accès complet.", en: "Your free trial ended on {date}. Activate a plan to restore full access." },
+  "loginAlert.expired.cta": { fr: "Activer un forfait", en: "Activate a plan" },
+  "trial.banner.expiredTitle": { fr: "Essai terminé — carte de crédit requise", en: "Trial ended — credit card required" },
+  "trial.banner.expiredHint": { fr: "Choisissez un forfait pour réactiver l'accès à la plateforme.", en: "Choose a plan to restore platform access." },
+  "nav.teacherRequests":   { fr: "Demandes enseignants", en: "Teacher requests" },
+  "requests.title":        { fr: "Demandes d'activation", en: "Activation requests" },
+  "requests.subtitle":     { fr: "Acceptez ou refusez les enseignants qui demandent à rejoindre votre organisation.", en: "Accept or reject teachers requesting to join your organization." },
+  "requests.empty":        { fr: "Aucune demande en attente.", en: "No pending requests." },
+  "requests.accept":       { fr: "Accepter", en: "Accept" },
+  "requests.reject":       { fr: "Refuser", en: "Reject" },
+  "requests.requestedAt":  { fr: "Demandé le", en: "Requested" },
   "signup.hasAccount":     { fr: "Vous avez déjà un compte ?", en: "Already have an account?" },
   "signup.err.firstName":  { fr: "Prénom requis",       en: "First name is required" },
   "signup.err.lastName":   { fr: "Nom requis",          en: "Last name is required" },
@@ -244,6 +311,12 @@ const translations = {
   "forgot.sent.step2":     { fr: "Cliquez sur le lien dans le courriel", en: "Click the link in the email" },
   "forgot.sent.step3":     { fr: "Le lien expire dans 30 minutes", en: "The link expires in 30 minutes" },
   "forgot.resend":         { fr: "Renvoyer le courriel", en: "Resend email" },
+  "reset.title":           { fr: "Nouveau mot de passe", en: "Set a new password" },
+  "reset.subtitle":        { fr: "Choisissez un nouveau mot de passe sécurisé pour votre compte.", en: "Choose a new secure password for your account." },
+  "reset.submit":          { fr: "Enregistrer le mot de passe", en: "Save password" },
+  "reset.invalidLink":     { fr: "Ce lien de réinitialisation est invalide ou incomplet.", en: "This reset link is invalid or incomplete." },
+  "reset.successTitle":    { fr: "Mot de passe mis à jour", en: "Password updated" },
+  "reset.successBody":     { fr: "Vous pouvez maintenant vous connecter avec votre nouveau mot de passe.", en: "You can now sign in with your new password." },
 
   // ── Subscription plans ─────────────────────────────────────────────────────
   "plan.includedTitle":    { fr: "Inclus dans tous les plans", en: "Included in all plans" },
@@ -254,19 +327,19 @@ const translations = {
   "plan.included5":        { fr: "Annulation en tout temps", en: "Cancel anytime" },
   "plan.securePayment":    { fr: "Paiement sécurisé via Stripe · SSL 256-bit", en: "Secure payment via Stripe · 256-bit SSL" },
   "plan.title":            { fr: "Choisissez votre plan", en: "Choose your plan" },
-  "plan.subtitle":         { fr: "Commencez gratuitement pendant 14 jours — aucune carte requise.", en: "Start free for 14 days — no card required." },
+  "plan.subtitle":         { fr: "Commencez gratuitement pendant 30 jours — aucune carte de crédit requise.", en: "Start free for 30 days — no credit card required." },
   "plan.monthly":          { fr: "Mensuel",             en: "Monthly" },
   "plan.annual":           { fr: "Annuel",              en: "Annual" },
   "plan.comingSoon":       { fr: "BIENTÔT DISPONIBLE",  en: "COMING SOON" },
   "plan.selected":         { fr: "Plan sélectionné",    en: "Plan selected" },
   "plan.perMonth":         { fr: "/ mois",              en: "/ month" },
-  "plan.continue14":       { fr: "Commencer l'essai gratuit de 14 jours", en: "Start 14-day free trial" },
+  "plan.continue14":       { fr: "Commencer l'essai gratuit de 30 jours", en: "Start 30-day free trial" },
   "plan.continue7":        { fr: "Commencer l'essai gratuit de 7 jours", en: "Start 7-day free trial" },
   "plan.footerNote":       { fr: "Aucune carte de crédit requise pour l'essai gratuit · Annulation en tout temps sans frais", en: "No credit card required for free trial · Cancel anytime at no charge" },
   "plan.essentials.name":  { fr: "Essentiels",          en: "Essentials" },
   "plan.essentials.tagline": { fr: "Tout ce qu'il faut pour débuter", en: "Everything you need to get started" },
   "plan.essentials.annualNote": { fr: "facturé annuellement — économisez 36 $", en: "billed annually — save $36" },
-  "plan.essentials.f1":    { fr: "Jusqu'à 60 élèves",   en: "Up to 60 students" },
+  "plan.essentials.f1":    { fr: "Jusqu'à 30 élèves",   en: "Up to 30 students" },
   "plan.essentials.f2":    { fr: "Suivi SML complet (15 ateliers)", en: "Full RMS tracking (15 workshops)" },
   "plan.essentials.f3":    { fr: "Rapports de classe et par élève", en: "Class and student reports" },
   "plan.essentials.f4":    { fr: "Bibliothèque pédagogique de base", en: "Core pedagogical library" },
@@ -315,6 +388,7 @@ const translations = {
   "payment.country.belgium": { fr: "Belgique",           en: "Belgium" },
   "payment.processing":    { fr: "Traitement en cours…", en: "Processing…" },
   "payment.activateTrial": { fr: "Activer mon essai gratuit", en: "Activate my free trial" },
+  "payment.err.missingSignup": { fr: "Veuillez d'abord terminer l'inscription.", en: "Please complete signup first." },
   "payment.stripeSecure":  { fr: "Stripe sécurisé",     en: "Stripe secure" },
   "payment.cancelAnytime": { fr: "Annulable en tout temps", en: "Cancel anytime" },
   "payment.orderSummary":  { fr: "Résumé de la commande", en: "Order summary" },
@@ -548,6 +622,10 @@ const translations = {
   "student.exporting":             { fr: "Exportation…", en: "Exporting…" },
   "student.exportSuccess":         { fr: "Rapport exporté en PDF", en: "Report exported to PDF" },
   "student.exportFailed":          { fr: "Échec de l'exportation du rapport", en: "Failed to export report" },
+  "student.deleteAccount":         { fr: "Supprimer l'élève", en: "Delete student" },
+  "student.deleteConfirm":         { fr: "Supprimer {name} ? Cette action est irréversible.", en: "Delete {name}? This cannot be undone." },
+  "student.deleteSuccess":         { fr: "Élève supprimé", en: "Student deleted" },
+  "student.deleteFailed":          { fr: "Impossible de supprimer l'élève.", en: "Could not delete the student." },
   "student.progressVsBenchmark":   { fr: "Progression par rapport aux attentes de niveau", en: "Progress vs. grade-level expectations" },
   "student.ahead":                 { fr: "En avance", en: "Ahead" },
   "student.onTrack":               { fr: "Sur la bonne voie", en: "On track" },
@@ -712,6 +790,15 @@ const translations = {
   // ── Profile extras ─────────────────────────────────────────────────────────
   "profile.teachingInfo":          { fr: "Informations d'enseignement", en: "Teaching information" },
   "profile.numClasses":            { fr: "Nombre de classes", en: "Number of classes" },
+  "profile.emailNotificationLanguage": { fr: "Langue des courriels et notifications", en: "Email & notification language" },
+  "profile.emailNotificationLanguageHint": {
+    fr: "Les courriels et les notifications dans l'application seront envoyés dans cette langue.",
+    en: "Emails and in-app notifications will be sent in this language.",
+  },
+  "profile.languageFrench":        { fr: "Français", en: "French" },
+  "profile.languageEnglish":       { fr: "Anglais", en: "English" },
+  "profile.languageUpdated":       { fr: "Langue des notifications mise à jour", en: "Notification language updated" },
+  "profile.languageUpdateFailed":  { fr: "Impossible d'enregistrer la langue.", en: "Could not save language." },
 
   // ── Tracking placeholders ──────────────────────────────────────────────────
   "tracking.firstNamePlaceholder": { fr: "Ex: Amélie", en: "E.g. Amélie" },
@@ -719,6 +806,7 @@ const translations = {
 
   // ── Page titles (browser tab) ────────────────────────────────────────────────
   "pageTitle.adminPortal":         { fr: "Portail administrateur", en: "Admin Portal" },
+  "pageTitle.classes":             { fr: "Classes", en: "Classes" },
   "pageTitle.dashboard":           { fr: "Tableau de bord", en: "Dashboard" },
   "pageTitle.schoolBoards":        { fr: "Commissions scolaires", en: "School Boards" },
   "pageTitle.studentRecords":      { fr: "Dossiers élèves", en: "Student Records" },
@@ -806,8 +894,19 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
         document.documentElement.lang = event.newValue;
       }
     };
+    const onCustom = (event: Event) => {
+      const detail = (event as CustomEvent<string>).detail;
+      if (detail === "fr" || detail === "en") {
+        setLangState(detail);
+        document.documentElement.lang = detail;
+      }
+    };
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    window.addEventListener("lecture-lang-change", onCustom);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("lecture-lang-change", onCustom);
+    };
   }, []);
 
   const t = useCallback(

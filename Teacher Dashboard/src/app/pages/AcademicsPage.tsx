@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router";
 import {
   BookOpen, Users, School, LogOut, BarChart3, Settings, Filter, X, UserCircle, GraduationCap,
-  ArrowUpRight, Search, User, ClipboardList, Loader2, ChevronDown,
+  ArrowUpRight, Search, User, ClipboardList, Loader2, ChevronDown, UserPlus,
 } from "lucide-react";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
@@ -91,6 +91,7 @@ export function AcademicsPage() {
     { icon: BarChart3, label: "Overview", active: false, path: "/school/reports" },
     { icon: GraduationCap, label: "Academics", active: true, path: "/school/academics" },
     { icon: ClipboardList, label: "Assessments", active: false, path: "/school/assessments" },
+    { icon: UserPlus, label: t("nav.teacherRequests"), active: false, path: "/school/teachers" },
     { icon: User, label: "Profile", active: false, path: "/profile?portal=school" },
     { icon: Settings, label: "Settings", active: false, path: "/school/settings" },
   ];

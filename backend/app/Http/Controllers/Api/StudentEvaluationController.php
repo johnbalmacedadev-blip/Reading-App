@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\SchoolClass;
 use App\Models\Student;
 use App\Models\StudentEvaluation;
+use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\TeacherNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -69,6 +71,9 @@ class StudentEvaluationController extends Controller
         );
 
         AuditLogger::log('Edit', 'Assessment', "{$student->fullName()} atelier {$atelierNumber} evaluation updated", 'info', $request, subject: $evaluation);
+        /** @var User $teacher */
+        $teacher = $request->user();
+        TeacherNotificationService::evaluationUpdated($teacher, $schoolClass, $student, $evaluation);
 
         return response()->json([
             'evaluation' => $this->formatEvaluation($evaluation),

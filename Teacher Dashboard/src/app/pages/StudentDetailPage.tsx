@@ -8,6 +8,7 @@ import {
   Download,
   FileText,
   Loader2,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { LangToggle } from "../components/LangToggle";
@@ -23,10 +24,12 @@ interface Evaluation {
 }
 
 interface StudentReport {
+  id: number;
   name: string;
   grade: string;
   classId: number;
   teacherDisplay: string;
+  hasActivity: boolean;
   evaluations: Evaluation[];
 }
 
@@ -81,6 +84,7 @@ export function StudentDetailPage() {
   const [error, setError] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportHovered, setExportHovered] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
 
   const classId = navState.classId ?? loadStoredClassId(studentId);
@@ -95,10 +99,12 @@ export function StudentDetailPage() {
       .getStudent(studentId, classId)
       .then(({ student: data }) => {
         const report: StudentReport = {
+          id: data.id,
           name: data.name,
           grade: data.grade,
           classId: data.class_id,
           teacherDisplay: data.teacher_display,
+          hasActivity: Boolean(data.has_activity),
           evaluations: data.evaluations
             .filter((evaluation) => evaluation.status !== "not-required")
             .map((evaluation) => ({
@@ -198,6 +204,24 @@ export function StudentDetailPage() {
     }
   };
 
+  const handleDeleteStudent = async () => {
+    if (!student || student.hasActivity || deleting) return;
+
+    const confirmed = window.confirm(tp("student.deleteConfirm", { name: student.name }));
+    if (!confirmed) return;
+
+    setDeleting(true);
+    try {
+      await teacherApi.deleteStudent(student.id, student.classId);
+      toast.success(t("student.deleteSuccess"));
+      navigate(`/class/${student.classId}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("student.deleteFailed"));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const skillRows = [
     {
       labelKey: "student.skill.alphabetic" as const,
@@ -265,6 +289,26 @@ export function StudentDetailPage() {
 
             <div className="flex items-center gap-4">
               <LangToggle />
+              {!student.hasActivity && (
+                <button
+                  type="button"
+                  onClick={() => void handleDeleteStudent()}
+                  disabled={deleting}
+                  className="px-5 py-3 rounded-xl flex items-center gap-2 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                  style={{
+                    background: "#fff1f2",
+                    border: "1px solid #fecdd3",
+                    color: "#be123c",
+                  }}
+                >
+                  {deleting ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-5 h-5" />
+                  )}
+                  {t("student.deleteAccount")}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleExportPdf}

@@ -5,16 +5,20 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\School;
 use App\Models\SchoolBoard;
+use App\Models\PlatformSetting;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\NotificationMailer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Throwable;
 
 class AdminSchoolBoardController extends Controller
 {
@@ -61,17 +65,44 @@ class AdminSchoolBoardController extends Controller
                 'password' => Hash::make($portal['portal_password']),
                 'role' => 'board_admin',
                 'school_board' => $board->code,
-                'account_status' => 'active',
+                'account_status' => 'inactive',
+                'preferred_language' => PlatformSetting::defaultLanguage(),
+                'email_verified_at' => null,
             ]);
 
             return $board;
         });
+
+        $portalUser = User::query()
+            ->where('role', 'board_admin')
+            ->where('school_board', $board->code)
+            ->first();
+
+        if ($portalUser) {
+            try {
+                NotificationMailer::sendVerifyAccount($portalUser, $portal['portal_password']);
+            } catch (Throwable $e) {
+                Log::error('Board portal verify email failed', [
+                    'board_id' => $board->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
 
         AuditLogger::log('Create', 'Board', "{$board->name} created", 'info', $request, subject: $board);
 
         return response()->json([
             'board' => $this->format($board, $this->emptyStats()),
         ], 201);
+    }
+
+    public function show(SchoolBoard $schoolBoard): JsonResponse
+    {
+        $stats = $this->statsForBoards(collect([$schoolBoard->code]));
+
+        return response()->json([
+            'board' => $this->format($schoolBoard, $stats[$schoolBoard->code] ?? $this->emptyStats()),
+        ]);
     }
 
     public function update(Request $request, SchoolBoard $schoolBoard): JsonResponse

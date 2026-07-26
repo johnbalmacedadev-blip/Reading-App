@@ -13,7 +13,16 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->statefulApi();
+        $middleware->redirectGuestsTo(
+            fn (\Illuminate\Http\Request $request) => $request->is('api/*') ? null : '/signin',
+        );
+        $middleware->alias([
+            'teacher.entitled' => \App\Http\Middleware\EnsureTeacherEntitled::class,
+            'teacher.classroom' => \App\Http\Middleware\EnsureTeacherClassroomAccess::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->shouldRenderJsonWhen(
+            fn (\Illuminate\Http\Request $request) => $request->is('api/*') || $request->expectsJson(),
+        );
     })->create();

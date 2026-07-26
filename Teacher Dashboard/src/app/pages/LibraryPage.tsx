@@ -22,6 +22,7 @@ import { NotificationDropdown } from "../components/NotificationDropdown";
 import { UserAvatar } from "../components/UserAvatar";
 import { TeacherLayout } from "../components/TeacherLayout";
 import { useLanguage } from "../i18n";
+import { useAuth } from "../context/AuthContext";
 import { formatAtelierLabel } from "../i18n/atelierHelpers";
 import { teacherLibraryApi, teacherUnitsApi, type DownloadableCategoryItem, type PedagogicalUnitItem } from "../api/client";
 
@@ -35,10 +36,12 @@ interface Resource {
 export function LibraryPage() {
   const navigate = useNavigate();
   const { t, tp, auto } = useLanguage();
+  const { user } = useAuth();
   const [units, setUnits] = useState<PedagogicalUnitItem[]>([]);
   const [unitsLoading, setUnitsLoading] = useState(true);
   const [downloadableCategories, setDownloadableCategories] = useState<DownloadableCategoryItem[]>([]);
   const [downloadableLoading, setDownloadableLoading] = useState(true);
+  const teacherFirstName = user?.first_name || user?.name?.split(" ")[0] || t("dashboard.defaultTeacher");
 
   useEffect(() => {
     teacherUnitsApi
@@ -69,7 +72,7 @@ export function LibraryPage() {
         <div className="flex items-start justify-between mb-12">
           <div>
             <h1 className="text-3xl mb-2" style={{ color: "#004aad" }}>
-              {t("library.greeting")}, Mme Gisèle!
+              {t("library.greeting")}, {teacherFirstName}!
             </h1>
             <p className="text-lg" style={{ color: "#000000" }}>
               {t("library.subtitle")}

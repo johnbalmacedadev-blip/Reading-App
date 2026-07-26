@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import { ArrowLeft, FileText, Download, Plus, X, Info } from "lucide-react";
+import { toast } from "sonner";
 import { useLanguage } from "../i18n";
 import { LangToggle } from "../components/LangToggle";
-import { teacherApi, type ClassStudent, type EvaluationStatus } from "../api/client";
+import { teacherApi, type ClassStudent, type EvaluationStatus, type StudentLimitInfo } from "../api/client";
 import {
   getEvaluationStatusBorder,
   getEvaluationStatusColor,
@@ -73,6 +74,13 @@ export function StudentTracking() {
   const [newStudentLastName, setNewStudentLastName] = useState("");
   const [hoveredEvaluation, setHoveredEvaluation] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  const [studentLimit, setStudentLimit] = useState<StudentLimitInfo>({
+    max: 30,
+    used: 0,
+    remaining: 30,
+    can_add: true,
+    unlimited: false,
+  });
 
   const loadClass = useCallback(
     async (silent = false) => {
@@ -85,7 +93,7 @@ export function StudentTracking() {
       }
 
       try {
-        const { class: classData } = await teacherApi.classDetail(classId);
+        const { class: classData, student_limit } = await teacherApi.classDetail(classId);
         setClassName(classData.name);
         setClassSchoolYear(classData.school_year ?? "");
         setPublishedWorkshops(
@@ -100,6 +108,9 @@ export function StudentTracking() {
             evaluations: student.evaluations,
           }))
         );
+        if (student_limit) {
+          setStudentLimit(student_limit);
+        }
       } finally {
         if (silent) {
           setRefreshing(false);
@@ -153,10 +164,14 @@ export function StudentTracking() {
 
   const handleAddStudent = async () => {
     if (!classId || !newStudentFirstName.trim() || !newStudentLastName.trim()) return;
+    if (!studentLimit.can_add) {
+      toast.error(tp("tracking.studentLimitReached", { max: studentLimit.max ?? 0 }));
+      return;
+    }
 
     setSaving(true);
     try {
-      const { student } = await teacherApi.addStudent(classId, {
+      const { student, student_limit } = await teacherApi.addStudent(classId, {
         first_name: newStudentFirstName.trim(),
         last_name: newStudentLastName.trim(),
       });
@@ -168,9 +183,15 @@ export function StudentTracking() {
           evaluations: student.evaluations,
         },
       ]);
+      if (student_limit) {
+        setStudentLimit(student_limit);
+      }
       setShowAddStudentModal(false);
       setNewStudentFirstName("");
       setNewStudentLastName("");
+      toast.success(t("tracking.studentAdded.toast"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("tracking.studentAddFailed"));
     } finally {
       setSaving(false);
     }
@@ -214,6 +235,14 @@ export function StudentTracking() {
               </h1>
               <p className="text-lg" style={{ color: "#000000" }}>
                 {tp("common.studentCount", { count: students.length })}
+                <span className="text-sm ml-2" style={{ color: "#64748b" }}>
+                  {studentLimit.unlimited
+                    ? t("tracking.studentLimitUnlimited")
+                    : tp("tracking.studentLimitUsage", {
+                        used: studentLimit.used,
+                        max: studentLimit.max ?? 0,
+                      })}
+                </span>
                 {refreshing ? (
                   <span className="text-sm ml-2" style={{ color: "#64748b" }}>
                     {t("tracking.refreshing")}
@@ -225,12 +254,26 @@ export function StudentTracking() {
             <div className="flex gap-3 items-center">
               <LangToggle className="" />
               <button
-                onClick={() => setShowAddStudentModal(true)}
+                onClick={() => {
+                  if (!studentLimit.can_add) {
+                    toast.error(tp("tracking.studentLimitReached", { max: studentLimit.max ?? 0 }));
+                    return;
+                  }
+                  setShowAddStudentModal(true);
+                }}
+                disabled={!studentLimit.can_add}
                 className="px-6 py-3 rounded-xl flex items-center gap-2 transition-all"
                 style={{
-                  background: "#38b6ff",
+                  background: studentLimit.can_add ? "#38b6ff" : "#94a3b8",
                   color: "#ffffff",
+                  opacity: studentLimit.can_add ? 1 : 0.7,
+                  cursor: studentLimit.can_add ? "pointer" : "not-allowed",
                 }}
+                title={
+                  studentLimit.can_add
+                    ? undefined
+                    : tp("tracking.studentLimitReached", { max: studentLimit.max ?? 0 })
+                }
               >
                 <Plus className="w-5 h-5" />
                 {t("tracking.addStudent")}

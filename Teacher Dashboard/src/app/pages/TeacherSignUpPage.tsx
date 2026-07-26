@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   BookOpen, ArrowRight, ArrowLeft, Eye, EyeOff,
@@ -7,24 +7,17 @@ import {
 import classroomPhoto from "../../imports/image-1.png";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
+import {
+  clearSignupDraft,
+  emptySignupForm,
+  loadSignupDraft,
+  saveSignupDraft,
+  type SignupFormData,
+  type SignupStep,
+} from "../signupDraft";
 
-type Step = 1 | 2 | 3;
-
-interface FormData {
-  firstName: string; lastName: string; email: string;
-  password: string; confirmPassword: string;
-  schoolName: string; schoolBoard: string; province: string;
-  role: string; grades: string[]; numStudents: string;
-  accountType: "school" | "individual" | "";
-}
-
-const empty: FormData = {
-  firstName: "", lastName: "", email: "",
-  password: "", confirmPassword: "",
-  schoolName: "", schoolBoard: "", province: "Québec",
-  role: "teacher", grades: [], numStudents: "",
-  accountType: "",
-};
+type Step = SignupStep;
+type FormData = SignupFormData;
 
 function InputField({ label, type = "text", value, onChange, placeholder, error }: {
   label: string; type?: string; value: string;
@@ -94,9 +87,14 @@ function StepIndicator({ current, total, label }: { current: Step; total: number
 export function TeacherSignUpPage() {
   const navigate = useNavigate();
   const { t, tp, lang } = useLanguage();
-  const [step, setStep] = useState<Step>(1);
-  const [form, setForm] = useState<FormData>(empty);
+  const draft = useMemo(() => loadSignupDraft(), []);
+  const [step, setStep] = useState<Step>(draft?.step ?? 1);
+  const [form, setForm] = useState<FormData>(draft?.form ?? emptySignupForm());
   const [errors, setErrors] = useState<Partial<FormData>>({});
+
+  useEffect(() => {
+    saveSignupDraft(step, form);
+  }, [step, form]);
 
   const provinces = useMemo(
     () =>
@@ -119,16 +117,6 @@ export function TeacherSignUpPage() {
       { value: "teacher", label: t("signup.role.teacher"), icon: User },
       { value: "reading", label: t("signup.role.reading"), icon: BookOpen },
       { value: "special_ed", label: t("signup.role.specialEd"), icon: GraduationCap },
-    ],
-    [t]
-  );
-
-  const grades = useMemo(
-    () => [
-      { value: "Maternelle", label: t("grade.kindergarten") },
-      { value: "Jardin", label: t("grade.garden") },
-      { value: "1re année", label: t("grade.grade1") },
-      { value: "2e année", label: t("grade.grade2") },
     ],
     [t]
   );
@@ -167,13 +155,6 @@ export function TeacherSignUpPage() {
     setErrors((e) => ({ ...e, [k]: "" }));
   };
 
-  const toggleGrade = (g: string) => {
-    setForm((f) => ({
-      ...f,
-      grades: f.grades.includes(g) ? f.grades.filter((x) => x !== g) : [...f.grades, g],
-    }));
-  };
-
   const validateStep1 = () => {
     const e: Partial<Record<keyof FormData, string>> = {};
     if (!form.firstName.trim()) e.firstName = t("signup.err.firstName");
@@ -188,7 +169,6 @@ export function TeacherSignUpPage() {
   const validateStep2 = () => {
     const e: Partial<Record<keyof FormData, string>> = {};
     if (!form.schoolName.trim()) e.schoolName = t("signup.err.schoolName");
-    if (form.grades.length === 0) e.grades = t("signup.err.grades");
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -198,7 +178,8 @@ export function TeacherSignUpPage() {
     if (step === 2 && !validateStep2()) return;
     if (step === 3) {
       if (!form.accountType) { setErrors({ accountType: t("signup.err.accountType") }); return; }
-      navigate("/signup/plan");
+      saveSignupDraft(3, form);
+      navigate(form.accountType === "school" ? "/signup/join" : "/signup/plan");
       return;
     }
     setStep((s) => (s + 1) as Step);
@@ -239,7 +220,13 @@ export function TeacherSignUpPage() {
           <div style={{ marginBottom: -12 }}><LangToggle className="" /></div>
         </div>
         <div style={{ position: "absolute", top: 24, left: 40 }}>
-          <button onClick={() => navigate("/")} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 13 }}>
+          <button
+            onClick={() => {
+              clearSignupDraft();
+              navigate("/");
+            }}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 13 }}
+          >
             <ArrowLeft size={14} /> {t("signup.backHome")}
           </button>
         </div>
@@ -303,36 +290,34 @@ export function TeacherSignUpPage() {
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 8 }}>
-                  {t("signup.gradesTaught")} <span style={{ color: "#94a3b8", fontWeight: 400 }}>{t("signup.gradesHint")}</span>
-                </label>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {grades.map((g) => {
-                    const selected = form.grades.includes(g.value);
-                    return (
-                      <button key={g.value} type="button" onClick={() => toggleGrade(g.value)}
-                        style={{
-                          padding: "7px 14px", borderRadius: 20,
-                          border: `1.5px solid ${selected ? "#004aad" : "#dff3ff"}`,
-                          background: selected ? "#004aad" : "#f8ffdb",
-                          color: selected ? "white" : "#374151",
-                          fontSize: 13, fontWeight: selected ? 600 : 400, cursor: "pointer", transition: "all 0.15s",
-                        }}>
-                        {g.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                {errors.grades && <p style={{ fontSize: 12, color: "#ff5757", marginTop: 5 }}>{errors.grades}</p>}
-              </div>
-
-              <div>
                 <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>
                   {t("signup.numStudents")} <span style={{ color: "#94a3b8", fontWeight: 400 }}>{t("signup.optional")}</span>
                 </label>
-                <input type="number" min={1} max={200} value={form.numStudents} onChange={(e) => set("numStudents", e.target.value)}
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={form.numStudents}
+                  onChange={(e) => {
+                    const raw = e.target.value.trim();
+                    if (form.numStudents === "30+" && raw.length < "30+".length) {
+                      set("numStudents", "29");
+                      return;
+                    }
+                    if (raw === "" || raw === "30+") {
+                      set("numStudents", raw);
+                      return;
+                    }
+                    const digits = raw.replace(/\D/g, "");
+                    if (digits === "") {
+                      set("numStudents", "");
+                      return;
+                    }
+                    const count = Number.parseInt(digits, 10);
+                    set("numStudents", count >= 30 ? "30+" : String(count));
+                  }}
                   placeholder={t("signup.studentsPlaceholder")}
-                  style={{ width: "100%", padding: "11px 14px", borderRadius: 12, border: "1.5px solid #dff3ff", background: "#f8ffdb", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+                  style={{ width: "100%", padding: "11px 14px", borderRadius: 12, border: "1.5px solid #dff3ff", background: "#f8ffdb", fontSize: 14, outline: "none", boxSizing: "border-box" }}
+                />
               </div>
             </div>
           )}
@@ -396,7 +381,9 @@ export function TeacherSignUpPage() {
             )}
             <button type="button" onClick={handleNext}
               style={{ flex: 2, padding: "12px", borderRadius: 12, border: "none", background: "#004aad", color: "white", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-              {step === 3 ? t("signup.continueToPlans") : t("signup.continue")}
+              {step === 3
+                ? (form.accountType === "school" ? t("signup.continueToJoin") : t("signup.continueToPlans"))
+                : t("signup.continue")}
               <ArrowRight size={15} />
             </button>
           </div>

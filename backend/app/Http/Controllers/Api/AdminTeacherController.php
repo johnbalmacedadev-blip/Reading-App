@@ -5,14 +5,19 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\School;
 use App\Models\SchoolBoard;
+use App\Models\PlatformSetting;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\NotificationMailer;
+use App\Services\TeacherNotificationService;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -72,20 +77,56 @@ class AdminTeacherController extends Controller
         $data = $this->validated($request);
         $portal = $this->validatePortal($request, true);
         $data['email'] = $portal['portal_username'];
+        // New teachers must activate via email before signing in.
+        $data['account_status'] = 'inactive';
+
+        $plainPassword = $portal['portal_password'];
 
         $teacher = User::create([
             ...$data,
             'name' => $this->buildName($data),
             'role' => 'teacher',
-            'password' => Hash::make($portal['portal_password']),
-            'portal_password_encrypted' => Crypt::encryptString($portal['portal_password']),
+            'preferred_language' => $data['preferred_language'] ?? PlatformSetting::defaultLanguage(),
+            'password' => Hash::make($plainPassword),
+            'portal_password_encrypted' => Crypt::encryptString($plainPassword),
+            'email_verified_at' => null,
         ]);
 
         $teacher->load('school')->loadCount('classes');
 
+        $emailSent = false;
+        try {
+            NotificationMailer::sendVerifyAccount($teacher, $plainPassword);
+            $emailSent = true;
+        } catch (\Throwable $e) {
+            Log::error('Teacher activation email failed', [
+                'teacher_id' => $teacher->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         AuditLogger::log('Create', 'Teacher', "{$teacher->displayName()} created", 'info', $request, subject: $teacher);
 
-        return response()->json(['teacher' => $this->format($teacher)], 201);
+        return response()->json([
+            'teacher' => $this->format($teacher),
+            'email_sent' => $emailSent,
+            'message' => $emailSent
+                ? 'Teacher created. An activation email was sent.'
+                : 'Teacher created, but the activation email could not be sent.',
+        ], 201);
+    }
+
+    public function show(User $teacher): JsonResponse
+    {
+        if ($teacher->role !== 'teacher') {
+            abort(404);
+        }
+
+        $teacher->load('school')->loadCount('classes');
+
+        return response()->json([
+            'teacher' => $this->format($teacher),
+        ]);
     }
 
     public function update(Request $request, User $teacher): JsonResponse
@@ -99,7 +140,14 @@ class AdminTeacherController extends Controller
         $data['email'] = $portal['portal_username'];
         $data['name'] = $this->buildName($data);
 
+        $trialEndsAt = array_key_exists('trial_ends_at', $data) ? $data['trial_ends_at'] : false;
+        unset($data['trial_ends_at']);
+
         $teacher->fill($data);
+
+        if ($trialEndsAt !== false) {
+            $this->applyTrialEndsAt($teacher, $trialEndsAt);
+        }
 
         if (! empty($portal['portal_password'])) {
             $teacher->password = Hash::make($portal['portal_password']);
@@ -112,6 +160,159 @@ class AdminTeacherController extends Controller
         AuditLogger::log('Edit', 'Teacher', "{$teacher->displayName()} updated", 'info', $request, subject: $teacher);
 
         return response()->json(['teacher' => $this->format($teacher)]);
+    }
+
+    public function sendBillingNotice(Request $request, User $teacher): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+        $this->ensureTeacher($teacher);
+
+        $data = $request->validate([
+            'type' => ['required', 'in:trial_ending,trial_expired'],
+        ]);
+
+        if ($teacher->account_status === 'archived') {
+            return response()->json(['message' => 'Archived teachers cannot receive billing notices.'], 422);
+        }
+
+        if ($teacher->hasActiveSubscription()) {
+            return response()->json(['message' => 'This teacher already has an active paid subscription.'], 422);
+        }
+
+        TeacherNotificationService::adminForceTrialNotice($teacher, $data['type']);
+
+        $label = $data['type'] === 'trial_ending' ? 'trial ending soon' : 'trial expired';
+
+        AuditLogger::log(
+            'Email',
+            'Teacher',
+            "Admin sent {$label} notification/email to {$teacher->displayName()}",
+            'info',
+            $request,
+            subject: $teacher,
+            metadata: ['notice_type' => $data['type']],
+        );
+
+        return response()->json([
+            'teacher' => $this->format($teacher->fresh()->load('school')->loadCount('classes')),
+            'message' => $data['type'] === 'trial_ending'
+                ? 'Trial ending soon notification and email sent.'
+                : 'Trial expired notification and email sent.',
+        ]);
+    }
+
+    public function sendInactivityNotice(Request $request, User $teacher): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+        $this->ensureTeacher($teacher);
+
+        $data = $request->validate([
+            'type' => ['required', 'in:inactive_reminder,suspension_reminder'],
+        ]);
+
+        if ($teacher->account_status === 'archived') {
+            return response()->json(['message' => 'Archived teachers cannot receive inactivity notices.'], 422);
+        }
+
+        TeacherNotificationService::inactiveAccountNudge($teacher, $data['type'], force: true);
+
+        $label = $data['type'] === 'inactive_reminder'
+            ? 'inactive account reminder'
+            : 'account suspension reminder';
+
+        AuditLogger::log(
+            'Email',
+            'Teacher',
+            "Admin sent {$label} to {$teacher->displayName()}",
+            'info',
+            $request,
+            subject: $teacher,
+            metadata: ['notice_type' => $data['type']],
+        );
+
+        return response()->json([
+            'teacher' => $this->format($teacher->fresh()->load('school')->loadCount('classes')),
+            'message' => $data['type'] === 'inactive_reminder'
+                ? 'Inactive account reminder email sent.'
+                : 'Account suspension reminder email sent.',
+        ]);
+    }
+
+    public function resendActivation(Request $request, User $teacher): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+        $this->ensureTeacher($teacher);
+
+        if ($teacher->account_status === 'archived') {
+            return response()->json(['message' => 'Archived accounts cannot receive activation emails.'], 422);
+        }
+
+        if ($teacher->email_verified_at !== null || $teacher->account_status === 'active') {
+            return response()->json(['message' => 'This teacher account is already activated.'], 422);
+        }
+
+        $plainPassword = $this->portalPasswordFor($teacher);
+        if ($plainPassword === '') {
+            return response()->json([
+                'message' => 'The temporary password is unavailable. Set a new password before resending activation.',
+            ], 422);
+        }
+
+        try {
+            $this->sendActivationEmail($teacher, $plainPassword);
+        } catch (\Throwable $exception) {
+            Log::error('Teacher activation email resend failed', [
+                'teacher_id' => $teacher->id,
+                'error' => $exception->getMessage(),
+            ]);
+
+            return response()->json(['message' => 'The activation email could not be sent.'], 500);
+        }
+
+        AuditLogger::log(
+            'Email',
+            'Teacher',
+            "Activation email resent to {$teacher->displayName()}",
+            'info',
+            $request,
+            subject: $teacher,
+        );
+
+        return response()->json([
+            'teacher' => $this->format($teacher->fresh()->load('school')->loadCount('classes')),
+            'message' => 'Activation email resent successfully.',
+        ]);
+    }
+
+    public function activateAccount(Request $request, User $teacher): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+        $this->ensureTeacher($teacher);
+
+        if ($teacher->account_status === 'archived') {
+            return response()->json(['message' => 'Restore the archived account before activating it.'], 422);
+        }
+
+        $teacher->forceFill([
+            'account_status' => 'active',
+            'email_verified_at' => $teacher->email_verified_at ?? now(),
+        ])->save();
+        $teacher->startTrialIfNeeded();
+        $teacher->load('school')->loadCount('classes');
+
+        AuditLogger::log(
+            'Activate',
+            'Teacher',
+            "{$teacher->displayName()} activated manually by administrator",
+            'warning',
+            $request,
+            subject: $teacher,
+        );
+
+        return response()->json([
+            'teacher' => $this->format($teacher),
+            'message' => 'Teacher account activated.',
+        ]);
     }
 
     public function suggestCredentials(Request $request): JsonResponse
@@ -150,6 +351,38 @@ class AdminTeacherController extends Controller
         }
 
         return response()->json(['teacher' => $this->format($teacher)]);
+    }
+
+    public function destroy(Request $request, User $teacher): JsonResponse
+    {
+        if ($teacher->role !== 'teacher') {
+            abort(404);
+        }
+
+        if ($teacher->account_status !== 'archived') {
+            return response()->json([
+                'message' => 'Only archived teachers can be permanently deleted.',
+            ], 422);
+        }
+
+        $name = $teacher->displayName();
+        $avatarPath = $teacher->avatar_path;
+
+        $teacher->delete();
+
+        if ($avatarPath && Storage::disk('public')->exists($avatarPath)) {
+            Storage::disk('public')->delete($avatarPath);
+        }
+
+        AuditLogger::log(
+            'Delete',
+            'Teacher',
+            "{$name} permanently deleted",
+            'critical',
+            $request,
+        );
+
+        return response()->json(['message' => 'Teacher permanently deleted.']);
     }
 
     public function showAvatar(User $teacher): StreamedResponse|JsonResponse
@@ -196,6 +429,7 @@ class AdminTeacherController extends Controller
             'school_board' => ['nullable', 'string', Rule::in($boardCodes)],
             'account_status' => ['required', 'string'],
             'started_at' => ['nullable', 'date'],
+            'trial_ends_at' => ['nullable', 'date'],
         ]);
 
         $data['school_id'] = $data['school_id'] ?? null;
@@ -203,6 +437,26 @@ class AdminTeacherController extends Controller
         $data['account_status'] = $this->parseStatus($data['account_status']);
 
         return $data;
+    }
+
+    private function applyTrialEndsAt(User $teacher, ?string $trialEndsAt): void
+    {
+        if ($trialEndsAt === null || $trialEndsAt === '') {
+            $teacher->trial_ends_at = null;
+
+            return;
+        }
+
+        $ends = Carbon::parse($trialEndsAt)->endOfDay();
+        $teacher->trial_ends_at = $ends;
+
+        if (! $teacher->trial_started_at) {
+            $teacher->trial_started_at = now();
+        }
+
+        if (! $teacher->hasActiveSubscription()) {
+            $teacher->subscription_status = 'trialing';
+        }
     }
 
     private function validatePortal(Request $request, bool $creating, ?User $teacher = null): array
@@ -272,9 +526,10 @@ class AdminTeacherController extends Controller
 
     private function parseStatus(string $status): string
     {
-        return match (strtolower($status)) {
+        return match (strtolower(trim($status))) {
             'active' => 'active',
             'inactive' => 'inactive',
+            'pending', 'pending activation' => 'pending',
             'archived' => 'archived',
             default => 'active',
         };
@@ -284,6 +539,7 @@ class AdminTeacherController extends Controller
     {
         return match ($status) {
             'inactive' => 'Inactive',
+            'pending' => 'Pending activation',
             'archived' => 'Archived',
             default => 'Active',
         };
@@ -291,6 +547,19 @@ class AdminTeacherController extends Controller
 
     private function format(User $teacher, ?int $studentsCount = null): array
     {
+        $emailActivationPending = $teacher->account_status === 'inactive' && $teacher->email_verified_at === null;
+        $joinPending = $teacher->account_status === 'pending';
+        $activationPending = $emailActivationPending || $joinPending;
+        $daysSinceLogin = $teacher->daysSinceLastLogin();
+        $loginInactive = $teacher->account_status !== 'archived' && $teacher->isLoginInactive(30);
+
+        $status = $this->displayStatus($teacher->account_status);
+        if ($activationPending) {
+            $status = 'Pending activation';
+        } elseif ($loginInactive) {
+            $status = 'Inactive';
+        }
+
         return [
             'id' => $teacher->id,
             'name' => $this->formattedName($teacher),
@@ -304,13 +573,66 @@ class AdminTeacherController extends Controller
             'board' => $teacher->school_board ?? '',
             'classes' => $teacher->classes_count ?? 0,
             'students' => $studentsCount ?? $this->studentCountFor($teacher),
-            'status' => $this->displayStatus($teacher->account_status),
+            'status' => $status,
+            'activation_pending' => $activationPending,
+            'email_activated' => $teacher->email_verified_at !== null,
+            'activated_at' => $teacher->email_verified_at?->toIso8601String(),
+            'affiliation_type' => $teacher->affiliation_type,
+            'subscription_status' => $teacher->subscription_status,
+            'subscription_plan' => $teacher->subscription_plan,
+            'is_trial_active' => $teacher->hasActiveTrial(),
+            'trial_days_remaining' => $teacher->trialDaysRemaining(),
+            'trial_ends_at' => $teacher->trial_ends_at?->toIso8601String(),
+            'access' => $this->accessLabel($teacher),
             'since' => $teacher->started_at?->format('Y-m-d') ?? '',
+            'last_login_at' => $teacher->last_login_at?->toIso8601String(),
+            'days_since_last_login' => $daysSinceLogin,
+            'login_inactive' => $loginInactive,
             'portal_username' => $teacher->email,
             'portal_password' => $this->portalPasswordFor($teacher),
             'has_avatar' => (bool) $teacher->avatar_path,
             'avatar_url' => $teacher->avatar_path ? "/api/admin/teachers/{$teacher->id}/avatar" : null,
         ];
+    }
+
+    private function accessLabel(User $teacher): string
+    {
+        if ($teacher->account_status === 'pending') {
+            return 'Pending join';
+        }
+
+        if ($teacher->isInstitutionalTeacher()) {
+            return 'Institutional';
+        }
+
+        if ($teacher->hasActiveSubscription()) {
+            return $teacher->subscription_plan === 'insights' ? 'Insights' : 'Essentials';
+        }
+
+        if ($teacher->hasActiveTrial()) {
+            return 'Trial';
+        }
+
+        if ($teacher->subscription_status === 'trialing' || $teacher->trial_ends_at) {
+            return 'Trial expired';
+        }
+
+        return 'None';
+    }
+
+    private function sendActivationEmail(User $teacher, string $plainPassword): void
+    {
+        NotificationMailer::sendVerifyAccount($teacher, $plainPassword);
+    }
+
+    private function authorizeAdmin(Request $request): void
+    {
+        abort_unless($request->user()?->role === 'admin', 403);
+    }
+
+    private function ensureTeacher(User $teacher): void
+    {
+        abort_unless($teacher->role === 'teacher', 404);
     }
 
     /** @param Collection<int, int> $teacherIds */

@@ -15,6 +15,7 @@ const matchers: Array<{ test: (path: string) => boolean; parts: PageTitleParts }
   { test: (p) => p === "/admin/settings", parts: { portalKey: "pageTitle.adminPortal", pageKey: "nav.settings" } },
   { test: (p) => p === "/admin/content", parts: { portalKey: "pageTitle.adminPortal", pageKey: "pageTitle.contentLibrary" } },
   { test: (p) => p === "/admin/students", parts: { portalKey: "pageTitle.adminPortal", pageKey: "pageTitle.studentRecords" } },
+  { test: (p) => p === "/admin/teachers/classes", parts: { portalKey: "pageTitle.adminPortal", pageKey: "pageTitle.classes" } },
   { test: (p) => p === "/admin/teachers", parts: { portalKey: "pageTitle.adminPortal", pageKey: "common.teachers" } },
   { test: (p) => p === "/admin/schools", parts: { portalKey: "pageTitle.adminPortal", pageKey: "common.schools" } },
   { test: (p) => p === "/admin/school-boards", parts: { portalKey: "pageTitle.adminPortal", pageKey: "pageTitle.schoolBoards" } },
@@ -34,6 +35,8 @@ const matchers: Array<{ test: (path: string) => boolean; parts: PageTitleParts }
   { test: (p) => p === "/school/reports" || p === "/school", parts: { portalKey: "login.schoolPortal", pageKey: "nav.reports" } },
 
   // Teacher
+  { test: (p) => p === "/account-status", parts: { portalKey: "login.teacherPortal", pageKey: "account.deactivated.badge" } },
+  { test: (p) => p === "/subscription", parts: { portalKey: "login.teacherPortal", pageKey: "nav.subscription" } },
   { test: (p) => p === "/assessments", parts: { portalKey: "login.teacherPortal", pageKey: "nav.assessments" } },
   { test: (p) => p === "/reports", parts: { portalKey: "login.teacherPortal", pageKey: "nav.reports" } },
   { test: (p) => p.startsWith("/library/content/"), parts: { portalKey: "login.teacherPortal", pageKey: "pageTitle.content" } },
@@ -49,6 +52,7 @@ const matchers: Array<{ test: (path: string) => boolean; parts: PageTitleParts }
   { test: (p) => p === "/dashboard", parts: { portalKey: "login.teacherPortal", pageKey: "pageTitle.dashboard" } },
 
   // Auth / onboarding
+  { test: (p) => p === "/reset-password", parts: { pageKey: "reset.title" } },
   { test: (p) => p === "/forgot-password", parts: { pageKey: "login.forgotPassword" } },
   { test: (p) => p === "/signup/payment", parts: { pageKey: "pageTitle.payment" } },
   { test: (p) => p === "/signup/plan", parts: { pageKey: "pageTitle.subscriptionPlan" } },

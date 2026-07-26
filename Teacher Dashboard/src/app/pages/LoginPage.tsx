@@ -15,6 +15,7 @@ import { useLanguage } from "../i18n";
 import { LangToggle } from "../components/LangToggle";
 import { useAuth } from "../context/AuthContext";
 import { ApiError } from "../api/client";
+import { teacherHomePath } from "../utils/teacherAccess";
 
 const portalDefs = [
   {
@@ -74,7 +75,7 @@ export function LoginPage() {
     if (loading || !user) return;
     if (user.role === "board_admin") navigate("/board", { replace: true });
     else if (user.role === "school_admin") navigate("/school", { replace: true });
-    else if (user.role === "teacher") navigate("/dashboard", { replace: true });
+    else if (user.role === "teacher") navigate(teacherHomePath(user), { replace: true });
     else if (user.role === "admin") navigate("/admin", { replace: true });
   }, [user, loading, navigate]);
 

@@ -1,9 +1,0 @@
-# Block all direct web access to the Laravel application folder.
-# Only the public front controller (../index.php) may reference these files.
-<IfModule mod_authz_core.c>
-    Require all denied
-</IfModule>
-<IfModule !mod_authz_core.c>
-    Order allow,deny
-    Deny from all
-</IfModule>

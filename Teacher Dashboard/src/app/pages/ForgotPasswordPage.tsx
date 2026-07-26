@@ -4,6 +4,7 @@ import { BookOpen, ArrowLeft, Mail, CheckCircle2, Send } from "lucide-react";
 import classroomPhoto from "../../imports/image-1.png";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
+import { authApi, ApiError } from "../api/client";
 
 export function ForgotPasswordPage() {
   const navigate = useNavigate();
@@ -18,17 +19,23 @@ export function ForgotPasswordPage() {
     [t]
   );
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.includes("@")) {
       setError(t("forgot.err.email"));
       return;
     }
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    setError("");
+    try {
+      await authApi.csrf();
+      await authApi.forgotPassword(email.trim());
       setSent(true);
-    }, 1400);
+    } catch (err) {
+      setError(err instanceof ApiError || err instanceof Error ? err.message : t("forgot.err.email"));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

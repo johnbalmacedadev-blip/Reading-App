@@ -4,32 +4,21 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Assessment;
+use App\Models\ClassType;
+use App\Models\PlatformSetting;
 use App\Models\SchoolClass;
 use App\Models\SchoolYear;
 use App\Models\Student;
 use App\Models\StudentEvaluation;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\TeacherNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class TeacherClassController extends Controller
 {
-    /** @var array<string, string> */
-    private const GRADE_ALIASES = [
-        'Maternelle' => 'Kindergarten',
-        'Jardin' => 'Kindergarten',
-        '1re année' => 'Grade 1',
-        '2e année' => 'Grade 2',
-        '3e année' => 'Grade 3',
-        '4e année' => 'Grade 3+',
-        '5e année' => 'Grade 3+',
-        '6e année' => 'Grade 3+',
-        'Grade 4' => 'Grade 3+',
-        'Grade 5' => 'Grade 3+',
-        'Grade 6' => 'Grade 3+',
-    ];
-
     public function index(Request $request): JsonResponse
     {
         /** @var User $teacher */
@@ -41,7 +30,22 @@ class TeacherClassController extends Controller
             ->get()
             ->map(fn (SchoolClass $class) => $this->formatClassSummary($class));
 
-        return response()->json(['classes' => $classes]);
+        return response()->json([
+            'classes' => $classes,
+            'class_types' => $this->formatClassTypes(),
+            'student_limit' => $this->studentLimitFor($teacher),
+        ]);
+    }
+
+    public function classTypes(Request $request): JsonResponse
+    {
+        /** @var User $teacher */
+        $teacher = $request->user();
+
+        return response()->json([
+            'class_types' => $this->formatClassTypes(),
+            'student_limit' => $this->studentLimitFor($teacher),
+        ]);
     }
 
     public function store(Request $request): JsonResponse
@@ -49,9 +53,11 @@ class TeacherClassController extends Controller
         /** @var User $teacher */
         $teacher = $request->user();
 
+        $allowedGrades = ClassType::allowedGradeValues(true);
+
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'grade' => ['required', 'string', 'max:255'],
+            'grade' => ['required', 'string', 'max:255', Rule::in($allowedGrades)],
             'school_year' => ['nullable', 'string', 'max:20'],
         ]);
 
@@ -65,6 +71,12 @@ class TeacherClassController extends Controller
 
         AuditLogger::log('Create', 'Access', "Class {$class->name} created", 'info', $request, subject: $class);
 
+        try {
+            TeacherNotificationService::classCreated($teacher, $class);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
         return response()->json([
             'class' => $this->formatClassSummary($class->loadCount('students')),
         ], 201);
@@ -74,9 +86,13 @@ class TeacherClassController extends Controller
     {
         $this->authorizeClass($request, $schoolClass);
 
+        $allowedGrades = ClassType::allowedGradeValues(true);
+        $allowedGrades[] = $schoolClass->grade;
+        $allowedGrades = array_values(array_unique($allowedGrades));
+
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'grade' => ['required', 'string', 'max:255'],
+            'grade' => ['required', 'string', 'max:255', Rule::in($allowedGrades)],
             'school_year' => ['nullable', 'string', 'max:20'],
         ]);
 
@@ -93,6 +109,25 @@ class TeacherClassController extends Controller
         ]);
     }
 
+    public function destroy(Request $request, SchoolClass $schoolClass): JsonResponse
+    {
+        $this->authorizeClass($request, $schoolClass);
+
+        if ($schoolClass->students()->count() > 0) {
+            return response()->json([
+                'message' => 'Classes with students cannot be deleted.',
+            ], 422);
+        }
+
+        $name = $schoolClass->name;
+        $schoolClass->evaluations()->delete();
+        $schoolClass->delete();
+
+        AuditLogger::log('Delete', 'Access', "Class {$name} deleted", 'warning', $request);
+
+        return response()->json(['message' => 'Class deleted.']);
+    }
+
     public function show(Request $request, SchoolClass $schoolClass): JsonResponse
     {
         $this->authorizeClass($request, $schoolClass);
@@ -102,6 +137,8 @@ class TeacherClassController extends Controller
         }]);
 
         $publishedWorkshops = $this->publishedWorkshopsForGrade($schoolClass->grade);
+        /** @var User $teacher */
+        $teacher = $request->user();
 
         return response()->json([
             'class' => [
@@ -119,6 +156,7 @@ class TeacherClassController extends Controller
                     'evaluations' => $this->formatEvaluations($student, $schoolClass->id),
                 ]),
             ],
+            'student_limit' => $this->studentLimitFor($teacher),
         ]);
     }
 
@@ -170,14 +208,75 @@ class TeacherClassController extends Controller
                 'class_name' => $class->name,
                 'teacher_display' => $teacherDisplay,
                 'school_year' => $class->school_year,
+                'has_activity' => $this->studentHasActivity($student->id, $class->id),
                 'evaluations' => $evaluations,
             ],
+        ]);
+    }
+
+    public function destroyStudent(Request $request, Student $student): JsonResponse
+    {
+        /** @var User $teacher */
+        $teacher = $request->user();
+
+        $classId = $request->integer('class_id');
+        $classQuery = $student->classes()->where('teacher_id', $teacher->id);
+        $class = $classId > 0
+            ? (clone $classQuery)->where('classes.id', $classId)->first()
+            : $classQuery->first();
+
+        if (! $class) {
+            abort(403);
+        }
+
+        if ($this->studentHasActivity($student->id, $class->id)) {
+            return response()->json([
+                'message' => 'Students with evaluation activity cannot be deleted.',
+            ], 422);
+        }
+
+        $name = $student->fullName();
+
+        StudentEvaluation::query()
+            ->where('student_id', $student->id)
+            ->where('class_id', $class->id)
+            ->delete();
+
+        $student->classes()->detach($class->id);
+
+        if ($student->classes()->count() === 0) {
+            $student->evaluations()->delete();
+            $student->delete();
+        }
+
+        AuditLogger::log(
+            'Delete',
+            'Student',
+            "{$name} removed from class {$class->name}",
+            'warning',
+            $request,
+        );
+
+        return response()->json([
+            'message' => 'Student deleted.',
+            'class_id' => $class->id,
         ]);
     }
 
     public function addStudent(Request $request, SchoolClass $schoolClass): JsonResponse
     {
         $this->authorizeClass($request, $schoolClass);
+
+        /** @var User $teacher */
+        $teacher = $request->user();
+        $limit = $this->studentLimitFor($teacher);
+
+        if (! $limit['can_add']) {
+            return response()->json([
+                'message' => "Student limit reached. A teacher can add at most {$limit['max']} students across all classes.",
+                'student_limit' => $limit,
+            ], 422);
+        }
 
         $data = $request->validate([
             'first_name' => ['required', 'string', 'max:255'],
@@ -202,6 +301,11 @@ class TeacherClassController extends Controller
         }
 
         AuditLogger::log('Create', 'Student', "{$student->fullName()} added to class {$schoolClass->name}", 'info', $request, subject: $student);
+        try {
+            TeacherNotificationService::studentAdded($teacher, $schoolClass, $student);
+        } catch (\Throwable $e) {
+            report($e);
+        }
 
         return response()->json([
             'student' => [
@@ -211,6 +315,7 @@ class TeacherClassController extends Controller
                 'last_name' => $student->last_name,
                 'evaluations' => array_fill(0, 15, null),
             ],
+            'student_limit' => $this->studentLimitFor($teacher),
         ], 201);
     }
 
@@ -219,6 +324,27 @@ class TeacherClassController extends Controller
         if ($schoolClass->teacher_id !== $request->user()->id) {
             abort(403);
         }
+    }
+
+    private function studentHasActivity(int $studentId, int $classId): bool
+    {
+        return StudentEvaluation::query()
+            ->where('student_id', $studentId)
+            ->where('class_id', $classId)
+            ->get()
+            ->contains(function (StudentEvaluation $evaluation) {
+                if ($evaluation->not_required) {
+                    return true;
+                }
+
+                if ($evaluation->status !== null && $evaluation->status !== '') {
+                    return true;
+                }
+
+                $responses = $evaluation->responses;
+
+                return $responses !== null && $responses !== [];
+            });
     }
 
     private function formatClassSummary(SchoolClass $class): array
@@ -267,7 +393,7 @@ class TeacherClassController extends Controller
     /** @return array<int, bool> */
     private function publishedWorkshopsForGrade(string $grade): array
     {
-        $normalizedGrade = self::GRADE_ALIASES[$grade] ?? $grade;
+        $normalizedGrade = ClassType::resolveAssessmentGrade($grade);
 
         $publishedAteliers = Assessment::query()
             ->whereNull('school_board')
@@ -287,5 +413,55 @@ class TeacherClassController extends Controller
         }
 
         return array_values($publishedLookup);
+    }
+
+    /** @return list<array{code: string, name: string, name_fr: string|null, assessment_grade: string}> */
+    private function formatClassTypes(): array
+    {
+        return ClassType::activeOrdered()
+            ->get()
+            ->map(fn (ClassType $type) => [
+                'code' => $type->code,
+                'name' => $type->name,
+                'name_fr' => $type->name_fr,
+                'assessment_grade' => $type->assessment_grade,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /** @return array{max: int|null, used: int, remaining: int|null, can_add: bool, unlimited: bool} */
+    private function studentLimitFor(User $teacher): array
+    {
+        $used = $this->countTeacherStudents($teacher);
+
+        // Insights subscription has no student cap. Free (trial/none) and Essentials are limited.
+        if ($teacher->hasActiveSubscription() && $teacher->subscription_plan === 'insights') {
+            return [
+                'max' => null,
+                'used' => $used,
+                'remaining' => null,
+                'can_add' => true,
+                'unlimited' => true,
+            ];
+        }
+
+        $max = PlatformSetting::maxStudentsPerTeacher();
+        $remaining = max(0, $max - $used);
+
+        return [
+            'max' => $max,
+            'used' => $used,
+            'remaining' => $remaining,
+            'can_add' => $remaining > 0,
+            'unlimited' => false,
+        ];
+    }
+
+    private function countTeacherStudents(User $teacher): int
+    {
+        return Student::query()
+            ->whereHas('classes', fn ($query) => $query->where('teacher_id', $teacher->id))
+            ->count();
     }
 }

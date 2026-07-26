@@ -1,10 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   BookOpen, ArrowLeft, Lock, CreditCard, Check, Shield,
 } from "lucide-react";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
+import { authApi, ApiError } from "../api/client";
+import { useAuth } from "../context/AuthContext";
+import { clearSignupDraft, loadSignupDraft } from "../signupDraft";
 
 function CardInput({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -33,11 +36,27 @@ function formatExpiry(v: string) {
 
 export function PaymentPage() {
   const navigate = useNavigate();
+  const { refreshUser } = useAuth();
   const { t, tp, lang } = useLanguage();
   const [billing, setBilling] = useState<"monthly" | "annual">("monthly");
-  const [form, setForm] = useState({ name: "", card: "", expiry: "", cvc: "", email: "", country: "canada" });
+  const draft = useMemo(() => loadSignupDraft(), []);
+  const [form, setForm] = useState({
+    name: draft ? `${draft.form.firstName} ${draft.form.lastName}`.trim() : "",
+    card: "",
+    expiry: "",
+    cvc: "",
+    email: draft?.form.email ?? "",
+    country: "canada",
+  });
   const [processing, setProcessing] = useState(false);
   const [done, setDone] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!draft?.form.email) {
+      setError(t("payment.err.missingSignup") || "Please complete signup first.");
+    }
+  }, [draft, t]);
 
   const prices = useMemo(
     () => ({
@@ -78,10 +97,48 @@ export function PaymentPage() {
     [t]
   );
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const signup = loadSignupDraft();
+    if (!signup?.form.email || !signup.form.password) {
+      setError(t("payment.err.missingSignup") || "Please complete signup first.");
+      navigate("/signup");
+      return;
+    }
+
     setProcessing(true);
-    setTimeout(() => { setProcessing(false); setDone(true); }, 2000);
+    setError("");
+    try {
+      await authApi.csrf();
+      await authApi.completeSignup({
+        first_name: signup.form.firstName,
+        last_name: signup.form.lastName,
+        email: signup.form.email,
+        password: signup.form.password,
+        password_confirmation: signup.form.confirmPassword || signup.form.password,
+        school_name: signup.form.schoolName,
+        school_board: signup.form.schoolBoard,
+        account_type: signup.form.accountType || "individual",
+        plan: "essentials",
+        billing,
+        amount: `${price} ${period}`,
+        due_today: prices.zero,
+        next_billing_date: billingDate,
+      });
+      clearSignupDraft();
+      await refreshUser();
+      setDone(true);
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Payment failed.";
+      setError(message);
+    } finally {
+      setProcessing(false);
+    }
   };
 
   if (done) {
@@ -169,6 +226,11 @@ export function PaymentPage() {
           <p style={{ fontSize: 14, color: "#64748b", marginBottom: 28 }}>{t("payment.subtitle")}</p>
 
           <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            {error && (
+              <div style={{ background: "#fff1f2", border: "1px solid #fecdd3", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#e11d48" }}>
+                {error}
+              </div>
+            )}
             <CardInput label={t("signup.email")}>
               <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
                 type="email" placeholder={t("signup.emailPlaceholder")} style={inputStyle} required />

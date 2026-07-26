@@ -5,16 +5,20 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\School;
 use App\Models\SchoolBoard;
+use App\Models\PlatformSetting;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\NotificationMailer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Throwable;
 
 class AdminSchoolController extends Controller
 {
@@ -70,15 +74,40 @@ class AdminSchoolController extends Controller
                 'role' => 'school_admin',
                 'school_id' => $school->id,
                 'school_board' => $school->school_board,
-                'account_status' => 'active',
+                'account_status' => 'inactive',
+                'preferred_language' => PlatformSetting::defaultLanguage(),
+                'email_verified_at' => null,
             ]);
 
             return $school;
         });
 
+        $portalUser = User::query()
+            ->where('role', 'school_admin')
+            ->where('school_id', $school->id)
+            ->first();
+
+        if ($portalUser) {
+            try {
+                NotificationMailer::sendVerifyAccount($portalUser, $data['portal_password']);
+            } catch (Throwable $e) {
+                Log::error('School portal verify email failed', [
+                    'school_id' => $school->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
         AuditLogger::log('Create', 'School', "{$school->name} created", 'info', $request, subject: $school);
 
         return response()->json(['school' => $this->format($school)], 201);
+    }
+
+    public function show(School $school): JsonResponse
+    {
+        return response()->json([
+            'school' => $this->format($school),
+        ]);
     }
 
     public function update(Request $request, School $school): JsonResponse

@@ -60,6 +60,7 @@ function Modal({
   const [form, setForm] = useState(school);
   const [suggesting, setSuggesting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [loadingPassword, setLoadingPassword] = useState(false);
 
   useEffect(() => {
     setForm(school);
@@ -85,6 +86,32 @@ function Modal({
       setSuggesting(false);
     }
   }, [isCreate]);
+
+  const loadPassword = useCallback(async () => {
+    if (isCreate || !form.id || form.portal_password.trim()) return true;
+    setLoadingPassword(true);
+    try {
+      const { school: full } = await adminSchoolsApi.get(form.id);
+      setForm((f) => ({ ...f, portal_password: full.portal_password ?? "" }));
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setLoadingPassword(false);
+    }
+  }, [form.id, form.portal_password, isCreate]);
+
+  const togglePasswordVisibility = useCallback(async () => {
+    if (showPassword) {
+      setShowPassword(false);
+      return;
+    }
+    if (!form.portal_password.trim() && form.id) {
+      const loaded = await loadPassword();
+      if (!loaded) return;
+    }
+    setShowPassword(true);
+  }, [showPassword, form.portal_password, form.id, loadPassword]);
 
   useEffect(() => {
     if (isCreate && form.name.trim()) {
@@ -311,7 +338,8 @@ function Modal({
                   />
                   <button
                     type="button"
-                    onClick={() => setShowPassword((v) => !v)}
+                    onClick={togglePasswordVisibility}
+                    disabled={loadingPassword}
                     style={{
                       position: "absolute",
                       right: 10,
@@ -327,7 +355,7 @@ function Modal({
                     }}
                     aria-label={showPassword ? "Hide password" : "Show password"}
                   >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    {loadingPassword ? <Loader2 size={16} className="animate-spin" /> : showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
               </div>
@@ -359,6 +387,7 @@ function Modal({
             Cancel
           </button>
           <button
+            type="button"
             onClick={() => onSave(form)}
             disabled={saving}
             style={{
@@ -415,6 +444,7 @@ export function AdminSchoolsPage() {
   const [activeBoards, setActiveBoards] = useState<BoardOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [loadingSchool, setLoadingSchool] = useState(false);
   const [search, setSearch] = useState("");
   const [board, setBoard] = useState("All Boards");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -448,6 +478,19 @@ export function AdminSchoolsPage() {
     const timer = setTimeout(loadSchools, 250);
     return () => clearTimeout(timer);
   }, [loadSchools]);
+
+  const openEdit = async (school: AdminSchoolRecord) => {
+    setModal({ type: "edit", school: fromRecord(school) });
+    setLoadingSchool(true);
+    try {
+      const { school: full } = await adminSchoolsApi.get(school.id);
+      setModal({ type: "edit", school: fromRecord(full) });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to load school details.");
+    } finally {
+      setLoadingSchool(false);
+    }
+  };
 
   const handleSave = async (form: SchoolForm) => {
     if (!form.name.trim() || !form.city.trim() || !form.portal_username.trim()) {
@@ -686,7 +729,7 @@ export function AdminSchoolsPage() {
                     <td style={{ padding: "13px 16px" }}>
                       <div style={{ display: "flex", gap: 6 }}>
                         <button
-                          onClick={() => setModal({ type: "edit", school: fromRecord(s) })}
+                          onClick={() => openEdit(s)}
                           style={{
                             padding: "5px 10px",
                             borderRadius: 6,
@@ -741,7 +784,7 @@ export function AdminSchoolsPage() {
           boardOptions={modalBoardOptions(activeBoards, modal.school.board)}
           onClose={() => setModal(null)}
           onSave={handleSave}
-          saving={saving}
+          saving={saving || loadingSchool}
         />
       )}
     </AdminLayout>

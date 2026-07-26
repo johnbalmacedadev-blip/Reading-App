@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   BookOpen, LogOut, TrendingUp, GraduationCap, User, Settings,
-  ClipboardList, Search, ChevronDown, Eye, Edit2, CheckCircle2, Loader2, X, CheckSquare, Archive, RotateCcw,
+  ClipboardList, Search, ChevronDown, Eye, Edit2, CheckCircle2, Loader2, X, CheckSquare, Archive, RotateCcw, UserPlus,
 } from "lucide-react";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
@@ -362,6 +362,7 @@ export function SchoolAssessmentsPage() {
     { icon: TrendingUp, label: "Overview", path: "/school/reports", active: false },
     { icon: GraduationCap, label: "Academics", path: "/school/academics", active: false },
     { icon: ClipboardList, label: "Assessments", path: "/school/assessments", active: true },
+    { icon: UserPlus, label: t("nav.teacherRequests"), path: "/school/teachers", active: false },
     { icon: User, label: "Profile", path: "/profile?portal=school", active: false },
     { icon: Settings, label: "Settings", path: "/school/settings", active: false },
   ];

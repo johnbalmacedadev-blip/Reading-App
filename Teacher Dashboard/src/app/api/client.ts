@@ -86,11 +86,42 @@ export type AuthUser = {
   email: string;
   phone?: string | null;
   role: string;
+  account_status?: string | null;
+  affiliation_type?: string | null;
+  preferred_language?: string | null;
   initials: string;
   has_avatar?: boolean;
   avatar_url?: string | null;
   school: { id: number; name: string; city: string | null } | null;
   school_board?: string | null;
+  subscription?: {
+    status: string;
+    plan: string | null;
+    billing: string | null;
+    trial_ends_at: string | null;
+    trial_days_remaining: number;
+    is_trial_active: boolean;
+    is_active: boolean;
+    can_access_classroom: boolean;
+    can_access_reports: boolean;
+  } | null;
+};
+
+export type TeacherSubscription = {
+  status: string;
+  plan: string | null;
+  billing: "monthly" | "annual" | null;
+  trial_started_at: string | null;
+  trial_ends_at: string | null;
+  trial_days_remaining: number;
+  is_trial_active: boolean;
+  is_active: boolean;
+  can_access_classroom: boolean;
+  can_access_reports: boolean;
+  tax_rate_percent: number;
+  subscription_started_at: string | null;
+  subscription_ends_at: string | null;
+  has_billing_account: boolean;
 };
 
 export type ClassSummary = {
@@ -126,6 +157,101 @@ export const authApi = {
   logout: () =>
     apiRequest<{ message: string }>("/api/logout", { method: "POST" }),
   user: () => apiRequest<{ user: AuthUser | null }>("/api/user"),
+  completeSignup: (payload: {
+    first_name: string;
+    last_name: string;
+    email: string;
+    password: string;
+    password_confirmation: string;
+    school_name?: string;
+    school_board?: string;
+    account_type?: string;
+    invite_type?: "school" | "board";
+    school_id?: number;
+    board_code?: string;
+    plan?: string;
+    billing?: "monthly" | "annual";
+    amount?: string;
+    due_today?: string;
+    next_billing_date?: string;
+    preferred_language?: "en" | "fr";
+  }) =>
+    apiRequest<{ message: string; user: AuthUser | null; pending_activation?: boolean }>("/api/signup/complete", {
+      method: "POST",
+      json: payload,
+    }),
+  searchSignupSchools: (q: string) =>
+    apiRequest<{ schools: { id: number; name: string; city: string | null; school_board: string | null }[] }>(
+      `/api/signup/schools?q=${encodeURIComponent(q)}`,
+    ),
+  searchSignupBoards: (q: string) =>
+    apiRequest<{ boards: { id: number; name: string; code: string; region: string | null }[] }>(
+      `/api/signup/school-boards?q=${encodeURIComponent(q)}`,
+    ),
+  forgotPassword: (email: string) =>
+    apiRequest<{ message: string }>("/api/forgot-password", {
+      method: "POST",
+      json: { email },
+    }),
+  resetPassword: (payload: {
+    token: string;
+    email: string;
+    password: string;
+    password_confirmation: string;
+  }) =>
+    apiRequest<{ message: string }>("/api/reset-password", {
+      method: "POST",
+      json: payload,
+    }),
+};
+
+export const teacherSubscriptionApi = {
+  get: () =>
+    apiRequest<{ subscription: TeacherSubscription }>("/api/teacher/subscription"),
+  checkout: (plan: "essentials" | "insights", billing: "monthly" | "annual" = "monthly") =>
+    apiRequest<{ checkout_url: string }>("/api/teacher/subscription/checkout", {
+      method: "POST",
+      json: { plan, billing },
+    }),
+  confirm: (sessionId: string) =>
+    apiRequest<{ subscription: TeacherSubscription; message: string }>(
+      "/api/teacher/subscription/confirm",
+      { method: "POST", json: { session_id: sessionId } },
+    ),
+  portal: () =>
+    apiRequest<{ portal_url: string }>("/api/teacher/subscription/portal", {
+      method: "POST",
+    }),
+};
+
+export type TeacherNotificationItem = {
+  id: number;
+  type: "success" | "warning" | "info";
+  title: string;
+  message: string;
+  url: string | null;
+  read: boolean;
+  created_at: string;
+};
+
+export const teacherNotificationApi = {
+  list: () =>
+    apiRequest<{ notifications: TeacherNotificationItem[]; unread_count: number }>(
+      "/api/teacher/notifications",
+    ),
+  markRead: (id: number) =>
+    apiRequest<{ notification: TeacherNotificationItem }>(
+      `/api/teacher/notifications/${id}/read`,
+      { method: "PATCH" },
+    ),
+  markAllRead: () =>
+    apiRequest<{ message: string }>("/api/teacher/notifications/read-all", {
+      method: "POST",
+    }),
+  dismiss: (id: number) =>
+    apiRequest<{ message: string }>(`/api/teacher/notifications/${id}`, {
+      method: "DELETE",
+    }),
 };
 
 export type TeacherProfile = {
@@ -142,7 +268,9 @@ export type TeacherProfile = {
   school_board: { code: string; name: string } | null;
   started_at: string | null;
   started_at_label: string | null;
+  preferred_language: "en" | "fr";
   grade_taught: string | null;
+  grades_taught: string[];
   class_count: number;
   student_count: number;
 };
@@ -154,6 +282,7 @@ export const teacherProfileApi = {
     last_name: string;
     email: string;
     phone?: string;
+    preferred_language?: "en" | "fr";
     current_password?: string;
     password?: string;
     password_confirmation?: string;
@@ -174,7 +303,16 @@ export const teacherProfileApi = {
 };
 
 export const teacherApi = {
-  classes: () => apiRequest<{ classes: ClassSummary[] }>("/api/teacher/classes"),
+  classes: () =>
+    apiRequest<{
+      classes: ClassSummary[];
+      class_types: ClassTypeOption[];
+      student_limit: StudentLimitInfo;
+    }>("/api/teacher/classes"),
+  classTypes: () =>
+    apiRequest<{ class_types: ClassTypeOption[]; student_limit: StudentLimitInfo }>(
+      "/api/teacher/class-types",
+    ),
   createClass: (payload: { name: string; grade: string; school_year?: string }) =>
     apiRequest<{ class: ClassSummary }>("/api/teacher/classes", {
       method: "POST",
@@ -188,6 +326,10 @@ export const teacherApi = {
       method: "PUT",
       json: payload,
     }),
+  deleteClass: (classId: number | string) =>
+    apiRequest<{ message: string }>(`/api/teacher/classes/${classId}`, {
+      method: "DELETE",
+    }),
   classDetail: (classId: number | string) =>
     apiRequest<{
       class: {
@@ -199,6 +341,7 @@ export const teacherApi = {
         published_workshops: boolean[];
         students: ClassStudent[];
       };
+      student_limit: StudentLimitInfo;
     }>(`/api/teacher/classes/${classId}`),
   getStudent: (studentId: number | string, classId?: number | string) =>
     apiRequest<{
@@ -210,6 +353,7 @@ export const teacherApi = {
         class_name: string;
         teacher_display: string;
         school_year: string;
+        has_activity: boolean;
         evaluations: {
           number: number;
           status: EvaluationStatus;
@@ -220,6 +364,11 @@ export const teacherApi = {
       };
     }>(
       `/api/teacher/students/${studentId}${classId ? `?class_id=${classId}` : ""}`
+    ),
+  deleteStudent: (studentId: number | string, classId: number | string) =>
+    apiRequest<{ message: string; class_id: number }>(
+      `/api/teacher/students/${studentId}?class_id=${classId}`,
+      { method: "DELETE" },
     ),
   getEvaluation: (
     studentId: number | string,
@@ -272,10 +421,78 @@ export const teacherApi = {
     classId: number | string,
     payload: { first_name: string; last_name: string }
   ) =>
-    apiRequest<{ student: ClassStudent }>(`/api/teacher/classes/${classId}/students`, {
+    apiRequest<{ student: ClassStudent; student_limit: StudentLimitInfo }>(
+      `/api/teacher/classes/${classId}/students`,
+      {
+        method: "POST",
+        json: payload,
+      },
+    ),
+};
+
+export type ClassTypeOption = {
+  code: string;
+  name: string;
+  name_fr: string | null;
+  assessment_grade: string;
+};
+
+export type StudentLimitInfo = {
+  max: number | null;
+  used: number;
+  remaining: number | null;
+  can_add: boolean;
+  unlimited?: boolean;
+};
+
+export type AdminClassTypeRecord = {
+  id: number;
+  code: string;
+  name: string;
+  name_fr: string | null;
+  assessment_grade: string;
+  sort_order: number;
+  is_active: boolean;
+};
+
+export type AdminClassTypePayload = {
+  code: string;
+  name: string;
+  name_fr?: string | null;
+  assessment_grade: string;
+  sort_order?: number;
+  is_active?: boolean;
+};
+
+export const adminClassTypesApi = {
+  list: () =>
+    apiRequest<{
+      class_types: AdminClassTypeRecord[];
+      max_students_per_teacher: number;
+      assessment_grades: string[];
+    }>("/api/admin/class-types"),
+  create: (payload: AdminClassTypePayload) =>
+    apiRequest<{ class_type: AdminClassTypeRecord }>("/api/admin/class-types", {
       method: "POST",
       json: payload,
     }),
+  update: (id: number, payload: AdminClassTypePayload) =>
+    apiRequest<{ class_type: AdminClassTypeRecord }>(`/api/admin/class-types/${id}`, {
+      method: "PUT",
+      json: payload,
+    }),
+  destroy: (id: number) =>
+    apiRequest<{ message: string }>(`/api/admin/class-types/${id}`, {
+      method: "DELETE",
+    }),
+  updateLimit: (max_students_per_teacher: number) =>
+    apiRequest<{ max_students_per_teacher: number; message: string }>(
+      "/api/admin/class-types/limit",
+      {
+        method: "PUT",
+        json: { max_students_per_teacher },
+      },
+    ),
 };
 
 export type TeacherReportsData = {
@@ -691,6 +908,104 @@ export const adminSchoolYearsApi = {
     }),
 };
 
+export type PlatformSettings = {
+  default_language: "en" | "fr";
+  date_format: string;
+  number_format: "en" | "fr";
+  timezone: string;
+  platform_name: string;
+  support_email: string;
+};
+
+export type EmailTemplateField = {
+  key: string;
+  label: string;
+};
+
+export type EmailTemplateCatalogItem = {
+  key: string;
+  label: string;
+  fields: EmailTemplateField[];
+};
+
+export type EmailTemplatesPayload = {
+  templates: Record<"en" | "fr", Record<string, Record<string, string>>>;
+  catalog: EmailTemplateCatalogItem[];
+  logo_url: string | null;
+  logo_data_uri: string | null;
+  has_custom_logo: boolean;
+};
+
+export const adminSettingsApi = {
+  get: () => apiRequest<{ settings: PlatformSettings }>("/api/admin/settings"),
+  update: (payload: Partial<PlatformSettings>) =>
+    apiRequest<{ settings: PlatformSettings; message: string }>("/api/admin/settings", {
+      method: "PUT",
+      json: payload,
+    }),
+  getEmailTemplates: () =>
+    apiRequest<EmailTemplatesPayload>("/api/admin/settings/email-templates"),
+  updateEmailTemplates: (templates: EmailTemplatesPayload["templates"]) =>
+    apiRequest<EmailTemplatesPayload & { message: string }>("/api/admin/settings/email-templates", {
+      method: "PUT",
+      json: { templates },
+    }),
+  uploadEmailLogo: (file: File) => {
+    const formData = new FormData();
+    formData.append("logo", file);
+    return apiFormRequest<{
+      logo_url: string;
+      logo_data_uri: string | null;
+      has_custom_logo: boolean;
+      message: string;
+    }>("/api/admin/settings/email-logo", formData);
+  },
+  resetEmailLogo: () =>
+    apiRequest<{
+      logo_url: string;
+      logo_data_uri: string | null;
+      has_custom_logo: boolean;
+      message: string;
+    }>("/api/admin/settings/email-logo", { method: "DELETE" }),
+};
+
+export type SystemAnnouncementCategory =
+  | "scheduled_maintenance"
+  | "unexpected_outage"
+  | "feature_release"
+  | "platform_announcement";
+
+export type SystemAnnouncementRecord = {
+  id: number;
+  category: SystemAnnouncementCategory;
+  category_label: string;
+  title: string;
+  message: string;
+  url: string | null;
+  audience: string;
+  delivered_count: number;
+  published_at: string | null;
+  created_by: string | null;
+};
+
+export const adminAnnouncementsApi = {
+  list: () =>
+    apiRequest<{
+      announcements: SystemAnnouncementRecord[];
+      categories: { value: SystemAnnouncementCategory; label: string }[];
+    }>("/api/admin/announcements"),
+  create: (payload: {
+    category: SystemAnnouncementCategory;
+    title: string;
+    message: string;
+    url?: string;
+  }) =>
+    apiRequest<{ announcement: SystemAnnouncementRecord; message: string }>("/api/admin/announcements", {
+      method: "POST",
+      json: payload,
+    }),
+};
+
 export type AdminSchoolRecord = {
   id: number;
   name: string;
@@ -724,6 +1039,8 @@ export const adminSchoolsApi = {
       `/api/admin/schools${qs ? `?${qs}` : ""}`
     );
   },
+  get: (id: number) =>
+    apiRequest<{ school: AdminSchoolRecord }>(`/api/admin/schools/${id}`),
   suggestCredentials: (name: string, school_board: string) =>
     apiRequest<{ portal_username: string; portal_password: string }>(
       "/api/admin/schools/suggest-credentials",
@@ -736,7 +1053,7 @@ export const adminSchoolsApi = {
     }),
   update: (id: number, payload: AdminSchoolPayload) =>
     apiRequest<{ school: AdminSchoolRecord }>(`/api/admin/schools/${id}`, {
-      method: "PUT",
+      method: "POST",
       json: payload,
     }),
   archive: (id: number) =>
@@ -755,7 +1072,7 @@ export const adminStudentsApi = {
     }),
   update: (id: number, payload: AdminStudentPayload) =>
     apiRequest<{ student: AdminStudentRecord }>(`/api/admin/students/${id}`, {
-      method: "PUT",
+      method: "POST",
       json: payload,
     }),
   remove: (id: number) =>
@@ -776,7 +1093,20 @@ export type AdminTeacherRecord = {
   classes: number;
   students: number;
   status: string;
+  activation_pending: boolean;
+  email_activated: boolean;
+  activated_at: string | null;
+  affiliation_type: string | null;
+  subscription_status: string | null;
+  subscription_plan: string | null;
+  is_trial_active: boolean;
+  trial_days_remaining: number;
+  trial_ends_at: string | null;
+  access: string;
   since: string;
+  last_login_at: string | null;
+  days_since_last_login: number | null;
+  login_inactive: boolean;
   portal_username: string | null;
   portal_password: string | null;
   has_avatar: boolean;
@@ -792,12 +1122,15 @@ export type AdminTeacherPayload = {
   school_board: string | null;
   account_status: string;
   started_at?: string;
+  trial_ends_at?: string | null;
   portal_username: string;
   portal_password?: string;
 };
 
 export const adminTeachersApi = {
   list: () => apiRequest<{ teachers: AdminTeacherRecord[] }>("/api/admin/teachers"),
+  get: (id: number) =>
+    apiRequest<{ teacher: AdminTeacherRecord }>(`/api/admin/teachers/${id}`),
   schools: () => apiRequest<{ schools: AdminSchool[] }>("/api/admin/teachers/schools"),
   suggestCredentials: (first_name: string, last_name: string, school_board: string) =>
     apiRequest<{ portal_username: string; portal_password: string }>(
@@ -805,19 +1138,41 @@ export const adminTeachersApi = {
       { method: "POST", json: { first_name, last_name, school_board } }
     ),
   create: (payload: AdminTeacherPayload) =>
-    apiRequest<{ teacher: AdminTeacherRecord }>("/api/admin/teachers", {
+    apiRequest<{ teacher: AdminTeacherRecord; email_sent?: boolean; message?: string }>("/api/admin/teachers", {
       method: "POST",
       json: payload,
     }),
   update: (id: number, payload: AdminTeacherPayload) =>
     apiRequest<{ teacher: AdminTeacherRecord }>(`/api/admin/teachers/${id}`, {
-      method: "PUT",
+      method: "POST",
       json: payload,
     }),
   archive: (id: number) =>
     apiRequest<{ teacher: AdminTeacherRecord }>(`/api/admin/teachers/${id}/archive`, {
       method: "PATCH",
     }),
+  remove: (id: number) =>
+    apiRequest<{ message: string }>(`/api/admin/teachers/${id}`, { method: "DELETE" }),
+  resendActivation: (id: number) =>
+    apiRequest<{ teacher: AdminTeacherRecord; message: string }>(
+      `/api/admin/teachers/${id}/resend-activation`,
+      { method: "POST" },
+    ),
+  activateAccount: (id: number) =>
+    apiRequest<{ teacher: AdminTeacherRecord; message: string }>(
+      `/api/admin/teachers/${id}/activate-account`,
+      { method: "PATCH" },
+    ),
+  sendBillingNotice: (id: number, type: "trial_ending" | "trial_expired") =>
+    apiRequest<{ teacher: AdminTeacherRecord; message: string }>(
+      `/api/admin/teachers/${id}/send-billing-notice`,
+      { method: "POST", json: { type } },
+    ),
+  sendInactivityNotice: (id: number, type: "inactive_reminder" | "suspension_reminder") =>
+    apiRequest<{ teacher: AdminTeacherRecord; message: string }>(
+      `/api/admin/teachers/${id}/send-inactivity-notice`,
+      { method: "POST", json: { type } },
+    ),
   avatarUrl: (teacherId: number) => `${API_BASE}/api/admin/teachers/${teacherId}/avatar`,
 };
 
@@ -933,6 +1288,8 @@ export const adminSchoolBoardsApi = {
       `/api/admin/school-boards${query ? `?${query}` : ""}`
     );
   },
+  get: (id: number) =>
+    apiRequest<{ board: AdminSchoolBoardRecord }>(`/api/admin/school-boards/${id}`),
   suggestCredentials: (name: string, code: string) =>
     apiRequest<{ portal_username: string; portal_password: string }>(
       "/api/admin/school-boards/suggest-credentials",
@@ -945,7 +1302,7 @@ export const adminSchoolBoardsApi = {
     }),
   update: (id: number, payload: AdminSchoolBoardPayload) =>
     apiRequest<{ board: AdminSchoolBoardRecord }>(`/api/admin/school-boards/${id}`, {
-      method: "PUT",
+      method: "POST",
       json: payload,
     }),
   archive: (id: number) =>
@@ -1050,6 +1407,45 @@ export const schoolAcademicsApi = {
     const query = params.toString();
     return apiRequest<SchoolAcademicsData>(`/api/school/academics${query ? `?${query}` : ""}`);
   },
+};
+
+export type TeacherJoinRequest = {
+  id: number;
+  name: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string;
+  affiliation_type: string | null;
+  status: string;
+  requested_at: string | null;
+};
+
+export const schoolTeacherRequestsApi = {
+  list: () =>
+    apiRequest<{ requests: TeacherJoinRequest[] }>("/api/school/teacher-requests"),
+  accept: (id: number) =>
+    apiRequest<{ request: TeacherJoinRequest; message: string }>(
+      `/api/school/teacher-requests/${id}/accept`,
+      { method: "PATCH" },
+    ),
+  reject: (id: number) =>
+    apiRequest<{ message: string }>(`/api/school/teacher-requests/${id}/reject`, {
+      method: "PATCH",
+    }),
+};
+
+export const boardTeacherRequestsApi = {
+  list: () =>
+    apiRequest<{ requests: TeacherJoinRequest[] }>("/api/board/teacher-requests"),
+  accept: (id: number) =>
+    apiRequest<{ request: TeacherJoinRequest; message: string }>(
+      `/api/board/teacher-requests/${id}/accept`,
+      { method: "PATCH" },
+    ),
+  reject: (id: number) =>
+    apiRequest<{ message: string }>(`/api/board/teacher-requests/${id}/reject`, {
+      method: "PATCH",
+    }),
 };
 
 export type SchoolAssessmentRecord = {
@@ -1309,4 +1705,63 @@ export const boardAssessmentsApi = {
     apiRequest<{ assessment: BoardAssessmentRecord }>(`/api/board/assessments/${id}/activate`, {
       method: "PATCH",
     }),
+};
+
+export type BackupRecord = {
+  id: number;
+  filename: string;
+  type: "database" | "full";
+  trigger: "manual" | "scheduled";
+  size: number | null;
+  size_label: string;
+  status: "running" | "completed" | "failed";
+  error: string | null;
+  available: boolean;
+  created_by: string;
+  created_at: string;
+  completed_at: string | null;
+};
+
+export type BackupSettings = {
+  enabled: boolean;
+  frequency: "daily" | "weekly" | "monthly";
+  time: string;
+  day_of_week: number;
+  day_of_month: number;
+  backup_type: "database" | "full";
+  retention_count: number;
+  timezone: string;
+  last_run_at: string | null;
+  next_run_at: string | null;
+};
+
+export type BackupData = {
+  backups: BackupRecord[];
+  settings: BackupSettings;
+};
+
+export const backupApi = {
+  list: () => apiRequest<BackupData>("/api/admin/backups"),
+  create: (type: "database" | "full") =>
+    apiRequest<{ backup: BackupRecord; message: string }>("/api/admin/backups", {
+      method: "POST",
+      json: { type },
+    }),
+  updateSettings: (settings: BackupSettings) =>
+    apiRequest<{ settings: BackupSettings; message: string }>("/api/admin/backups/settings", {
+      method: "PUT",
+      json: {
+        enabled: settings.enabled,
+        frequency: settings.frequency,
+        time: settings.time,
+        day_of_week: settings.day_of_week,
+        day_of_month: settings.day_of_month,
+        backup_type: settings.backup_type,
+        retention_count: settings.retention_count,
+        timezone: settings.timezone,
+      },
+    }),
+  remove: (id: number) =>
+    apiRequest<{ message: string }>(`/api/admin/backups/${id}`, { method: "DELETE" }),
+  downloadUrl: (id: number) => `${API_BASE}/api/admin/backups/${id}/download`,
 };

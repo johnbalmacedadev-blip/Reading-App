@@ -6,26 +6,37 @@ import {
   X,
   Pencil,
   BookOpen,
+  Sparkles,
+  Trash2,
 } from "lucide-react";
+import { toast } from "sonner";
 import { NotificationDropdown } from "../components/NotificationDropdown";
 import { UserAvatar } from "../components/UserAvatar";
 import { TeacherLayout } from "../components/TeacherLayout";
 import { useLanguage } from "../i18n";
 import { useAuth } from "../context/AuthContext";
-import { teacherApi, schoolYearsApi, type ClassSummary } from "../api/client";
+import { teacherApi, schoolYearsApi, type ClassSummary, type ClassTypeOption } from "../api/client";
+
+function firstClassNudgeKey(userId: number | undefined) {
+  return `lecture-first-class-nudge-dismissed-${userId ?? "guest"}`;
+}
 
 export function TeacherDashboard() {
   const navigate = useNavigate();
-  const { t, tp } = useLanguage();
+  const { t, tp, lang } = useLanguage();
   const { user } = useAuth();
   const [classes, setClasses] = useState<ClassSummary[]>([]);
+  const [classTypes, setClassTypes] = useState<ClassTypeOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [showClassModal, setShowClassModal] = useState(false);
+  const [showFirstClassNudge, setShowFirstClassNudge] = useState(false);
+  const [showClassCreatedNudge, setShowClassCreatedNudge] = useState(false);
   const [editingClass, setEditingClass] = useState<ClassSummary | null>(null);
   const [className, setClassName] = useState("");
-  const [classGrade, setClassGrade] = useState("Maternelle");
+  const [classGrade, setClassGrade] = useState("");
   const [classSchoolYear, setClassSchoolYear] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [defaultSchoolYear, setDefaultSchoolYear] = useState("");
 
   useEffect(() => {
@@ -37,16 +48,43 @@ export function TeacherDashboard() {
   useEffect(() => {
     teacherApi
       .classes()
-      .then(({ classes: loadedClasses }) => setClasses(loadedClasses))
+      .then(({ classes: loadedClasses, class_types }) => {
+        setClasses(loadedClasses);
+        setClassTypes(class_types);
+        if (class_types.length > 0) {
+          setClassGrade((prev) => prev || class_types[0].name);
+        }
+        if (loadedClasses.length === 0) {
+          const dismissed = sessionStorage.getItem(firstClassNudgeKey(user?.id)) === "1";
+          if (!dismissed) setShowFirstClassNudge(true);
+        }
+      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [user?.id]);
+
+  const dismissFirstClassNudge = () => {
+    setShowFirstClassNudge(false);
+    try {
+      sessionStorage.setItem(firstClassNudgeKey(user?.id), "1");
+    } catch {
+      // ignore
+    }
+  };
+
+  const defaultGrade = classTypes[0]?.name ?? "";
 
   const openAddClassModal = () => {
+    setShowFirstClassNudge(false);
     setEditingClass(null);
     setClassName("");
-    setClassGrade("Maternelle");
+    setClassGrade(defaultGrade);
     setClassSchoolYear(defaultSchoolYear || "2025-2026");
     setShowClassModal(true);
+  };
+
+  const handleFirstClassCta = () => {
+    dismissFirstClassNudge();
+    openAddClassModal();
   };
 
   const openEditClassModal = (classItem: ClassSummary) => {
@@ -61,7 +99,7 @@ export function TeacherDashboard() {
     setShowClassModal(false);
     setEditingClass(null);
     setClassName("");
-    setClassGrade("Maternelle");
+    setClassGrade(defaultGrade);
     setClassSchoolYear(defaultSchoolYear || "2025-2026");
   };
 
@@ -82,24 +120,61 @@ export function TeacherDashboard() {
         setClasses((prev) =>
           prev.map((item) => (item.id === updatedClass.id ? updatedClass : item))
         );
+        closeClassModal();
+        toast.success(t("dashboard.classUpdated.toast"));
       } else {
         const { class: createdClass } = await teacherApi.createClass(payload);
         setClasses((prev) => [...prev, createdClass]);
+        closeClassModal();
+        setShowFirstClassNudge(false);
+        setShowClassCreatedNudge(true);
+        toast.success(t("dashboard.classCreated.toast"));
       }
-
-      closeClassModal();
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : editingClass
+            ? t("dashboard.classUpdateFailed")
+            : t("dashboard.classSaveFailed"),
+      );
     } finally {
       setSaving(false);
     }
   };
 
+  const handleDeleteClass = async (classItem: ClassSummary) => {
+    if (classItem.student_count > 0) return;
+
+    const confirmed = window.confirm(
+      tp("dashboard.deleteClassConfirm", { name: classItem.name }),
+    );
+    if (!confirmed) return;
+
+    setDeletingId(classItem.id);
+    try {
+      await teacherApi.deleteClass(classItem.id);
+      setClasses((prev) => prev.filter((item) => item.id !== classItem.id));
+      toast.success(t("dashboard.classDeleted.toast"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("dashboard.classDeleteFailed"));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const teacherFirstName = user?.first_name || user?.name?.split(" ")[0] || t("dashboard.defaultTeacher");
 
-  const gradeOptions = [
-    { value: "Maternelle", label: t("grade.kindergarten") },
-    { value: "1re année", label: t("grade.grade1") },
-    { value: "2e année", label: t("grade.grade2") },
-  ];
+  const gradeOptions = (() => {
+    const options = classTypes.map((type) => ({
+      value: type.name,
+      label: lang === "fr" && type.name_fr ? type.name_fr : type.name,
+    }));
+    if (classGrade && !options.some((option) => option.value === classGrade)) {
+      options.unshift({ value: classGrade, label: classGrade });
+    }
+    return options;
+  })();
 
   const gradeLabel = (grade: string) =>
     gradeOptions.find((option) => option.value === grade)?.label ?? grade;
@@ -178,11 +253,34 @@ export function TeacherDashboard() {
                         </span>
                       </div>
                     </div>
-                    <div
-                      className="w-16 h-16 rounded-xl flex items-center justify-center"
-                      style={{ background: "#dff3ff" }}
-                    >
-                      <BookOpen className="w-8 h-8" style={{ color: "#004aad" }} />
+                    <div className="flex items-start gap-2">
+                      {classItem.student_count === 0 && (
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteClass(classItem)}
+                          disabled={deletingId === classItem.id}
+                          className="w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer"
+                          style={{
+                            background: "#fff1f2",
+                            border: "1px solid #fecdd3",
+                            color: "#be123c",
+                          }}
+                          aria-label={t("dashboard.deleteClass")}
+                          title={t("dashboard.deleteClass")}
+                        >
+                          {deletingId === classItem.id ? (
+                            <span className="text-xs">…</span>
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
+                        </button>
+                      )}
+                      <div
+                        className="w-16 h-16 rounded-xl flex items-center justify-center"
+                        style={{ background: "#dff3ff" }}
+                      >
+                        <BookOpen className="w-8 h-8" style={{ color: "#004aad" }} />
+                      </div>
                     </div>
                   </div>
 
@@ -215,6 +313,102 @@ export function TeacherDashboard() {
             </div>
           )}
         </div>
+
+      {showFirstClassNudge && !showClassModal && !showClassCreatedNudge && !loading && classes.length === 0 && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(15, 23, 42, 0.45)" }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="first-class-nudge-title"
+        >
+          <div
+            className="w-full max-w-md rounded-2xl p-8 shadow-xl relative"
+            style={{ background: "#ffffff", border: "1px solid #dff3ff" }}
+          >
+            <button
+              type="button"
+              onClick={dismissFirstClassNudge}
+              className="absolute top-4 right-4 p-1.5 rounded-lg transition-colors hover:bg-slate-100"
+              aria-label={t("common.cancel")}
+            >
+              <X className="w-5 h-5" style={{ color: "#94a3b8" }} />
+            </button>
+            <div
+              className="w-14 h-14 rounded-2xl flex items-center justify-center mb-5"
+              style={{ background: "#dff3ff", color: "#004aad" }}
+            >
+              <Sparkles className="w-7 h-7" />
+            </div>
+            <h3
+              id="first-class-nudge-title"
+              className="text-2xl font-bold mb-3"
+              style={{ color: "#004aad" }}
+            >
+              {t("dashboard.firstClass.title")}
+            </h3>
+            <p className="text-base leading-relaxed mb-7" style={{ color: "#475569" }}>
+              {t("dashboard.firstClass.body")}
+            </p>
+            <button
+              type="button"
+              onClick={handleFirstClassCta}
+              className="w-full py-3.5 rounded-xl font-semibold transition-all"
+              style={{ background: "#004aad", color: "#ffffff" }}
+            >
+              {t("dashboard.firstClass.cta")}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showClassCreatedNudge && !showClassModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(15, 23, 42, 0.45)" }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="class-created-nudge-title"
+        >
+          <div
+            className="w-full max-w-md rounded-2xl p-8 shadow-xl relative"
+            style={{ background: "#ffffff", border: "1px solid #dff3ff" }}
+          >
+            <button
+              type="button"
+              onClick={() => setShowClassCreatedNudge(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-lg transition-colors hover:bg-slate-100"
+              aria-label={t("common.cancel")}
+            >
+              <X className="w-5 h-5" style={{ color: "#94a3b8" }} />
+            </button>
+            <div
+              className="w-14 h-14 rounded-2xl flex items-center justify-center mb-5"
+              style={{ background: "#ecfdf5", color: "#059669" }}
+            >
+              <BookOpen className="w-7 h-7" />
+            </div>
+            <h3
+              id="class-created-nudge-title"
+              className="text-2xl font-bold mb-3"
+              style={{ color: "#004aad" }}
+            >
+              {t("dashboard.classCreated.title")}
+            </h3>
+            <p className="text-base leading-relaxed mb-7" style={{ color: "#475569" }}>
+              {t("dashboard.classCreated.body")}
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowClassCreatedNudge(false)}
+              className="w-full py-3.5 rounded-xl font-semibold transition-all"
+              style={{ background: "#004aad", color: "#ffffff" }}
+            >
+              {t("dashboard.classCreated.cta")}
+            </button>
+          </div>
+        </div>
+      )}
 
       {showClassModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">

@@ -66,6 +66,7 @@ function Modal({
   const [form, setForm] = useState(initialForm);
   const [suggesting, setSuggesting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [loadingPassword, setLoadingPassword] = useState(false);
   const isCreate = mode === "create";
 
   useEffect(() => {
@@ -92,6 +93,32 @@ function Modal({
       setSuggesting(false);
     }
   }, [isCreate]);
+
+  const loadPassword = useCallback(async () => {
+    if (isCreate || !form.id || form.portal_password.trim()) return true;
+    setLoadingPassword(true);
+    try {
+      const { board } = await adminSchoolBoardsApi.get(form.id);
+      setForm((f) => ({ ...f, portal_password: board.portal_password ?? "" }));
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setLoadingPassword(false);
+    }
+  }, [form.id, form.portal_password, isCreate]);
+
+  const togglePasswordVisibility = useCallback(async () => {
+    if (showPassword) {
+      setShowPassword(false);
+      return;
+    }
+    if (!form.portal_password.trim() && form.id) {
+      const loaded = await loadPassword();
+      if (!loaded) return;
+    }
+    setShowPassword(true);
+  }, [showPassword, form.portal_password, form.id, loadPassword]);
 
   useEffect(() => {
     if (isCreate && form.name.trim()) {
@@ -199,7 +226,8 @@ function Modal({
                   />
                   <button
                     type="button"
-                    onClick={() => setShowPassword((v) => !v)}
+                    onClick={togglePasswordVisibility}
+                    disabled={loadingPassword}
                     style={{
                       position: "absolute",
                       right: 10,
@@ -215,7 +243,7 @@ function Modal({
                     }}
                     aria-label={showPassword ? "Hide password" : "Show password"}
                   >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    {loadingPassword ? <Loader2 size={16} className="animate-spin" /> : showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
               </div>
@@ -229,6 +257,7 @@ function Modal({
             Cancel
           </button>
           <button
+            type="button"
             onClick={() => onSave(form)}
             disabled={saving}
             style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "#004aad", color: "white", fontSize: 13, cursor: "pointer", fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}
@@ -250,6 +279,7 @@ export function AdminSchoolBoardsPage() {
   const [statusFilter, setStatusFilter] = useState("All");
   const [modalMode, setModalMode] = useState<"create" | "edit" | null>(null);
   const [form, setForm] = useState<BoardForm>(emptyForm());
+  const [loadingBoard, setLoadingBoard] = useState(false);
   const [saving, setSaving] = useState(false);
   const [modalError, setModalError] = useState("");
   const [archivingId, setArchivingId] = useState<number | null>(null);
@@ -284,10 +314,19 @@ export function AdminSchoolBoardsPage() {
     setModalMode("create");
   };
 
-  const openEdit = (board: AdminSchoolBoardRecord) => {
+  const openEdit = async (board: AdminSchoolBoardRecord) => {
     setForm(fromRecord(board));
     setModalError("");
     setModalMode("edit");
+    setLoadingBoard(true);
+    try {
+      const { board: full } = await adminSchoolBoardsApi.get(board.id);
+      setForm(fromRecord(full));
+    } catch (err) {
+      setModalError(err instanceof Error ? err.message : "Failed to load board details.");
+    } finally {
+      setLoadingBoard(false);
+    }
   };
 
   const closeModal = () => {
@@ -474,7 +513,7 @@ export function AdminSchoolBoardsPage() {
         <Modal
           mode={modalMode}
           initialForm={form}
-          saving={saving}
+          saving={saving || loadingBoard}
           error={modalError}
           onClose={closeModal}
           onSave={handleSave}

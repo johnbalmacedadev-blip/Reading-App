@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from "react-router";
 import {
-  BookOpen, LogOut, BarChart3, Settings, FileText, User, GraduationCap,
+  BookOpen, LogOut, BarChart3, Settings, FileText, User, GraduationCap, UserPlus,
 } from "lucide-react";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
@@ -212,6 +212,7 @@ export function SettingsPage() {
     { icon: BarChart3, label: t("common.overview"), active: false, path: "/school/reports" },
     { icon: GraduationCap, label: a("Académiques"), active: false, path: "/school/academics" },
     { icon: FileText, label: t("nav.assessments"), active: false, path: "/school/assessments" },
+    { icon: UserPlus, label: t("nav.teacherRequests"), active: false, path: "/school/teachers" },
     { icon: User, label: t("nav.profile"), active: false, path: "/profile?portal=school" },
     { icon: Settings, label: t("nav.settings"), active: true, path: "/school/settings" },
   ];

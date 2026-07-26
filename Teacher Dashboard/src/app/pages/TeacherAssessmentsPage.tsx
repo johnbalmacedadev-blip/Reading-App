@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   ClipboardList,
-  Search, ChevronDown, Eye, CheckCircle2, Edit2, Loader2, X, CheckSquare, Archive, RotateCcw,
+  Search, ChevronDown, Eye, Edit2, Loader2, X, CheckSquare, Archive, RotateCcw,
 } from "lucide-react";
 import { useLanguage } from "../i18n";
 import { TeacherLayout } from "../components/TeacherLayout";
@@ -276,8 +276,6 @@ export function TeacherAssessmentsPage() {
   const [archivedAssessments, setArchivedAssessments] = useState<TeacherAssessmentRecord[]>([]);
   const [summary, setSummary] = useState({ total: 0, published: 0, drafts: 0, archived: 0 });
   const [canEdit, setCanEdit] = useState(false);
-  const [syncSource, setSyncSource] = useState<"board" | "platform">("platform");
-  const [schoolBoardName, setSchoolBoardName] = useState<string | null>(null);
   const [schoolId, setSchoolId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -310,8 +308,6 @@ export function TeacherAssessmentsPage() {
       setArchivedAssessments(result.archived);
       setSummary(result.summary);
       setCanEdit(result.can_edit);
-      setSyncSource(result.sync_source);
-      setSchoolBoardName(result.school_board?.name ?? null);
       setSchoolId(result.school?.id ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load assessments.");
@@ -462,16 +458,6 @@ export function TeacherAssessmentsPage() {
     }
   };
 
-  const syncBannerText = syncSource === "board" && schoolBoardName
-    ? tp("assessments.syncedFromBoard", { name: schoolBoardName })
-    : canEdit
-      ? t("assessments.syncedFromPlatformEditable")
-      : t("assessments.syncedFromPlatform");
-
-  const syncSubtext = !canEdit && syncSource === "board"
-    ? t("assessments.viewOnlyBoard")
-    : null;
-
   const statCards = canEdit
     ? [
         { label: t("assessments.total"), value: loading ? "—" : summary.total, color: "#004aad" },
@@ -489,17 +475,6 @@ export function TeacherAssessmentsPage() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-1" style={{ color: "#004aad" }}>{t("assessments.title")}</h1>
         <p className="text-sm" style={{ color: "#6b7280" }}>{t("assessments.subtitle")}</p>
-      </div>
-
-      <div className="rounded-xl p-4 mb-8 flex items-start gap-3" style={{ background: "#eff6ff", border: "1px solid #bfdbfe" }}>
-        <CheckCircle2 size={16} style={{ color: "#3b82f6", flexShrink: 0, marginTop: 2 }} />
-        <div>
-          <p className="text-sm font-semibold" style={{ color: "#1e40af" }}>{t("assessments.accessEnabled")}</p>
-          <p className="text-xs mt-0.5" style={{ color: "#3b82f6" }}>{syncBannerText}</p>
-          {syncSubtext && (
-            <p className="text-xs mt-1" style={{ color: "#64748b" }}>{syncSubtext}</p>
-          )}
-        </div>
       </div>
 
       {saveNotice && (

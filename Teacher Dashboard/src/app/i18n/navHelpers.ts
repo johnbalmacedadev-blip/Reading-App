@@ -3,8 +3,10 @@ import {
   BarChart3,
   Book,
   ClipboardList,
+  CreditCard,
   Settings,
   User,
+  UserPlus,
   Users,
 } from "lucide-react";
 import type { TranslationKey } from "../i18n";
@@ -16,17 +18,31 @@ type NavItem = {
   active: boolean;
 };
 
-export type TeacherNavActive = "classes" | "library" | "reports" | "assessments" | "profile";
+export type TeacherNavActive = "classes" | "library" | "reports" | "assessments" | "subscription" | "profile";
 
 export function teacherNavItems(
   t: (key: TranslationKey) => string,
-  active: TeacherNavActive
+  active: TeacherNavActive,
+  options?: { includeClasses?: boolean; includeAssessments?: boolean; includeReports?: boolean; includeSubscription?: boolean },
 ): { icon: LucideIcon; label: string; active: boolean; path: string }[] {
+  const includeClasses = options?.includeClasses !== false;
+  const includeAssessments = options?.includeAssessments !== false;
+  const includeReports = options?.includeReports !== false;
+  const includeSubscription = options?.includeSubscription !== false;
   const items: NavItem[] = [
-    { icon: Users, labelKey: "nav.myClasses", path: "/dashboard", active: active === "classes" },
+    ...(includeClasses
+      ? [{ icon: Users, labelKey: "nav.myClasses" as TranslationKey, path: "/dashboard", active: active === "classes" }]
+      : []),
     { icon: Book, labelKey: "nav.library", path: "/library", active: active === "library" },
-    { icon: BarChart3, labelKey: "nav.reports", path: "/reports", active: active === "reports" },
-    { icon: ClipboardList, labelKey: "nav.assessments", path: "/assessments", active: active === "assessments" },
+    ...(includeReports
+      ? [{ icon: BarChart3, labelKey: "nav.reports" as TranslationKey, path: "/reports", active: active === "reports" }]
+      : []),
+    ...(includeAssessments
+      ? [{ icon: ClipboardList, labelKey: "nav.assessments" as TranslationKey, path: "/assessments", active: active === "assessments" }]
+      : []),
+    ...(includeSubscription
+      ? [{ icon: CreditCard, labelKey: "nav.subscription" as TranslationKey, path: "/subscription", active: active === "subscription" }]
+      : []),
     { icon: User, labelKey: "nav.profile", path: "/profile", active: active === "profile" },
   ];
   return items.map(({ icon, labelKey, path, active: isActive }) => ({
@@ -37,7 +53,7 @@ export function teacherNavItems(
   }));
 }
 
-export type BoardNavActive = "overview" | "reports" | "assessments" | "profile" | "settings";
+export type BoardNavActive = "overview" | "reports" | "assessments" | "teachers" | "profile" | "settings";
 
 export function boardNavItems(
   t: (key: TranslationKey) => string,
@@ -47,6 +63,7 @@ export function boardNavItems(
     { icon: Users, labelKey: "common.overview", path: "/board", active: active === "overview" },
     { icon: BarChart3, labelKey: "nav.reports", path: "/board/reports", active: active === "reports" },
     { icon: ClipboardList, labelKey: "nav.assessments", path: "/board/assessments", active: active === "assessments" },
+    { icon: UserPlus, labelKey: "nav.teacherRequests", path: "/board/teachers", active: active === "teachers" },
     { icon: User, labelKey: "nav.profile", path: "/board/profile", active: active === "profile" },
     { icon: Settings, labelKey: "nav.settings", path: "/board/settings", active: active === "settings" },
   ];

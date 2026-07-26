@@ -2,19 +2,24 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   BookOpen, ArrowLeft, Check, ArrowRight, Sparkles, Lock,
-  BarChart3, Users, FileText, Bell, Download, Headphones, Gift,
+  BarChart3, Users, FileText, Bell, Download, Headphones,
 } from "lucide-react";
 import classroomPhoto from "../../imports/image-1.png";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
+import { clearSignupDraft, saveSignupDraft, loadSignupDraft } from "../signupDraft";
+import { ApiError, authApi } from "../api/client";
+import { useAuth } from "../context/AuthContext";
 
-type PlanId = "essentials" | "insights" | "trial";
+type PlanId = "essentials" | "insights";
 
 export function SubscriptionPlanPage() {
   const navigate = useNavigate();
-  const { t } = useLanguage();
-  const [billing, setBilling] = useState<"monthly" | "annual">("monthly");
-  const [selected, setSelected] = useState<PlanId>("trial");
+  const { t, lang } = useLanguage();
+  const { refreshUser } = useAuth();
+  const [selected, setSelected] = useState<PlanId>("essentials");
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState("");
 
   const includedFeatures = useMemo(
     () => [
@@ -32,46 +37,55 @@ export function SubscriptionPlanPage() {
       {
         id: "essentials" as const,
         name: t("plan.essentials.name"),
-        tagline: t("plan.essentials.tagline"),
-        price: "19",
+        tagline: "Everything you need to teach with Lecture Scientifique.",
+        price: "14.99",
         period: t("plan.perMonth"),
-        annualPrice: "16",
+        annualPrice: "14.99",
         annualNote: t("plan.essentials.annualNote"),
         color: "#004aad",
         bg: "#dff3ff",
         popular: false,
         comingSoon: false,
         features: [
-          { icon: Users, text: t("plan.essentials.f1") },
-          { icon: BarChart3, text: t("plan.essentials.f2") },
-          { icon: FileText, text: t("plan.essentials.f3") },
-          { icon: BookOpen, text: t("plan.essentials.f4") },
-          { icon: Bell, text: t("plan.essentials.f5") },
-          { icon: Download, text: t("plan.essentials.f6") },
-          { icon: Headphones, text: t("plan.essentials.f7") },
+          { icon: BookOpen, text: "Full Lecture Scientifique curriculum (15 workshops)" },
+          { icon: BookOpen, text: "Teacher resource library" },
+          { icon: Headphones, text: "Email support (48-hour response)" },
         ],
-        missing: [t("plan.essentials.m1"), t("plan.essentials.m2"), t("plan.essentials.m3")],
+        missing: [
+          "Student management",
+          "Classroom management",
+          "Progress tracking",
+          "Reports and analytics",
+          "Smart alerts",
+          "School-wide dashboards",
+          "Priority email support",
+        ],
       },
       {
         id: "insights" as const,
         name: t("plan.insights.name"),
-        tagline: t("plan.insights.tagline"),
-        price: "39",
+        tagline: "Everything in Essentials, plus the complete classroom management and reporting platform.",
+        price: "19.99",
         period: t("plan.perMonth"),
-        annualPrice: "32",
+        annualPrice: "19.99",
         annualNote: t("plan.insights.annualNote"),
         color: "#7c3aed",
         bg: "#f3f0ff",
         popular: true,
-        comingSoon: true,
+        comingSoon: false,
         features: [
-          { icon: Users, text: t("plan.insights.f1") },
-          { icon: BarChart3, text: t("plan.insights.f2") },
-          { icon: FileText, text: t("plan.insights.f3") },
-          { icon: BookOpen, text: t("plan.insights.f4") },
-          { icon: Bell, text: t("plan.insights.f5") },
-          { icon: Download, text: t("plan.insights.f6") },
-          { icon: Headphones, text: t("plan.insights.f7") },
+          { icon: BookOpen, text: "Everything in Essentials" },
+          { icon: Users, text: "Unlimited students" },
+          { icon: Users, text: "Classroom management" },
+          { icon: BarChart3, text: "Student progress tracking" },
+          { icon: FileText, text: "Individual student reports" },
+          { icon: FileText, text: "Class reports" },
+          { icon: Download, text: "PDF & Excel report exports" },
+          { icon: BarChart3, text: "Advanced analytics & trends" },
+          { icon: BarChart3, text: "Cross-class and year-over-year comparisons" },
+          { icon: BarChart3, text: "School-wide reporting dashboard" },
+          { icon: Bell, text: "Personalized smart alerts" },
+          { icon: Headphones, text: "Priority email support" },
         ],
         missing: [] as string[],
       },
@@ -79,19 +93,46 @@ export function SubscriptionPlanPage() {
     [t]
   );
 
-  const trialFeatures = useMemo(
-    () => [t("plan.trial.f1"), t("plan.trial.f2"), t("plan.trial.f3")],
-    [t]
-  );
+  const handleContinue = async () => {
+    const signup = loadSignupDraft();
+    if (!signup?.form.email || !signup.form.password) {
+      navigate("/signup");
+      return;
+    }
 
-  const handleContinue = () => {
-    if (selected === "essentials" || selected === "trial") {
-      navigate("/signup/payment");
+    setProcessing(true);
+    setError("");
+    try {
+      await authApi.csrf();
+      await authApi.completeSignup({
+        first_name: signup.form.firstName,
+        last_name: signup.form.lastName,
+        email: signup.form.email,
+        password: signup.form.password,
+        password_confirmation: signup.form.confirmPassword || signup.form.password,
+        school_name: signup.form.schoolName,
+        school_board: signup.form.schoolBoard,
+        account_type: signup.form.accountType || "individual",
+        preferred_language: lang === "fr" ? "fr" : "en",
+        plan: selected,
+        billing: "monthly",
+        due_today: "$0.00",
+      });
+      clearSignupDraft();
+      await refreshUser();
+      navigate("/dashboard", { replace: true });
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Unable to start the free trial.",
+      );
+    } finally {
+      setProcessing(false);
     }
   };
-
-  const continueLabel =
-    selected === "trial" ? t("plan.continue7") : t("plan.continue14");
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
@@ -131,7 +172,11 @@ export function SubscriptionPlanPage() {
 
         <div style={{ padding: "32px 40px 0" }}>
           <button
-            onClick={() => navigate("/signup")}
+            onClick={() => {
+              const draft = loadSignupDraft();
+              if (draft) saveSignupDraft(3, draft.form);
+              navigate("/signup");
+            }}
             style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 13, marginBottom: 28 }}
           >
             <ArrowLeft size={14} /> {t("common.back")}
@@ -139,38 +184,16 @@ export function SubscriptionPlanPage() {
 
           <h2 style={{ fontSize: 26, fontWeight: 800, color: "#004aad", margin: 0 }}>{t("plan.title")}</h2>
           <p style={{ fontSize: 14, color: "#64748b", marginTop: 4, marginBottom: 24 }}>{t("plan.subtitle")}</p>
-
-          <div style={{ display: "inline-flex", background: "white", borderRadius: 10, border: "1px solid #e2e8f0", padding: 4, marginBottom: 28 }}>
-            {(["monthly", "annual"] as const).map((b) => (
-              <button
-                key={b}
-                onClick={() => setBilling(b)}
-                style={{
-                  padding: "7px 18px",
-                  borderRadius: 8,
-                  border: "none",
-                  cursor: "pointer",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  transition: "all 0.2s",
-                  background: billing === b ? "#004aad" : "transparent",
-                  color: billing === b ? "white" : "#64748b",
-                }}
-              >
-                {b === "monthly" ? t("plan.monthly") : t("plan.annual")}
-                {b === "annual" && (
-                  <span style={{ marginLeft: 6, fontSize: 10, background: "#c9e265", color: "#1a3a00", borderRadius: 8, padding: "1px 6px", fontWeight: 700 }}>
-                    -18%
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
+          {error && (
+            <div style={{ background: "#fff1f2", border: "1px solid #fecdd3", color: "#be123c", borderRadius: 10, padding: "10px 14px", fontSize: 13, marginBottom: 18 }}>
+              {error}
+            </div>
+          )}
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginBottom: 18 }}>
             {plans.map((plan) => {
               const isSelected = selected === plan.id;
-              const price = billing === "annual" ? plan.annualPrice : plan.price;
+              const price = plan.price;
               return (
                 <div
                   key={plan.id}
@@ -189,7 +212,7 @@ export function SubscriptionPlanPage() {
                 >
                   {plan.popular && (
                     <div style={{ position: "absolute", top: -12, left: "50%", transform: "translateX(-50%)", background: "#7c3aed", color: "white", fontSize: 10, fontWeight: 700, padding: "3px 12px", borderRadius: 10, whiteSpace: "nowrap", letterSpacing: 0.5 }}>
-                      {t("plan.comingSoon")}
+                      MOST COMPLETE
                     </div>
                   )}
                   {plan.comingSoon && (
@@ -208,11 +231,11 @@ export function SubscriptionPlanPage() {
                   <p style={{ fontSize: 12, color: "#64748b", marginBottom: 14, lineHeight: 1.4 }}>{plan.tagline}</p>
 
                   <div style={{ marginBottom: 16 }}>
-                    <span style={{ fontSize: 34, fontWeight: 800, color: plan.color }}>{price} $</span>
+                    <span style={{ fontSize: 34, fontWeight: 800, color: plan.color }}>${price}</span>
                     <span style={{ fontSize: 13, color: "#94a3b8" }}>{plan.period}</span>
-                    {billing === "annual" && (
-                      <div style={{ fontSize: 11, color: "#059669", marginTop: 2 }}>{plan.annualNote}</div>
-                    )}
+                    <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
+                      + 13% tax · Total ${(Number(price) * 1.13).toFixed(2)}/month
+                    </div>
                   </div>
 
                   <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
@@ -245,78 +268,28 @@ export function SubscriptionPlanPage() {
             })}
           </div>
 
-          {/* 7-day free trial section */}
-          <div
-            onClick={() => setSelected("trial")}
-            style={{
-              background: selected === "trial" ? "linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%)" : "white",
-              borderRadius: 18,
-              padding: "24px 28px",
-              border: `2px solid ${selected === "trial" ? "#059669" : "#e2e8f0"}`,
-              cursor: "pointer",
-              transition: "all 0.2s",
-              marginBottom: 28,
-              boxShadow: selected === "trial" ? "0 0 0 4px rgba(5,150,105,0.12)" : "0 1px 4px rgba(0,0,0,0.05)",
-              display: "flex",
-              alignItems: "center",
-              gap: 24,
-              flexWrap: "wrap",
-            }}
-          >
-            <div style={{ width: 52, height: 52, borderRadius: 14, background: "#059669", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <Gift size={24} color="white" />
-            </div>
-
-            <div style={{ flex: 1, minWidth: 200 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.8, background: "#c9e265", color: "#1a3a00", padding: "3px 10px", borderRadius: 8 }}>
-                  {t("plan.trial.badge")}
-                </span>
-                {selected === "trial" && (
-                  <span style={{ fontSize: 12, fontWeight: 600, color: "#059669", display: "flex", alignItems: "center", gap: 4 }}>
-                    <Check size={13} /> {t("plan.selected")}
-                  </span>
-                )}
-              </div>
-              <h3 style={{ fontSize: 20, fontWeight: 800, color: "#1e293b", margin: "0 0 4px" }}>{t("plan.trial.title")}</h3>
-              <p style={{ fontSize: 13, color: "#64748b", margin: 0, lineHeight: 1.5 }}>{t("plan.trial.subtitle")}</p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
-                {trialFeatures.map((feature) => (
-                  <div key={feature} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <Check size={13} color="#059669" />
-                    <span style={{ fontSize: 12, color: "#374151" }}>{feature}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ textAlign: "center", flexShrink: 0 }}>
-              <div style={{ fontSize: 42, fontWeight: 800, color: "#059669", lineHeight: 1 }}>{t("plan.trial.price")}</div>
-              <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>{t("plan.trial.duration")}</div>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: 12, paddingBottom: 16 }}>
+          <div style={{ display: "flex", gap: 12, paddingBottom: 16, marginTop: 10 }}>
             <button
               onClick={handleContinue}
+              disabled={processing}
               style={{
                 flex: 1,
                 padding: "13px",
                 borderRadius: 12,
                 border: "none",
-                background: selected === "trial" ? "#059669" : "#004aad",
+                background: "#004aad",
                 color: "white",
                 fontSize: 15,
                 fontWeight: 700,
-                cursor: "pointer",
+                cursor: processing ? "wait" : "pointer",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 gap: 6,
               }}
             >
-              {continueLabel}
-              <ArrowRight size={16} />
+              {processing ? "Creating your account…" : "Start 30-day free trial — No credit card"}
+              {!processing && <ArrowRight size={16} />}
             </button>
           </div>
           <p style={{ fontSize: 12, color: "#94a3b8", textAlign: "center", paddingBottom: 32 }}>

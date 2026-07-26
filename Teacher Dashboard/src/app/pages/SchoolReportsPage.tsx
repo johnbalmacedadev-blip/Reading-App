@@ -3,7 +3,7 @@ import { useNavigate } from "react-router";
 import {
   BookOpen, LogOut, TrendingUp, Download, AlertTriangle,
   ArrowUpRight, Users, Building2, GraduationCap,
-  User, Settings, ChevronDown, ClipboardList, Loader2,
+  User, Settings, ChevronDown, ClipboardList, Loader2, UserPlus,
 } from "lucide-react";
 import { useLanguage } from "../i18n";
 import { LangToggle } from "../components/LangToggle";
@@ -65,6 +65,7 @@ export function SchoolReportsPage() {
     { icon: TrendingUp, label: "Overview", path: "/school/reports", active: true },
     { icon: GraduationCap, label: "Academics", path: "/school/academics", active: false },
     { icon: ClipboardList, label: "Assessments", path: "/school/assessments", active: false },
+    { icon: UserPlus, label: t("nav.teacherRequests"), path: "/school/teachers", active: false },
     { icon: User, label: "Profile", path: "/profile?portal=school", active: false },
     { icon: Settings, label: "Settings", path: "/school/settings", active: false },
   ];

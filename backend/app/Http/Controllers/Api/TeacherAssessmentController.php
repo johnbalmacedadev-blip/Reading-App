@@ -46,6 +46,7 @@ class TeacherAssessmentController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        $this->ensureIndependentTeacherAccess($request);
         $context = $this->resolveContext($request);
 
         if ($context['board_code']) {
@@ -164,6 +165,7 @@ class TeacherAssessmentController extends Controller
 
     public function show(Request $request, Assessment $assessment): JsonResponse
     {
+        $this->ensureIndependentTeacherAccess($request);
         $context = $this->resolveContext($request);
         $this->authorizeTeacherAccess($assessment, $context);
 
@@ -204,6 +206,7 @@ class TeacherAssessmentController extends Controller
 
     public function update(Request $request, Assessment $assessment): JsonResponse
     {
+        $this->ensureIndependentTeacherAccess($request);
         $context = $this->resolveContext($request);
 
         if ($context['board_code']) {
@@ -282,6 +285,7 @@ class TeacherAssessmentController extends Controller
 
     public function activate(Request $request, Assessment $assessment): JsonResponse
     {
+        $this->ensureIndependentTeacherAccess($request);
         $context = $this->resolveContext($request);
 
         if ($context['board_code']) {
@@ -365,6 +369,23 @@ class TeacherAssessmentController extends Controller
             'teacher_id' => (int) $user->id,
             'board_code' => $boardCode !== '' ? $boardCode : null,
         ];
+    }
+
+    private function ensureIndependentTeacherAccess(Request $request): void
+    {
+        /** @var User|null $user */
+        $user = $request->user();
+
+        if (! $user || $user->role !== 'teacher') {
+            abort(403, 'Teacher portal access required.');
+        }
+
+        $hasSchool = (bool) $user->school_id;
+        $hasBoard = trim((string) ($user->school_board ?? '')) !== '';
+
+        if ($hasSchool || $hasBoard) {
+            abort(403, 'Assessments are only available for independent teachers.');
+        }
     }
 
     private function platformOnlyQuery(Request $request)

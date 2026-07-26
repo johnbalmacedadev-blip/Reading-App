@@ -23,12 +23,14 @@ import { AcademicsPage } from "./pages/AcademicsPage";
 import { AdminDashboard } from "./pages/admin/AdminDashboard";
 import { AdminSchoolBoardsPage } from "./pages/admin/AdminSchoolBoardsPage";
 import { AdminSchoolsPage } from "./pages/admin/AdminSchoolsPage";
+import { AdminClassesPage } from "./pages/admin/AdminClassesPage";
 import { AdminTeachersPage } from "./pages/admin/AdminTeachersPage";
 import { AdminStudentsPage } from "./pages/admin/AdminStudentsPage";
 import { AdminContentPage } from "./pages/admin/AdminContentPage";
 import { AdminWorkshopsPage } from "./pages/admin/AdminWorkshopsPage";
 import { AdminTemplatesPage } from "./pages/admin/AdminTemplatesPage";
 import { AdminAuditPage } from "./pages/admin/AdminAuditPage";
+import { AdminBackupPage } from "./pages/admin/AdminBackupPage";
 import { AdminSettingsPage } from "./pages/admin/AdminSettingsPage";
 import { AdminDownloadableResourcesPage } from "./pages/admin/AdminDownloadableResourcesPage";
 import { BoardAssessmentsPage } from "./pages/BoardAssessmentsPage";
@@ -36,11 +38,22 @@ import { BoardProfilePage } from "./pages/BoardProfilePage";
 import { SchoolAssessmentsPage } from "./pages/SchoolAssessmentsPage";
 import { TeacherAssessmentsPage } from "./pages/TeacherAssessmentsPage";
 import { TeacherSignUpPage } from "./pages/TeacherSignUpPage";
+import { SignupJoinPage } from "./pages/SignupJoinPage";
 import { SubscriptionPlanPage } from "./pages/SubscriptionPlanPage";
 import { PaymentPage } from "./pages/PaymentPage";
 import { TeacherSignInPage } from "./pages/TeacherSignInPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
-import { TeacherRoute } from "./components/TeacherRoute";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
+import { TeacherSubscriptionPage } from "./pages/TeacherSubscriptionPage";
+import { SchoolTeacherRequestsPage } from "./pages/SchoolTeacherRequestsPage";
+import { BoardTeacherRequestsPage } from "./pages/BoardTeacherRequestsPage";
+import { AccountDeactivatedPage } from "./pages/AccountDeactivatedPage";
+import {
+  ActiveSubscriptionReportsRoute,
+  ClassroomAccessRoute,
+  IndependentTeacherAssessmentsRoute,
+  TeacherRoute,
+} from "./components/TeacherRoute";
 import { AdminRoute } from "./components/AdminRoute";
 import { BoardRoute } from "./components/BoardRoute";
 import { AdminLoginPage } from "./pages/admin/AdminLoginPage";
@@ -50,6 +63,18 @@ function withTeacherRoute(Component: ComponentType) {
     return (
       <TeacherRoute>
         <Component />
+      </TeacherRoute>
+    );
+  };
+}
+
+function withClassroomRoute(Component: ComponentType) {
+  return function ProtectedClassroomPage() {
+    return (
+      <TeacherRoute>
+        <ClassroomAccessRoute>
+          <Component />
+        </ClassroomAccessRoute>
       </TeacherRoute>
     );
   };
@@ -105,6 +130,10 @@ export const router = createBrowserRouter([
     Component: SubscriptionPlanPage,
   },
   {
+    path: "/signup/join",
+    Component: SignupJoinPage,
+  },
+  {
     path: "/signup/payment",
     Component: PaymentPage,
   },
@@ -113,12 +142,20 @@ export const router = createBrowserRouter([
     Component: ForgotPasswordPage,
   },
   {
+    path: "/reset-password",
+    Component: ResetPasswordPage,
+  },
+  {
     path: "/dashboard",
-    Component: withTeacherRoute(TeacherDashboard),
+    Component: withClassroomRoute(TeacherDashboard),
+  },
+  {
+    path: "/account-status",
+    Component: withTeacherRoute(AccountDeactivatedPage),
   },
   {
     path: "/class/:classId",
-    Component: withTeacherRoute(StudentTracking),
+    Component: withClassroomRoute(StudentTracking),
   },
   {
     path: "/school",
@@ -134,11 +171,11 @@ export const router = createBrowserRouter([
   },
   {
     path: "/evaluation/:studentId/:evaluationNum",
-    Component: EvaluationDetailPage,
+    Component: withClassroomRoute(EvaluationDetailPage),
   },
   {
     path: "/library",
-    Component: LibraryPage,
+    Component: withTeacherRoute(LibraryPage),
   },
   {
     path: "/library/content/:contentId",
@@ -162,11 +199,33 @@ export const router = createBrowserRouter([
   },
   {
     path: "/reports",
-    Component: ReportsPage,
+    Component: function TeacherReportsProtected() {
+      return (
+        <TeacherRoute>
+          <ActiveSubscriptionReportsRoute>
+            <ReportsPage />
+          </ActiveSubscriptionReportsRoute>
+        </TeacherRoute>
+      );
+    },
+  },
+  {
+    path: "/subscription",
+    Component: withTeacherRoute(TeacherSubscriptionPage),
   },
   {
     path: "/assessments",
-    Component: withTeacherRoute(TeacherAssessmentsPage),
+    Component: function TeacherAssessmentsProtected() {
+      return (
+        <TeacherRoute>
+          <ClassroomAccessRoute>
+            <IndependentTeacherAssessmentsRoute>
+              <TeacherAssessmentsPage />
+            </IndependentTeacherAssessmentsRoute>
+          </ClassroomAccessRoute>
+        </TeacherRoute>
+      );
+    },
   },
   {
     path: "/student/:studentId",
@@ -189,6 +248,10 @@ export const router = createBrowserRouter([
     Component: withBoardRoute(SettingsPage),
   },
   {
+    path: "/board/teachers",
+    Component: withBoardRoute(BoardTeacherRequestsPage),
+  },
+  {
     path: "/school/settings",
     Component: SettingsPage,
   },
@@ -203,6 +266,10 @@ export const router = createBrowserRouter([
   {
     path: "/school/assessments",
     Component: SchoolAssessmentsPage,
+  },
+  {
+    path: "/school/teachers",
+    Component: SchoolTeacherRequestsPage,
   },
   {
     path: "/admin/login",
@@ -223,6 +290,10 @@ export const router = createBrowserRouter([
   {
     path: "/admin/teachers",
     Component: withAdminRoute(AdminTeachersPage),
+  },
+  {
+    path: "/admin/teachers/classes",
+    Component: withAdminRoute(AdminClassesPage),
   },
   {
     path: "/admin/students",
@@ -255,6 +326,10 @@ export const router = createBrowserRouter([
   {
     path: "/admin/audit",
     Component: withAdminRoute(AdminAuditPage),
+  },
+  {
+    path: "/admin/backup",
+    Component: withAdminRoute(AdminBackupPage),
   },
   {
     path: "/admin/settings",
