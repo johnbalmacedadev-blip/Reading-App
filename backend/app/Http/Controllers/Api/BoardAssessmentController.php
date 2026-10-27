@@ -14,7 +14,7 @@ use Illuminate\Validation\Rule;
 
 class BoardAssessmentController extends Controller
 {
-    private const GRADES = ['Kindergarten', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 3+'];
+    private const GRADES = ['All', 'Kindergarten', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 3+'];
 
     private const GRADE_FILTER_MAP = [
         'kindergarten' => 'Kindergarten',

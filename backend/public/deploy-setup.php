@@ -15,6 +15,8 @@
  *        https://yourdomain.com/deploy-setup.php?token=9a9a85e19b814b078eca5b94f27dad02
  *      Add &seed=1  to also install demo data (teacher gisele@example.com / password).
  *      Add &fresh=1 to DROP ALL TABLES first (migrate:fresh) — destructive!
+ *      Add &sync_workshops=1 to publish the 15 platform template workshops (grade=All).
+ *      Add &replace_workshops=1 with sync_workshops to archive old platform workshops first.
  *   3. When it finishes, DELETE this file from the server.
  *
  * SECURITY: the token below must match the ?token= in the URL. Change it if you like.
@@ -96,6 +98,15 @@ if (isset($_GET['fresh']) && $_GET['fresh'] === '1') {
 // 4. Optional demo data.
 if (isset($_GET['seed']) && $_GET['seed'] === '1') {
     run_artisan($kernel, 'db:seed', ['--force' => true]);
+}
+
+// 4b. Optional: sync 15 platform workshop assessments from bundled JSON.
+if (isset($_GET['sync_workshops']) && $_GET['sync_workshops'] === '1') {
+    $params = [];
+    if (isset($_GET['replace_workshops']) && $_GET['replace_workshops'] === '1') {
+        $params['--replace'] = true;
+    }
+    run_artisan($kernel, 'assessments:sync-platform-workshops', $params);
 }
 
 // 5. storage:link, with a manual fallback if the host blocks symlink().

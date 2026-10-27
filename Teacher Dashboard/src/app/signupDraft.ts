@@ -1,4 +1,4 @@
-export type SignupStep = 1 | 2 | 3;
+export type SignupStep = 1 | 2;
 
 export type SignupFormData = {
   firstName: string;
@@ -32,7 +32,7 @@ export const emptySignupForm = (): SignupFormData => ({
   role: "teacher",
   grades: [],
   numStudents: "",
-  accountType: "",
+  accountType: "individual",
   inviteType: "",
   selectedSchoolId: null,
   selectedSchoolName: "",
@@ -53,11 +53,16 @@ export function loadSignupDraft(): SignupDraft | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<SignupDraft>;
     if (!parsed || typeof parsed !== "object" || !parsed.form) return null;
-    const step = parsed.step === 2 || parsed.step === 3 ? parsed.step : 1;
-    return {
-      step,
-      form: { ...emptySignupForm(), ...parsed.form, grades: Array.isArray(parsed.form.grades) ? parsed.form.grades : [] },
+    // Legacy drafts may still have step 3 (account type) — treat as step 2.
+    const rawStep = typeof parsed.step === "number" ? parsed.step : 1;
+    const step: SignupStep = rawStep === 2 || rawStep === 3 ? 2 : 1;
+    const form = {
+      ...emptySignupForm(),
+      ...parsed.form,
+      grades: Array.isArray(parsed.form.grades) ? parsed.form.grades : [],
+      accountType: "individual" as const,
     };
+    return { step, form };
   } catch {
     return null;
   }

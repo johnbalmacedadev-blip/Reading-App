@@ -15,6 +15,11 @@ export function WorkshopTemplateEvaluator({
   onStateChange,
   unitNumber,
   unitColor,
+  onSupportPdf,
+  supportPdfBusy = false,
+  onAccompanimentPdf,
+  accompanimentPdfBusy = false,
+  accompanimentPdfAvailable = false,
 }: {
   template: WorkshopTemplate;
   draft: TemplateDraft;
@@ -22,6 +27,11 @@ export function WorkshopTemplateEvaluator({
   onStateChange: Dispatch<SetStateAction<TemplateEvalState>>;
   unitNumber: number;
   unitColor: UnitColor;
+  onSupportPdf?: () => void;
+  supportPdfBusy?: boolean;
+  onAccompanimentPdf?: () => void;
+  accompanimentPdfBusy?: boolean;
+  accompanimentPdfAvailable?: boolean;
 }) {
   const handleBulk = (action: "all_passed" | "all_failed" | "clear_all") => {
     onStateChange((prev) => applyTemplateBulkAction(action, template, prev, draft));
@@ -83,6 +93,11 @@ export function WorkshopTemplateEvaluator({
             ? () => handleBulk("clear_all")
             : undefined
         }
+        onSupportPdf={onSupportPdf}
+        supportPdfBusy={supportPdfBusy}
+        onAccompanimentPdf={onAccompanimentPdf}
+        accompanimentPdfBusy={accompanimentPdfBusy}
+        accompanimentPdfAvailable={accompanimentPdfAvailable}
       />
 
       <WorkshopTemplatePreview

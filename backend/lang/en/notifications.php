@@ -3,7 +3,7 @@
 return [
     'trial_started' => [
         'title' => 'Free trial active',
-        'message' => 'Your 30-day free trial is active until :date.',
+        'message' => 'Your :days-day free trial is active until :date.',
     ],
     'trial_ending' => [
         'title' => 'Trial ending soon',
@@ -11,7 +11,11 @@ return [
     ],
     'trial_expired' => [
         'title' => 'Trial expired',
-        'message' => 'Your free trial expired on :date. Choose a plan to restore full access.',
+        'message' => 'Your free trial expired on :date. Subscribe now to restore full access.',
+    ],
+    'trial_extended' => [
+        'title' => 'Trial extended',
+        'message' => 'Your free trial has been extended until :date (:days days).',
     ],
     'subscription_activated' => [
         'title' => 'Successful payment',
@@ -27,8 +31,8 @@ return [
     ],
     'subscription_renewed' => [
         'title' => 'Subscription renewed',
-        'message' => 'Your :plan subscription has been renewed.',
-        'message_until' => 'Your :plan subscription has been renewed through :date.',
+        'message' => 'Your :plan subscription was automatically renewed and paid for the new period.',
+        'message_until' => 'Your :plan subscription was automatically renewed and paid. New period active through :date.',
     ],
     'subscription_cancelled' => [
         'title' => 'Subscription cancelled',

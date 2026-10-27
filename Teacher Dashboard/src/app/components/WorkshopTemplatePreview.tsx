@@ -1,4 +1,3 @@
-import { CheckSquare, Trash2 } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useLanguage } from "../i18n";
 import type { CheckboxMark, LetterMark } from "../evaluation/responses";
@@ -9,8 +8,8 @@ import type {
   FluencyMixedSection,
   ItemGridSection,
   LetterGridSection,
+  LetterWriteListSection,
   MixedSection,
-  MultipleChoiceQuestion,
   ReadingMixedSection,
   SentenceReadingSection,
   TemplateDraft,
@@ -19,14 +18,11 @@ import type {
   WorkshopTemplate,
 } from "../evaluation/workshopTemplates";
 import {
-  MULTIPLE_CHOICE_OPTION_COUNT,
-  createEmptyMultipleChoiceQuestion,
   defaultTemplateDraft,
   isItemGridSection,
   isPassageSection,
   isSentenceReadingSection,
   isWordFamilySection,
-  normalizeMultipleChoiceQuestion,
 } from "../evaluation/workshopTemplates";
 
 const editableInputStyle = {
@@ -47,7 +43,7 @@ const editableTextareaStyle = {
   minHeight: 48,
 };
 
-function itemGridSectionBackground(variant?: ItemGridSection["variant"]) {
+function sectionBackground(variant?: "default" | "highlight") {
   return variant === "highlight" ? "#f7ffd6" : "#dff3ff";
 }
 
@@ -223,13 +219,27 @@ export function WorkshopTemplatePreview({
     onDraftChange?.({ ...resolvedDraft, sections });
   };
 
+  const updateLetterWriteSection = (sectionIndex: number, patch: Partial<LetterWriteListSection>) => {
+    const sections = [...(resolvedDraft.sections as LetterWriteListSection[])];
+    sections[sectionIndex] = { ...sections[sectionIndex], ...patch };
+    onDraftChange?.({ ...resolvedDraft, sections });
+  };
+
+  const updateLetterWriteItem = (sectionIndex: number, itemIndex: number, value: string) => {
+    const sections = [...(resolvedDraft.sections as LetterWriteListSection[])];
+    const items = [...sections[sectionIndex].items];
+    items[itemIndex] = value;
+    sections[sectionIndex] = { ...sections[sectionIndex], items };
+    onDraftChange?.({ ...resolvedDraft, sections });
+  };
+
   const updateCheckboxSection = (sectionIndex: number, patch: Partial<CheckboxTableSection>) => {
     const sections = [...(resolvedDraft.sections as CheckboxTableSection[])];
     sections[sectionIndex] = { ...sections[sectionIndex], ...patch };
     onDraftChange?.({ ...resolvedDraft, sections });
   };
 
-  const updateRowCell = (
+  const updateCheckboxRowCell = (
     sectionIndex: number,
     rowIndex: number,
     columnKey: string,
@@ -386,45 +396,6 @@ export function WorkshopTemplatePreview({
     onDraftChange?.({ ...resolvedDraft, sections });
   };
 
-  const resolvedQuestions =
-    resolvedDraft.questions ??
-    defaultTemplateDraft(template.id).questions ??
-    [];
-
-  const updateQuestions = (questions: MultipleChoiceQuestion[]) => {
-    onDraftChange?.({ ...resolvedDraft, questions });
-  };
-
-  const updateQuestion = (
-    questionIndex: number,
-    patch: Partial<Pick<MultipleChoiceQuestion, "text" | "correct">>
-  ) => {
-    const questions = resolvedQuestions.map((question, index) =>
-      index === questionIndex ? normalizeMultipleChoiceQuestion({ ...question, ...patch }) : question
-    );
-    updateQuestions(questions);
-  };
-
-  const updateQuestionOption = (questionIndex: number, optionIndex: number, value: string) => {
-    const questions = resolvedQuestions.map((question, index) => {
-      if (index !== questionIndex) return question;
-      const options = [...question.options];
-      options[optionIndex] = value;
-      return normalizeMultipleChoiceQuestion({ ...question, options });
-    });
-    updateQuestions(questions);
-  };
-
-  const deleteQuestion = (questionIndex: number) => {
-    updateQuestions(resolvedQuestions.filter((_, index) => index !== questionIndex));
-  };
-
-  const addQuestion = () => {
-    updateQuestions([...resolvedQuestions, createEmptyMultipleChoiceQuestion()]);
-  };
-
-  const primaryCellKeys = new Set(["pair", "segmented", "word", "letters", "correct"]);
-
   const renderInstructions = () => (
     <div className="mb-6 p-4 rounded-xl" style={{ background: "#fff9e6", border: "1px solid #ffde59" }}>
       {canEdit ? (
@@ -453,180 +424,6 @@ export function WorkshopTemplatePreview({
       )}
     </div>
   );
-
-  if (template.format === "multiple_choice") {
-    const mcqInputStyle = {
-      width: "100%",
-      padding: "8px 10px",
-      borderRadius: 7,
-      border: "1px solid #e2e8f0",
-      fontSize: 13,
-      outline: "none",
-      boxSizing: "border-box" as const,
-      background: "#ffffff",
-    };
-
-    const mcqOptionInputStyle = {
-      flex: 1,
-      padding: "6px 8px",
-      borderRadius: 6,
-      border: "none",
-      fontSize: 12,
-      outline: "none",
-      background: "transparent",
-    };
-
-    return (
-      <div>
-        {renderInstructions()}
-
-        <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: 18 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "#1e293b", marginBottom: 12 }}>
-            Questions ({resolvedQuestions.length})
-          </div>
-
-          {resolvedQuestions.map((question, questionIndex) => (
-            <div
-              key={questionIndex}
-              style={{
-                background: "#f8fafc",
-                borderRadius: 10,
-                padding: "12px 14px",
-                marginBottom: 8,
-                border: "1px solid #f1f5f9",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  justifyContent: "space-between",
-                  marginBottom: 8,
-                }}
-              >
-                <span style={{ fontSize: 12, fontWeight: 600, color: "#64748b" }}>
-                  Q{questionIndex + 1}
-                </span>
-                {canEdit && (
-                  <button
-                    type="button"
-                    onClick={() => deleteQuestion(questionIndex)}
-                    title="Delete question"
-                    style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444" }}
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                )}
-              </div>
-
-              {canEdit ? (
-                <input
-                  value={question.text}
-                  onChange={(e) => updateQuestion(questionIndex, { text: e.target.value })}
-                  placeholder="Question text"
-                  style={{ ...mcqInputStyle, marginBottom: 8 }}
-                />
-              ) : (
-                <p style={{ fontSize: 13, color: "#004aad", marginBottom: 8, fontWeight: 500 }}>
-                  {a(question.text)}
-                </p>
-              )}
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                {Array.from({ length: MULTIPLE_CHOICE_OPTION_COUNT }, (_, optionIndex) => {
-                  const selectedOption = evaluate?.mcqSelections?.[questionIndex] ?? null;
-                  const isSelected = evaluate ? selectedOption === optionIndex : false;
-                  const isCorrect = !evaluate && question.correct === optionIndex;
-                  const isHighlighted = evaluate ? isSelected : isCorrect;
-
-                  return (
-                    <label
-                      key={optionIndex}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 5,
-                        padding: "4px",
-                        borderRadius: 6,
-                        background: isHighlighted ? "#ecfdf5" : "#ffffff",
-                        border: `1px solid ${isHighlighted ? "#a7f3d0" : "#e2e8f0"}`,
-                        cursor: evaluate ? "pointer" : canEdit ? "default" : "default",
-                      }}
-                    >
-                      <input
-                        type="radio"
-                        name={`template-${template.id}-q${questionIndex}`}
-                        checked={evaluate ? isSelected : isCorrect}
-                        disabled={!canEdit && !evaluate}
-                        onChange={() => {
-                          if (canEdit) {
-                            updateQuestion(questionIndex, { correct: optionIndex });
-                          } else if (evaluate) {
-                            evaluate.onMcqSelectionChange(questionIndex, optionIndex);
-                          }
-                        }}
-                        title={canEdit ? "Mark as correct answer" : undefined}
-                        style={{ cursor: evaluate || canEdit ? "pointer" : "default" }}
-                      />
-                      <span style={{ fontSize: 12, color: "#64748b", flexShrink: 0 }}>
-                        {String.fromCharCode(65 + optionIndex)}.
-                      </span>
-                      {canEdit ? (
-                        <input
-                          value={question.options[optionIndex] ?? ""}
-                          onChange={(e) =>
-                            updateQuestionOption(questionIndex, optionIndex, e.target.value)
-                          }
-                          placeholder={`Option ${String.fromCharCode(65 + optionIndex)}`}
-                          style={{
-                            ...mcqOptionInputStyle,
-                            color: isCorrect ? "#059669" : "#374151",
-                          }}
-                        />
-                      ) : (
-                        <span
-                          style={{
-                            fontSize: 12,
-                            flex: 1,
-                            color: isHighlighted ? "#059669" : "#374151",
-                          }}
-                        >
-                          {a(question.options[optionIndex] ?? "")}
-                        </span>
-                      )}
-                      {isHighlighted && !evaluate && (
-                        <CheckSquare size={11} color="#059669" style={{ flexShrink: 0 }} />
-                      )}
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-
-          {canEdit && (
-            <button
-              type="button"
-              onClick={addQuestion}
-              style={{
-                marginTop: 8,
-                padding: "7px 14px",
-                borderRadius: 7,
-                border: "none",
-                background: "#3b82f6",
-                color: "white",
-                fontSize: 12,
-                cursor: "pointer",
-                fontWeight: 600,
-              }}
-            >
-              + Add Question
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  }
 
   if (template.format === "letter_grid") {
     const sections = resolvedDraft.sections as LetterGridSection[];
@@ -712,6 +509,97 @@ export function WorkshopTemplatePreview({
           </div>
           );
         })}
+
+        {!evaluate && (
+          <div className="mt-8">
+            <label className="block mb-2" style={{ color: "#004aad", fontWeight: 600 }}>
+              {t("evaluation.comments")}
+            </label>
+            <textarea
+              rows={6}
+              disabled
+              readOnly
+              className="w-full px-4 py-3 rounded-xl border"
+              style={{ background: "#ffffff", borderColor: "#dff3ff", color: "#94a3b8", resize: "none" }}
+              placeholder={t("evaluation.addComments")}
+              value=""
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (template.format === "letter_write_list") {
+    const sections = resolvedDraft.sections as LetterWriteListSection[];
+
+    return (
+      <div>
+        {renderInstructions()}
+
+        {sections.map((section, sectionIndex) => (
+          <div key={`${section.titleFr}-${sectionIndex}`}>
+            {canEdit ? (
+              <input
+                value={section.titleFr}
+                onChange={(e) => updateLetterWriteSection(sectionIndex, { titleFr: e.target.value })}
+                className="text-lg mb-4 font-semibold"
+                style={{ ...editableInputStyle, fontWeight: 600, marginBottom: 16 }}
+              />
+            ) : (
+              <h3 className="text-lg mb-4" style={{ color: "#004aad" }}>
+                {a(section.titleFr)}
+              </h3>
+            )}
+            <div className="space-y-2">
+              {section.items.map((item, itemIndex) => (
+                <div
+                  key={`${item}-${itemIndex}`}
+                  className="flex items-center justify-between p-2 rounded-lg"
+                  style={{ background: "#f7ffd6" }}
+                >
+                  {canEdit ? (
+                    <input
+                      value={item}
+                      onChange={(e) => updateLetterWriteItem(sectionIndex, itemIndex, e.target.value)}
+                      className="font-bold w-8"
+                      style={{ ...editableInputStyle, fontWeight: 700, width: 40, background: "transparent", border: "none", padding: 0 }}
+                    />
+                  ) : (
+                    <span className="font-bold w-8" style={{ color: "#004aad" }}>
+                      {item}
+                    </span>
+                  )}
+                  {evaluate ? (
+                    renderCheckbox()
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <PreviewMarkButton variant="empty" />
+                      <PreviewMarkButton variant="empty" />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        {!evaluate && (
+          <div className="mt-8">
+            <label className="block mb-2" style={{ color: "#004aad", fontWeight: 600 }}>
+              {t("evaluation.comments")}
+            </label>
+            <textarea
+              rows={6}
+              disabled
+              readOnly
+              className="w-full px-4 py-3 rounded-xl border"
+              style={{ background: "#ffffff", borderColor: "#dff3ff", color: "#94a3b8", resize: "none" }}
+              placeholder={t("evaluation.addComments")}
+              value=""
+            />
+          </div>
+        )}
       </div>
     );
   }
@@ -784,6 +672,185 @@ export function WorkshopTemplatePreview({
             </div>
           ))}
         </div>
+
+        {!evaluate && (
+          <div className="mt-8">
+            <label className="block mb-2" style={{ color: "#004aad", fontWeight: 600 }}>
+              {t("evaluation.comments")}
+            </label>
+            <textarea
+              rows={6}
+              disabled
+              readOnly
+              className="w-full px-4 py-3 rounded-xl border"
+              style={{ background: "#ffffff", borderColor: "#dff3ff", color: "#94a3b8", resize: "none" }}
+              placeholder={t("evaluation.addComments")}
+              value=""
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (template.format === "mixed_sections") {
+    const sections = resolvedDraft.sections as MixedSection[];
+    const primaryCellKeys = new Set(["pair", "segmented", "word", "letters", "correct"]);
+
+    return (
+      <div>
+        {renderInstructions()}
+
+        <div className="space-y-6">
+          {sections.map((section, sectionIndex) => (
+            <div
+              key={`${section.titleFr}-${sectionIndex}`}
+              className="p-5 rounded-xl"
+              style={{
+                background: isItemGridSection(section)
+                  ? sectionBackground(section.variant)
+                  : "#dff3ff",
+              }}
+            >
+              {canEdit ? (
+                <>
+                  <input
+                    value={section.titleFr}
+                    onChange={(e) => updateMixedSection(sectionIndex, { titleFr: e.target.value })}
+                    className="text-base mb-3 font-bold"
+                    style={{ ...editableInputStyle, fontWeight: 700, marginBottom: 12 }}
+                  />
+                  {"promptFr" in section && (
+                    <textarea
+                      value={section.promptFr}
+                      onChange={(e) => updateMixedSection(sectionIndex, { promptFr: e.target.value })}
+                      rows={2}
+                      className="text-sm mb-3"
+                      style={{ ...editableTextareaStyle, color: "#666", marginBottom: 12 }}
+                    />
+                  )}
+                </>
+              ) : (
+                <>
+                  <h3 className="text-base mb-4 font-bold" style={{ color: "#004aad" }}>
+                    {a(section.titleFr)}
+                  </h3>
+                  {"promptFr" in section && (
+                    <p className="text-sm mb-3" style={{ color: "#666" }}>
+                      {"promptShowsInstructionsLabel" in section && section.promptShowsInstructionsLabel ? (
+                        <>
+                          <strong style={{ color: "#004aad" }}>{t("evaluation.instructionsLabel")}</strong>{" "}
+                        </>
+                      ) : null}
+                      {a(section.promptFr)}
+                    </p>
+                  )}
+                </>
+              )}
+
+              {isItemGridSection(section) ? (
+                <div className="grid grid-cols-5 gap-3">
+                  {section.items.map((item, itemIndex) => (
+                    <div
+                      key={itemIndex}
+                      className="flex flex-col items-center gap-2 p-3 rounded-lg"
+                      style={{ background: "#ffffff" }}
+                    >
+                      {canEdit ? (
+                        <input
+                          value={item}
+                          onChange={(e) => updateMixedItemGridItem(sectionIndex, itemIndex, e.target.value)}
+                          className="text-lg font-bold text-center"
+                          style={{ ...editableInputStyle, fontWeight: 700, width: 72 }}
+                        />
+                      ) : (
+                        <span className="text-lg font-bold" style={{ color: "#004aad" }}>{a(item)}</span>
+                      )}
+                      {renderCheckbox()}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <table className="w-full" style={{ borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ background: "#ffffff" }}>
+                      {section.columns.map((column) => (
+                        <th
+                          key={column.key}
+                          className={`px-3 py-2 text-sm ${column.align === "center" ? "text-center" : "text-left"}`}
+                          style={{ color: "#004aad", border: "1px solid #dff3ff" }}
+                        >
+                          {a(column.labelFr)}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {section.rows.map((row, rowIndex) => (
+                      <tr key={rowIndex} style={{ borderBottom: "1px solid #dff3ff" }}>
+                        {section.columns.map((column) => (
+                          <td
+                            key={column.key}
+                            className={`px-3 py-2 text-sm ${column.align === "center" ? "text-center" : "text-left"}`}
+                            style={{
+                              color:
+                                column.key === "passed"
+                                  ? "#004aad"
+                                  : column.key === "correct"
+                                    ? "#2e7d32"
+                                    : primaryCellKeys.has(column.key)
+                                      ? "#004aad"
+                                      : "#666",
+                              border: "1px solid #dff3ff",
+                              fontWeight:
+                                column.key === "correct" || primaryCellKeys.has(column.key) ? 700 : 400,
+                            }}
+                          >
+                            {column.key === "passed" ? (
+                              renderCheckbox()
+                            ) : canEdit ? (
+                              <input
+                                value={String(row[column.key] ?? "")}
+                                onChange={(e) =>
+                                  updateMixedRowCell(sectionIndex, rowIndex, column.key, e.target.value)
+                                }
+                                style={{
+                                  ...editableInputStyle,
+                                  textAlign: column.align === "center" ? "center" : "left",
+                                  fontWeight: column.key === "correct" ? 700 : 400,
+                                  color: column.key === "correct" ? "#2e7d32" : "#004aad",
+                                }}
+                              />
+                            ) : (
+                              a(String(row[column.key] ?? ""))
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {!evaluate && (
+          <div className="mt-8">
+            <label className="block mb-2" style={{ color: "#004aad", fontWeight: 600 }}>
+              {t("evaluation.comments")}
+            </label>
+            <textarea
+              rows={6}
+              disabled
+              readOnly
+              className="w-full px-4 py-3 rounded-xl border"
+              style={{ background: "#ffffff", borderColor: "#dff3ff", color: "#94a3b8", resize: "none" }}
+              placeholder={t("evaluation.addComments")}
+              value=""
+            />
+          </div>
+        )}
       </div>
     );
   }
@@ -800,7 +867,7 @@ export function WorkshopTemplatePreview({
             <div
               key={`${section.titleFr}-${sectionIndex}`}
               className="p-5 rounded-xl"
-              style={{ background: itemGridSectionBackground(section.variant) }}
+              style={{ background: sectionBackground(section.variant) }}
             >
               {canEdit ? (
                 <>
@@ -850,6 +917,23 @@ export function WorkshopTemplatePreview({
             </div>
           ))}
         </div>
+
+        {!evaluate && (
+          <div className="mt-8">
+            <label className="block mb-2" style={{ color: "#004aad", fontWeight: 600 }}>
+              {t("evaluation.comments")}
+            </label>
+            <textarea
+              rows={6}
+              disabled
+              readOnly
+              className="w-full px-4 py-3 rounded-xl border"
+              style={{ background: "#ffffff", borderColor: "#dff3ff", color: "#94a3b8", resize: "none" }}
+              placeholder={t("evaluation.addComments")}
+              value=""
+            />
+          </div>
+        )}
       </div>
     );
   }
@@ -866,7 +950,7 @@ export function WorkshopTemplatePreview({
             <div
               key={`${section.titleFr}-${sectionIndex}`}
               className="p-5 rounded-xl"
-              style={{ background: itemGridSectionBackground(section.variant) }}
+              style={{ background: sectionBackground(section.variant) }}
             >
               {canEdit ? (
                 <>
@@ -941,6 +1025,23 @@ export function WorkshopTemplatePreview({
             </div>
           ))}
         </div>
+
+        {!evaluate && (
+          <div className="mt-8">
+            <label className="block mb-2" style={{ color: "#004aad", fontWeight: 600 }}>
+              {t("evaluation.comments")}
+            </label>
+            <textarea
+              rows={6}
+              disabled
+              readOnly
+              className="w-full px-4 py-3 rounded-xl border"
+              style={{ background: "#ffffff", borderColor: "#dff3ff", color: "#94a3b8", resize: "none" }}
+              placeholder={t("evaluation.addComments")}
+              value=""
+            />
+          </div>
+        )}
       </div>
     );
   }
@@ -957,7 +1058,7 @@ export function WorkshopTemplatePreview({
             <div
               key={`${section.titleFr}-${sectionIndex}`}
               className="p-5 rounded-xl"
-              style={{ background: itemGridSectionBackground(section.variant) }}
+              style={{ background: sectionBackground(section.variant) }}
             >
               {canEdit ? (
                 <>
@@ -980,7 +1081,14 @@ export function WorkshopTemplatePreview({
                   <h3 className="text-base mb-4 font-bold" style={{ color: "#004aad" }}>
                     {a(section.titleFr)}
                   </h3>
-                  <p className="text-sm mb-3" style={{ color: "#666" }}>{a(section.promptFr)}</p>
+                  <p className="text-sm mb-3" style={{ color: "#666" }}>
+                    {"promptShowsInstructionsLabel" in section && section.promptShowsInstructionsLabel ? (
+                      <>
+                        <strong style={{ color: "#004aad" }}>{t("evaluation.instructionsLabel")}</strong>{" "}
+                      </>
+                    ) : null}
+                    {a(section.promptFr)}
+                  </p>
                 </>
               )}
 
@@ -1049,6 +1157,148 @@ export function WorkshopTemplatePreview({
             </div>
           ))}
         </div>
+
+        {!evaluate && (
+          <div className="mt-8">
+            <label className="block mb-2" style={{ color: "#004aad", fontWeight: 600 }}>
+              {t("evaluation.comments")}
+            </label>
+            <textarea
+              rows={6}
+              disabled
+              readOnly
+              className="w-full px-4 py-3 rounded-xl border"
+              style={{ background: "#ffffff", borderColor: "#dff3ff", color: "#94a3b8", resize: "none" }}
+              placeholder={t("evaluation.addComments")}
+              value=""
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (template.format === "checkbox_sections") {
+    const sections = resolvedDraft.sections as CheckboxTableSection[];
+    const primaryCellKeys = new Set(["pair", "segmented", "word", "letters", "correct"]);
+
+    return (
+      <div>
+        {renderInstructions()}
+
+        <div className="space-y-6">
+          {sections.map((section, sectionIndex) => (
+            <div
+              key={`${section.titleFr}-${sectionIndex}`}
+              className="p-5 rounded-xl"
+              style={{ background: "#dff3ff" }}
+            >
+              {canEdit ? (
+                <>
+                  <input
+                    value={section.titleFr}
+                    onChange={(e) => updateCheckboxSection(sectionIndex, { titleFr: e.target.value })}
+                    className="text-base mb-3 font-bold"
+                    style={{ ...editableInputStyle, fontWeight: 700, marginBottom: 12 }}
+                  />
+                  <textarea
+                    value={section.promptFr}
+                    onChange={(e) => updateCheckboxSection(sectionIndex, { promptFr: e.target.value })}
+                    rows={2}
+                    className="text-sm mb-3"
+                    style={{ ...editableTextareaStyle, color: "#666", marginBottom: 12 }}
+                  />
+                </>
+              ) : (
+                <>
+                  <h3 className="text-base mb-4 font-bold" style={{ color: "#004aad" }}>
+                    {a(section.titleFr)}
+                  </h3>
+                  <p className="text-sm mb-3" style={{ color: "#666" }}>
+                    {section.promptShowsInstructionsLabel ? (
+                      <>
+                        <strong style={{ color: "#004aad" }}>{t("evaluation.instructionsLabel")}</strong>{" "}
+                      </>
+                    ) : null}
+                    {a(section.promptFr)}
+                  </p>
+                </>
+              )}
+              <table className="w-full" style={{ borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "#ffffff" }}>
+                    {section.columns.map((column) => (
+                      <th
+                        key={column.key}
+                        className={`px-3 py-2 text-sm ${column.align === "center" ? "text-center" : "text-left"}`}
+                        style={{ color: "#004aad", border: "1px solid #dff3ff" }}
+                      >
+                        {a(column.labelFr)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {section.rows.map((row, rowIndex) => (
+                    <tr key={rowIndex} style={{ borderBottom: "1px solid #dff3ff" }}>
+                      {section.columns.map((column) => (
+                        <td
+                          key={column.key}
+                          className={`px-3 py-2 text-sm ${column.align === "center" ? "text-center" : "text-left"}`}
+                          style={{
+                            color:
+                              column.key === "passed"
+                                ? "#004aad"
+                                : primaryCellKeys.has(column.key)
+                                  ? "#004aad"
+                                  : "#666",
+                            border: "1px solid #dff3ff",
+                            fontWeight: primaryCellKeys.has(column.key) ? 500 : 400,
+                          }}
+                        >
+                          {column.key === "passed" ? (
+                            renderCheckbox()
+                          ) : canEdit ? (
+                            <input
+                              value={String(row[column.key] ?? "")}
+                              onChange={(e) =>
+                                updateCheckboxRowCell(sectionIndex, rowIndex, column.key, e.target.value)
+                              }
+                              style={{
+                                ...editableInputStyle,
+                                textAlign: column.align === "center" ? "center" : "left",
+                                fontWeight: primaryCellKeys.has(column.key) ? 500 : 400,
+                              }}
+                            />
+                          ) : (
+                            a(String(row[column.key] ?? ""))
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+
+        {!evaluate && (
+          <div className="mt-8">
+            <label className="block mb-2" style={{ color: "#004aad", fontWeight: 600 }}>
+              {t("evaluation.comments")}
+            </label>
+            <textarea
+              rows={6}
+              disabled
+              readOnly
+              className="w-full px-4 py-3 rounded-xl border"
+              style={{ background: "#ffffff", borderColor: "#dff3ff", color: "#94a3b8", resize: "none" }}
+              placeholder={t("evaluation.addComments")}
+              value=""
+            />
+          </div>
+        )}
       </div>
     );
   }
@@ -1065,7 +1315,7 @@ export function WorkshopTemplatePreview({
             <div
               key={`${section.titleFr}-${sectionIndex}`}
               className="p-5 rounded-xl"
-              style={{ background: itemGridSectionBackground(section.variant) }}
+              style={{ background: sectionBackground(section.variant) }}
             >
               {canEdit ? (
                 <input
@@ -1084,15 +1334,16 @@ export function WorkshopTemplatePreview({
                 <>
                   {canEdit ? (
                     <textarea
-                      value={section.promptFr}
+                      value={section.promptFr ?? ""}
                       onChange={(e) => updateComprehensionMixedSection(sectionIndex, { promptFr: e.target.value })}
                       rows={2}
                       className="text-sm mb-3 w-full"
                       style={{ ...editableTextareaStyle, color: "#666", marginBottom: 12 }}
+                      placeholder="Optional prompt..."
                     />
-                  ) : (
+                  ) : section.promptFr ? (
                     <p className="text-sm mb-3" style={{ color: "#666" }}>{a(section.promptFr)}</p>
-                  )}
+                  ) : null}
                   <div className="p-4 rounded leading-relaxed" style={{ background: "#ffffff" }}>
                     {canEdit ? (
                       <textarea
@@ -1101,13 +1352,47 @@ export function WorkshopTemplatePreview({
                           updateComprehensionMixedSection(sectionIndex, { passageFr: e.target.value })
                         }
                         rows={6}
-                        className="text-sm w-full"
-                        style={{ ...editableTextareaStyle, color: "#004aad", lineHeight: 1.6 }}
+                        className="w-full"
+                        style={{
+                          ...editableTextareaStyle,
+                          color: "#004aad",
+                          lineHeight: section.fluencyCriterionFr ? 1.8 : 1.6,
+                          fontSize: section.fluencyCriterionFr ? 15 : 13,
+                        }}
                       />
                     ) : (
-                      <p className="text-sm" style={{ color: "#004aad" }}>{a(section.passageFr)}</p>
+                      <p
+                        className={section.fluencyCriterionFr ? "text-base" : "text-sm"}
+                        style={{ color: "#004aad", lineHeight: section.fluencyCriterionFr ? 1.8 : 1.6 }}
+                      >
+                        {a(section.passageFr)}
+                      </p>
                     )}
                   </div>
+                  {typeof section.fluencyCriterionFr === "string" && (
+                    <div className="flex items-center gap-3 mt-3">
+                      <label className="flex items-center gap-2">
+                        {renderCheckbox("w-4 h-4 rounded")}
+                        {canEdit ? (
+                          <input
+                            value={section.fluencyCriterionFr}
+                            onChange={(e) =>
+                              updateComprehensionMixedSection(sectionIndex, {
+                                fluencyCriterionFr: e.target.value,
+                              })
+                            }
+                            className="text-sm"
+                            style={{ ...editableInputStyle, width: 180, color: "#666" }}
+                            placeholder="Fluidité de lecture"
+                          />
+                        ) : (
+                          <span className="text-sm" style={{ color: "#666" }}>
+                            {a(section.fluencyCriterionFr)}
+                          </span>
+                        )}
+                      </label>
+                    </div>
+                  )}
                 </>
               ) : (
                 section.questions.map((item, questionIndex) => (
@@ -1169,221 +1454,26 @@ export function WorkshopTemplatePreview({
             </div>
           ))}
         </div>
-      </div>
-    );
-  }
 
-  if (template.format === "mixed_sections") {
-    const sections = resolvedDraft.sections as MixedSection[];
-
-    return (
-      <div>
-        {renderInstructions()}
-
-        <div className="space-y-6">
-          {sections.map((section, sectionIndex) => (
-            <div
-              key={`${section.titleFr}-${sectionIndex}`}
-              className="p-5 rounded-xl"
-              style={{
-                background: isItemGridSection(section)
-                  ? itemGridSectionBackground(section.variant)
-                  : "#dff3ff",
-              }}
-            >
-              {canEdit ? (
-                <>
-                  <input
-                    value={section.titleFr}
-                    onChange={(e) => updateMixedSection(sectionIndex, { titleFr: e.target.value })}
-                    className="text-base mb-3 font-bold"
-                    style={{ ...editableInputStyle, fontWeight: 700, marginBottom: 12 }}
-                  />
-                  {"promptFr" in section && (
-                    <textarea
-                      value={section.promptFr}
-                      onChange={(e) => updateMixedSection(sectionIndex, { promptFr: e.target.value })}
-                      rows={2}
-                      className="text-sm mb-3"
-                      style={{ ...editableTextareaStyle, color: "#666", marginBottom: 12 }}
-                    />
-                  )}
-                </>
-              ) : (
-                <>
-                  <h3 className="text-base mb-4 font-bold" style={{ color: "#004aad" }}>
-                    {a(section.titleFr)}
-                  </h3>
-                  {"promptFr" in section && (
-                    <p className="text-sm mb-3" style={{ color: "#666" }}>{a(section.promptFr)}</p>
-                  )}
-                </>
-              )}
-
-              {isItemGridSection(section) ? (
-                <div className="grid grid-cols-5 gap-3">
-                  {section.items.map((item, itemIndex) => (
-                    <div
-                      key={itemIndex}
-                      className="flex flex-col items-center gap-2 p-3 rounded-lg"
-                      style={{ background: "#ffffff" }}
-                    >
-                      {canEdit ? (
-                        <input
-                          value={item}
-                          onChange={(e) => updateMixedItemGridItem(sectionIndex, itemIndex, e.target.value)}
-                          className="text-lg font-bold text-center"
-                          style={{ ...editableInputStyle, fontWeight: 700, width: 72 }}
-                        />
-                      ) : (
-                        <span className="text-lg font-bold" style={{ color: "#004aad" }}>{a(item)}</span>
-                      )}
-                      {renderCheckbox()}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <table className="w-full" style={{ borderCollapse: "collapse" }}>
-                  <thead>
-                    <tr style={{ background: "#ffffff" }}>
-                      {section.columns.map((column) => (
-                        <th
-                          key={column.key}
-                          className={`px-3 py-2 text-sm ${column.align === "center" ? "text-center" : "text-left"}`}
-                          style={{ color: "#004aad", border: "1px solid #dff3ff" }}
-                        >
-                          {a(column.labelFr)}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {section.rows.map((row, rowIndex) => (
-                      <tr key={rowIndex} style={{ borderBottom: "1px solid #dff3ff" }}>
-                        {section.columns.map((column) => (
-                          <td
-                            key={column.key}
-                            className={`px-3 py-2 text-sm ${column.align === "center" ? "text-center" : "text-left"}`}
-                            style={{
-                              color: column.key === "passed" ? "#004aad" : primaryCellKeys.has(column.key) ? "#004aad" : "#666",
-                              border: "1px solid #dff3ff",
-                              fontWeight: primaryCellKeys.has(column.key) ? 500 : 400,
-                            }}
-                          >
-                            {column.key === "passed" ? (
-                              renderCheckbox()
-                            ) : canEdit ? (
-                              <input
-                                value={String(row[column.key] ?? "")}
-                                onChange={(e) => updateMixedRowCell(sectionIndex, rowIndex, column.key, e.target.value)}
-                                style={{
-                                  ...editableInputStyle,
-                                  textAlign: column.align === "center" ? "center" : "left",
-                                  fontWeight: primaryCellKeys.has(column.key) ? 500 : 400,
-                                  color: column.key === "correct" ? "#2e7d32" : "#004aad",
-                                }}
-                              />
-                            ) : (
-                              <span style={{ color: column.key === "correct" ? "#2e7d32" : undefined, fontWeight: column.key === "correct" ? 700 : undefined }}>
-                                {a(String(row[column.key] ?? ""))}
-                              </span>
-                            )}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  const sections = resolvedDraft.sections as CheckboxTableSection[];
-
-  return (
-    <div>
-      {renderInstructions()}
-
-      <div className="space-y-6">
-        {sections.map((section, sectionIndex) => (
-          <div key={`${section.titleFr}-${sectionIndex}`} className="p-5 rounded-xl" style={{ background: "#dff3ff" }}>
-            {canEdit ? (
-              <>
-                <input
-                  value={section.titleFr}
-                  onChange={(e) => updateCheckboxSection(sectionIndex, { titleFr: e.target.value })}
-                  className="text-base mb-3 font-bold"
-                  style={{ ...editableInputStyle, fontWeight: 700, marginBottom: 12 }}
-                />
-                <textarea
-                  value={section.promptFr}
-                  onChange={(e) => updateCheckboxSection(sectionIndex, { promptFr: e.target.value })}
-                  rows={2}
-                  className="text-sm mb-3"
-                  style={{ ...editableTextareaStyle, color: "#666", marginBottom: 12 }}
-                />
-              </>
-            ) : (
-              <>
-                <h3 className="text-base mb-4 font-bold" style={{ color: "#004aad" }}>{a(section.titleFr)}</h3>
-                <p className="text-sm mb-3" style={{ color: "#666" }}>{a(section.promptFr)}</p>
-              </>
-            )}
-            <table className="w-full" style={{ borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ background: "#ffffff" }}>
-                  {section.columns.map((column) => (
-                    <th
-                      key={column.key}
-                      className={`px-3 py-2 text-sm ${column.align === "center" ? "text-center" : "text-left"}`}
-                      style={{ color: "#004aad", border: "1px solid #dff3ff" }}
-                    >
-                      {a(column.labelFr)}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {section.rows.map((row, rowIndex) => (
-                  <tr key={rowIndex} style={{ borderBottom: "1px solid #dff3ff" }}>
-                    {section.columns.map((column) => (
-                      <td
-                        key={column.key}
-                        className={`px-3 py-2 text-sm ${column.align === "center" ? "text-center" : "text-left"}`}
-                        style={{
-                          color: column.key === "passed" ? "#004aad" : primaryCellKeys.has(column.key) ? "#004aad" : "#666",
-                          border: "1px solid #dff3ff",
-                          fontWeight: primaryCellKeys.has(column.key) ? 500 : 400,
-                        }}
-                      >
-                        {column.key === "passed" ? (
-                          renderCheckbox()
-                        ) : canEdit ? (
-                          <input
-                            value={String(row[column.key] ?? "")}
-                            onChange={(e) => updateRowCell(sectionIndex, rowIndex, column.key, e.target.value)}
-                            style={{
-                              ...editableInputStyle,
-                              textAlign: column.align === "center" ? "center" : "left",
-                              fontWeight: primaryCellKeys.has(column.key) ? 500 : 400,
-                            }}
-                          />
-                        ) : (
-                          a(String(row[column.key] ?? ""))
-                        )}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {!evaluate && (
+          <div className="mt-8">
+            <label className="block mb-2" style={{ color: "#004aad", fontWeight: 600 }}>
+              {t("evaluation.comments")}
+            </label>
+            <textarea
+              rows={6}
+              disabled
+              readOnly
+              className="w-full px-4 py-3 rounded-xl border"
+              style={{ background: "#ffffff", borderColor: "#dff3ff", color: "#94a3b8", resize: "none" }}
+              placeholder={t("evaluation.addComments")}
+              value=""
+            />
           </div>
-        ))}
+        )}
       </div>
-    </div>
-  );
+    );
+  }
+
+  return null;
 }

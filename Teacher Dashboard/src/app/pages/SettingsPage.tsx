@@ -1,9 +1,11 @@
 import { useNavigate, useLocation } from "react-router";
 import {
-  BookOpen, LogOut, BarChart3, Settings, FileText, User, GraduationCap, UserPlus,
+  LogOut, BarChart3, Settings, FileText, User, GraduationCap, UserPlus,
 } from "lucide-react";
+import { BrandMark } from "../components/BrandMark";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
+import { schoolNavItems } from "../i18n/navHelpers";
 import { usePortalLogout } from "../hooks/usePortalLogout";
 import { BoardLayout } from "../components/BoardLayout";
 
@@ -208,26 +210,16 @@ export function SettingsPage() {
     );
   }
 
-  const menuItems = [
-    { icon: BarChart3, label: t("common.overview"), active: false, path: "/school/reports" },
-    { icon: GraduationCap, label: a("Académiques"), active: false, path: "/school/academics" },
-    { icon: FileText, label: t("nav.assessments"), active: false, path: "/school/assessments" },
-    { icon: UserPlus, label: t("nav.teacherRequests"), active: false, path: "/school/teachers" },
-    { icon: User, label: t("nav.profile"), active: false, path: "/profile?portal=school" },
-    { icon: Settings, label: t("nav.settings"), active: true, path: "/school/settings" },
-  ];
+  const menuItems = schoolNavItems("settings", t("nav.teacherRequests"));
 
   return (
     <div className="h-screen flex overflow-hidden" style={{ background: "#dff3ff" }}>
       <div className="w-64 p-6 flex flex-col overflow-y-auto" style={{ background: "#ffffff", borderRight: "1px solid #dff3ff" }}>
-        <div className="flex items-center gap-3 mb-10">
-          <BookOpen className="w-8 h-8" style={{ color: "#004aad" }} />
-          <div>
-            <h1 className="text-base font-bold leading-tight" style={{ color: "#004aad" }}>{t("common.appName")}</h1>
-            <p className="text-xs mt-0.5 px-2 py-0.5 rounded-full inline-block" style={{ background: "#dff3ff", color: "#004aad" }}>
-              {t("school.portal")}
-            </p>
-          </div>
+        <div className="mb-10 min-w-0">
+          <BrandMark height={34} />
+          <p className="text-xs mt-1.5 px-2 py-0.5 rounded-full inline-block" style={{ background: "#dff3ff", color: "#004aad" }}>
+            {t("school.portal")}
+          </p>
         </div>
 
         <nav className="flex-1 space-y-1">

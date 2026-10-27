@@ -53,7 +53,13 @@ Open in your browser:
 To also load demo data (teacher login gisele@example.com / password):
   https://lecturescientifique.ca/deploy-setup.php?token=9a9a85e19b814b078eca5b94f27dad02&seed=1
 
-It will: check the DB connection, run migrations, (optionally) seed,
+To publish/update the 15 platform workshop assessments (templates + Assign to All):
+  https://lecturescientifique.ca/deploy-setup.php?token=9a9a85e19b814b078eca5b94f27dad02&sync_workshops=1
+
+To archive old platform workshops first, then create the 15:
+  https://lecturescientifique.ca/deploy-setup.php?token=9a9a85e19b814b078eca5b94f27dad02&sync_workshops=1&replace_workshops=1
+
+It will: check the DB connection, run migrations, (optionally) seed / sync workshops,
 link storage, and cache config.
 
 ------------------------------------------------------------

@@ -54,6 +54,8 @@ class SignupController extends Controller
 
     private function completeIndividualSignup(Request $request, array $data): JsonResponse
     {
+        $plainPassword = $data['password'];
+
         $user = DB::transaction(function () use ($data) {
             return User::create([
                 'name' => trim($data['first_name'].' '.$data['last_name']),
@@ -63,35 +65,45 @@ class SignupController extends Controller
                 'password' => $data['password'],
                 'role' => 'teacher',
                 'preferred_language' => $data['preferred_language'],
-                'school_board' => $data['school_board'] ?: null,
-                'account_status' => 'active',
+                // Free-text school board from signup is informational only — never a licence link.
+                'school_board' => filled($data['school_board'] ?? null) ? trim((string) $data['school_board']) : null,
+                'school_id' => null,
+                'account_status' => 'inactive',
                 'affiliation_type' => 'individual',
+                'registration_source' => null,
                 'started_at' => now()->toDateString(),
-                'trial_started_at' => now(),
-                'trial_ends_at' => now()->addDays(30),
-                'subscription_status' => 'trialing',
-                'subscription_plan' => $data['plan'] ?? null,
+                'email_verified_at' => null,
+                // Trial begins when the teacher activates via email.
+                'trial_started_at' => null,
+                'trial_ends_at' => null,
+                'subscription_status' => null,
+                'subscription_plan' => null,
             ]);
         });
 
-        Auth::login($user);
-        $request->session()->regenerate();
-
+        $emailSent = false;
         try {
-            NotificationMailer::sendWelcome($user);
+            NotificationMailer::sendVerifyAccount($user, $plainPassword);
+            $emailSent = true;
         } catch (\Throwable $e) {
-            Log::error('Signup emails failed', [
+            Log::error('Signup activation email failed', [
                 'user_id' => $user->id,
                 'error' => $e->getMessage(),
             ]);
         }
 
-        AuditLogger::log('Create', 'Teacher', "{$user->displayName()} signed up", 'info', $request, subject: $user);
+        AuditLogger::log('Create', 'Teacher', "{$user->displayName()} signed up (trial)", 'info', $request, subject: $user);
+
+        $trialDays = PlatformSetting::trialPeriodDays();
 
         return response()->json([
-            'message' => 'Account created.',
-            'pending_activation' => false,
-            'user' => $this->formatAuthUser($user),
+            'message' => $emailSent
+                ? "Account created. Please check your email to activate your account and start your {$trialDays}-day trial."
+                : 'Account created, but the activation email could not be sent. Contact support to activate.',
+            'pending_activation' => true,
+            'email_sent' => $emailSent,
+            'trial_period_days' => $trialDays,
+            'user' => null,
         ], 201);
     }
 
@@ -183,7 +195,11 @@ class SignupController extends Controller
             'email' => ['required', 'email'],
         ]);
 
-        $user = User::query()->where('email', strtolower(trim($data['email'])))->first();
+        $email = strtolower(trim($data['email']));
+
+        // Prefer contact_email (admin account email), then login email.
+        $user = User::query()->where('contact_email', $email)->first()
+            ?? User::query()->where('email', $email)->first();
 
         // Always return success to avoid account enumeration
         if (! $user) {
@@ -194,10 +210,14 @@ class SignupController extends Controller
 
         $token = Password::broker()->createToken($user);
         $frontend = rtrim(config('app.frontend_url', config('app.url')), '/');
-        $resetUrl = $frontend.'/reset-password?'.http_build_query([
+        $query = [
             'token' => $token,
             'email' => $user->email,
-        ]);
+        ];
+        if ($user->role === 'admin') {
+            $query['portal'] = 'admin';
+        }
+        $resetUrl = $frontend.'/reset-password?'.http_build_query($query);
 
         try {
             NotificationMailer::sendResetPassword($user, $resetUrl, 30);

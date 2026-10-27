@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
-import { AdminLayout } from "./AdminLayout";
 import {
-  Plus, Search, Edit2, Trash2, X, ChevronDown, ClipboardList, CheckSquare, Copy, Loader2, Archive, RotateCcw,
+  Plus, Search, Edit2, Trash2, X, ChevronDown, ClipboardList, CheckSquare, Copy, Loader2, Archive, RotateCcw, Eye, FileUp,
 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { toast } from "sonner";
+import { AdminLayout } from "./AdminLayout";
 import {
   adminAssessmentsApi,
   type AdminAssessmentPayload,
   type AdminAssessmentQuestion,
   type AdminAssessmentRecord,
+  type AdminAssessmentGradeOption,
 } from "../../api/client";
 import { useLanguage } from "../../i18n";
 import { workshopOptions } from "../../i18n/atelierHelpers";
@@ -20,35 +22,68 @@ import {
 } from "../../evaluation/workshopTemplates";
 import { WorkshopTemplatePreview } from "../../components/WorkshopTemplatePreview";
 
-const ASSESSMENT_GRADES = ["Kindergarten", "Grade 1", "Grade 2", "Grade 3", "Grade 3+"] as const;
+/** Workshops that ship with a PDF attachment from the Atelier folders. */
+const PDF_ATTACHMENT_ATELIERS = new Set([1, 2, 3, 4, 7, 8, 9, 10, 11, 12, 13, 15]);
+
+/** Stored grade value that makes an assessment visible to every class type. */
+const ASSIGN_TO_ALL_GRADE = "All";
+const FALLBACK_GRADE_OPTIONS: AdminAssessmentGradeOption[] = [
+  { value: "Junior Kindergarten (JK)", label: "Junior Kindergarten (JK)" },
+  { value: "Senior Kindergarten (SK)", label: "Senior Kindergarten (SK)" },
+  { value: "Grade 1", label: "Grade 1" },
+  { value: "Grade 2", label: "Grade 2" },
+  { value: "Grade 3+", label: "Grade 3+" },
+];
+
+function formatAssessmentGradeLabel(
+  grade: string | undefined,
+  t: ReturnType<typeof useLanguage>["t"]
+): string {
+  if (!grade || grade === ASSIGN_TO_ALL_GRADE) return t("assessments.assignToAll");
+  return grade;
+}
 
 type Assessment = AdminAssessmentRecord;
 
 function templateFormatLabel(format: (typeof WORKSHOP_TEMPLATES)[number]["format"]): string {
   if (format === "letter_grid") return "Letter grid";
+  if (format === "letter_write_list") return "Letter writing list";
+  if (format === "checkbox_sections") return "Section checklists";
   if (format === "word_sound_list") return "Sound identification";
   if (format === "mixed_sections") return "Syllable & grapheme";
   if (format === "item_grid_sections") return "Reading grids";
   if (format === "mixed_reading_sections") return "Word families & reading";
   if (format === "fluency_sections") return "Fluency & decoding";
-  if (format === "comprehension_sections") return "Listening comprehension";
-  if (format === "multiple_choice") return "Multiple choice";
+  if (format === "comprehension_sections") return "Reading comprehension";
   return "Section checklists";
 }
 
-function AssessmentModal({ assessment, onClose, onSave, savingStatus }: {
+function AssessmentModal({ assessment, onClose, onSave, savingStatus, gradeOptions }: {
   assessment: Partial<Assessment>;
   onClose: () => void;
   onSave: (a: Partial<Assessment>, status: "Published" | "Draft") => void;
   savingStatus: "draft" | "publish" | null;
+  gradeOptions: AdminAssessmentGradeOption[];
 }) {
-  const { t, tp } = useLanguage();
+  const { t, tp, lang } = useLanguage();
   const atelierOptions = workshopOptions((n) => tp("evaluation.workshopN", { n }));
   const isNew = !assessment.id;
   const isLegacyMcq = !isNew && !assessment.template_id && (assessment.questions?.length ?? 0) > 0;
   const usesTemplate = isNew || !!assessment.template_id || !isLegacyMcq;
-
   const [form, setForm] = useState<Partial<Assessment>>(assessment);
+  const selectGrades = (() => {
+    const base = gradeOptions.length > 0 ? gradeOptions : FALLBACK_GRADE_OPTIONS;
+    const current = form.grade?.trim();
+    if (
+      current &&
+      current !== ASSIGN_TO_ALL_GRADE &&
+      !base.some((grade) => grade.value === current)
+    ) {
+      return [...base, { value: current, label: current }];
+    }
+    return base;
+  })();
+
   const [selectedTemplateId, setSelectedTemplateId] = useState<WorkshopTemplateId | "">(
     (assessment.template_id as WorkshopTemplateId) ?? ""
   );
@@ -208,12 +243,15 @@ function AssessmentModal({ assessment, onClose, onSave, savingStatus }: {
             <div>
               <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 5 }}>Grade Level</label>
               <select
-                value={form.grade || "Kindergarten"}
+                value={form.grade || ASSIGN_TO_ALL_GRADE}
                 onChange={(e) => setForm((x) => ({ ...x, grade: e.target.value }))}
                 style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, outline: "none" }}
               >
-                {ASSESSMENT_GRADES.map((grade) => (
-                  <option key={grade}>{grade}</option>
+                <option value={ASSIGN_TO_ALL_GRADE}>{t("assessments.assignToAll")}</option>
+                {selectGrades.map((grade) => (
+                  <option key={grade.value} value={grade.value}>
+                    {lang === "fr" ? (grade.label_fr || grade.label) : grade.label}
+                  </option>
                 ))}
               </select>
             </div>
@@ -411,6 +449,7 @@ function AssessmentModal({ assessment, onClose, onSave, savingStatus }: {
 function WorkshopCard({
   assessment,
   actionId,
+  pdfActionId,
   auto,
   t,
   tp,
@@ -420,9 +459,12 @@ function WorkshopCard({
   onDelete,
   onArchive,
   onRestore,
+  onViewPdf,
+  onReplacePdf,
 }: {
   assessment: Assessment;
   actionId: number | null;
+  pdfActionId: number | null;
   auto: ReturnType<typeof useLanguage>["auto"];
   t: ReturnType<typeof useLanguage>["t"];
   tp: ReturnType<typeof useLanguage>["tp"];
@@ -432,9 +474,17 @@ function WorkshopCard({
   onDelete: (id: number) => void;
   onArchive: (id: number) => void;
   onRestore: (id: number) => void;
+  onViewPdf: (assessment: Assessment) => void;
+  onReplacePdf: (assessment: Assessment, file: File) => void;
 }) {
   const busy = actionId === assessment.id;
+  const pdfBusy = pdfActionId === assessment.id;
   const hasStudentRecords = assessment.has_student_completions ?? false;
+  const pdf = assessment.atelier_pdf
+    ?? assessment.atelier_files?.find((f) => f.type === "pdf")
+    ?? null;
+  const supportsPdf = PDF_ATTACHMENT_ATELIERS.has(assessment.atelier) || Boolean(pdf);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   return (
     <div style={{
@@ -464,7 +514,16 @@ function WorkshopCard({
       </div>
       <div style={{ fontSize: 13, fontWeight: 600, color: "#1e293b", marginBottom: 5, lineHeight: 1.4 }}>{auto(assessment.title)}</div>
       <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>
-        {tp("evaluation.workshopN", { n: assessment.atelier })} · {assessment.grade}
+        {tp("evaluation.workshopN", { n: assessment.atelier })} · {formatAssessmentGradeLabel(assessment.grade, t)}
+        {pdf ? (
+          <span style={{ display: "block", marginTop: 4, color: "#047857" }}>
+            PDF · {pdf.name}
+          </span>
+        ) : supportsPdf && !archived ? (
+          <span style={{ display: "block", marginTop: 4, color: "#b45309" }}>
+            No PDF attached
+          </span>
+        ) : null}
       </div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 10, borderTop: "1px solid #f8fafc" }}>
         <span style={{ fontSize: 11, color: "#94a3b8" }}>
@@ -474,6 +533,52 @@ function WorkshopCard({
           {" · "}{assessment.created}
         </span>
         <div style={{ display: "flex", gap: 5 }}>
+          {!archived && supportsPdf && (
+            <>
+              <button
+                type="button"
+                onClick={() => onViewPdf(assessment)}
+                disabled={pdfBusy || !pdf}
+                title={pdf ? "View PDF" : "No PDF yet"}
+                style={{
+                  padding: "4px 8px",
+                  borderRadius: 5,
+                  border: "1px solid #bfdbfe",
+                  background: pdf ? "#eff6ff" : "#f8fafc",
+                  cursor: pdf && !pdfBusy ? "pointer" : "not-allowed",
+                  opacity: pdf ? 1 : 0.55,
+                }}
+              >
+                {pdfBusy ? <Loader2 size={12} className="animate-spin" color="#1d4ed8" /> : <Eye size={12} color="#1d4ed8" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={pdfBusy}
+                title={pdf ? "Replace PDF" : "Upload PDF"}
+                style={{
+                  padding: "4px 8px",
+                  borderRadius: 5,
+                  border: "1px solid #a7f3d0",
+                  background: "#ecfdf5",
+                  cursor: pdfBusy ? "not-allowed" : "pointer",
+                }}
+              >
+                {pdfBusy ? <Loader2 size={12} className="animate-spin" color="#047857" /> : <FileUp size={12} color="#047857" />}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf,.pdf"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) onReplacePdf(assessment, file);
+                }}
+              />
+            </>
+          )}
           {!archived && (
             <>
               <button
@@ -492,14 +597,24 @@ function WorkshopCard({
             </>
           )}
           {archived ? (
-            <button
-              onClick={() => onRestore(assessment.id)}
-              disabled={busy}
-              title={t("admin.workshops.restoreAction")}
-              style={{ padding: "4px 8px", borderRadius: 5, border: "1px solid #dbeafe", background: "#eff6ff", cursor: "pointer" }}
-            >
-              {busy ? <Loader2 size={12} className="animate-spin" color="#004aad" /> : <RotateCcw size={12} color="#004aad" />}
-            </button>
+            <>
+              <button
+                onClick={() => onRestore(assessment.id)}
+                disabled={busy}
+                title={t("admin.workshops.restoreAction")}
+                style={{ padding: "4px 8px", borderRadius: 5, border: "1px solid #dbeafe", background: "#eff6ff", cursor: busy ? "not-allowed" : "pointer" }}
+              >
+                {busy ? <Loader2 size={12} className="animate-spin" color="#004aad" /> : <RotateCcw size={12} color="#004aad" />}
+              </button>
+              <button
+                onClick={() => onDelete(assessment.id)}
+                disabled={busy}
+                title={t("admin.workshops.deleteArchived")}
+                style={{ padding: "4px 8px", borderRadius: 5, border: "1px solid #fee2e2", background: "#fff5f5", cursor: busy ? "not-allowed" : "pointer" }}
+              >
+                {busy ? <Loader2 size={12} className="animate-spin" color="#ef4444" /> : <Trash2 size={12} color="#ef4444" />}
+              </button>
+            </>
           ) : hasStudentRecords ? (
             <button
               onClick={() => onArchive(assessment.id)}
@@ -525,10 +640,11 @@ function WorkshopCard({
 }
 
 export function AdminWorkshopsPage() {
-  const { t, tp, auto } = useLanguage();
+  const { t, tp, auto, lang } = useLanguage();
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [archivedAssessments, setArchivedAssessments] = useState<Assessment[]>([]);
   const [summary, setSummary] = useState({ published: 0, drafts: 0, archived: 0 });
+  const [gradeOptions, setGradeOptions] = useState<AdminAssessmentGradeOption[]>(FALLBACK_GRADE_OPTIONS);
   const [search, setSearch] = useState("");
   const [gradeFilter, setGradeFilter] = useState("All Grades");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -537,6 +653,8 @@ export function AdminWorkshopsPage() {
   const [savingStatus, setSavingStatus] = useState<"draft" | "publish" | null>(null);
   const [error, setError] = useState("");
   const [actionId, setActionId] = useState<number | null>(null);
+  const [pdfActionId, setPdfActionId] = useState<number | null>(null);
+  const [clearingArchive, setClearingArchive] = useState(false);
 
   const loadAssessments = useCallback(async () => {
     setLoading(true);
@@ -554,6 +672,9 @@ export function AdminWorkshopsPage() {
         drafts: result.assessments.filter((a) => a.status === "Draft").length,
         archived: result.archived?.length ?? 0,
       });
+      if (result.grade_options?.length) {
+        setGradeOptions(result.grade_options);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load assessments.");
     } finally {
@@ -578,7 +699,7 @@ export function AdminWorkshopsPage() {
       title: data.title?.trim() || tp("assessments.defaultTitle", { n: atelier }),
       unit: data.unit ?? "",
       atelier,
-      grade: data.grade ?? "Kindergarten",
+      grade: data.grade ?? ASSIGN_TO_ALL_GRADE,
       status: data.status ?? "Draft",
       template_id: usesTemplate ? data.template_id : null,
       template_draft: usesTemplate ? data.template_draft : null,
@@ -613,18 +734,30 @@ export function AdminWorkshopsPage() {
   };
 
   const handleDelete = async (id: number) => {
-    const target = assessments.find((a) => a.id === id);
-    if (target?.has_student_completions) {
+    const activeTarget = assessments.find((a) => a.id === id);
+    const archivedTarget = archivedAssessments.find((a) => a.id === id);
+    const fromArchive = !!archivedTarget;
+
+    if (!fromArchive && activeTarget?.has_student_completions) {
       setError(t("admin.workshops.cannotDelete"));
       return;
     }
-    if (!window.confirm("Delete this assessment permanently?")) return;
+
+    const confirmMessage = fromArchive
+      ? t("admin.workshops.deleteArchivedConfirm")
+      : "Delete this assessment permanently?";
+    if (!window.confirm(confirmMessage)) return;
 
     setActionId(id);
     setError("");
     try {
       await adminAssessmentsApi.remove(id);
-      setAssessments((prev) => prev.filter((a) => a.id !== id));
+      if (fromArchive) {
+        setArchivedAssessments((prev) => prev.filter((a) => a.id !== id));
+        setSummary((prev) => ({ ...prev, archived: Math.max(0, prev.archived - 1) }));
+      } else {
+        setAssessments((prev) => prev.filter((a) => a.id !== id));
+      }
     } catch (err) {
       if (err instanceof Error && err.message.includes("cannot be deleted")) {
         setError(t("admin.workshops.cannotDelete"));
@@ -633,6 +766,23 @@ export function AdminWorkshopsPage() {
       }
     } finally {
       setActionId(null);
+    }
+  };
+
+  const handleClearArchive = async () => {
+    if (archivedAssessments.length === 0) return;
+    if (!window.confirm(t("admin.workshops.clearArchiveConfirm"))) return;
+
+    setClearingArchive(true);
+    setError("");
+    try {
+      await adminAssessmentsApi.clearArchived();
+      setArchivedAssessments([]);
+      setSummary((prev) => ({ ...prev, archived: 0 }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to clear archive.");
+    } finally {
+      setClearingArchive(false);
     }
   };
 
@@ -689,6 +839,42 @@ export function AdminWorkshopsPage() {
     }
   };
 
+  const handleViewPdf = async (assessment: Assessment) => {
+    const pdf = assessment.atelier_pdf
+      ?? assessment.atelier_files?.find((f) => f.type === "pdf")
+      ?? null;
+    if (!pdf) {
+      toast.error("No PDF attached yet.");
+      return;
+    }
+    setPdfActionId(assessment.id);
+    try {
+      await adminAssessmentsApi.viewAtelierPdf(assessment.id, pdf.id);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Unable to open PDF.");
+    } finally {
+      setPdfActionId(null);
+    }
+  };
+
+  const handleReplacePdf = async (assessment: Assessment, file: File) => {
+    if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
+      toast.error("Please choose a PDF file.");
+      return;
+    }
+    setPdfActionId(assessment.id);
+    setError("");
+    try {
+      const result = await adminAssessmentsApi.replaceAtelierPdf(assessment.id, file);
+      setAssessments((prev) => prev.map((a) => (a.id === assessment.id ? result.assessment : a)));
+      toast.success(result.message || "PDF saved.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save PDF.");
+    } finally {
+      setPdfActionId(null);
+    }
+  };
+
   return (
     <AdminLayout>
       <div style={{ padding: "32px 36px" }}>
@@ -700,7 +886,7 @@ export function AdminWorkshopsPage() {
             </p>
           </div>
           <button
-            onClick={() => setModal({ status: "Draft", grade: "Kindergarten", atelier: 1, questions: [], title: "" })}
+            onClick={() => setModal({ status: "Draft", grade: ASSIGN_TO_ALL_GRADE, atelier: 1, questions: [], title: "" })}
             style={{ display: "flex", alignItems: "center", gap: 7, padding: "10px 18px", borderRadius: 9, border: "none", background: "#004aad", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
           >
             <Plus size={15} /> New Assessment
@@ -723,8 +909,23 @@ export function AdminWorkshopsPage() {
               style={{ width: "100%", padding: "9px 12px 9px 34px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, outline: "none", boxSizing: "border-box" }}
             />
           </div>
+          <div style={{ position: "relative" }}>
+            <select
+              value={gradeFilter}
+              onChange={(e) => setGradeFilter(e.target.value)}
+              style={{ padding: "9px 32px 9px 12px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, background: "white", cursor: "pointer", outline: "none", appearance: "none" }}
+            >
+              <option value="All Grades">{t("assessments.allGrades")}</option>
+              <option value={ASSIGN_TO_ALL_GRADE}>{t("assessments.assignToAll")}</option>
+              {gradeOptions.map((grade) => (
+                <option key={grade.value} value={grade.value}>
+                  {lang === "fr" ? (grade.label_fr || grade.label) : grade.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={13} color="#94a3b8" style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+          </div>
           {[
-            { value: gradeFilter, onChange: setGradeFilter, options: ["All Grades", ...ASSESSMENT_GRADES] },
             { value: statusFilter, onChange: setStatusFilter, options: ["All", "Published", "Draft"] },
           ].map((sel, i) => (
             <div key={i} style={{ position: "relative" }}>
@@ -751,6 +952,7 @@ export function AdminWorkshopsPage() {
                 key={assessment.id}
                 assessment={assessment}
                 actionId={actionId}
+                pdfActionId={pdfActionId}
                 auto={auto}
                 t={t}
                 tp={tp}
@@ -759,6 +961,8 @@ export function AdminWorkshopsPage() {
                 onDelete={handleDelete}
                 onArchive={handleArchive}
                 onRestore={handleRestore}
+                onViewPdf={handleViewPdf}
+                onReplacePdf={handleReplacePdf}
               />
             ))}
           </div>
@@ -769,18 +973,44 @@ export function AdminWorkshopsPage() {
 
         {!loading && archivedAssessments.length > 0 && (
           <div style={{ marginTop: 36 }}>
-            <h2 style={{ fontSize: 18, fontWeight: 700, color: "#0a1628", margin: "0 0 6px" }}>
-              {t("admin.workshops.archiveTitle")}
-            </h2>
-            <p style={{ color: "#64748b", fontSize: 13, margin: "0 0 16px" }}>
-              {t("admin.workshops.archiveHint")}
-            </p>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 16 }}>
+              <div>
+                <h2 style={{ fontSize: 18, fontWeight: 700, color: "#0a1628", margin: "0 0 6px" }}>
+                  {t("admin.workshops.archiveTitle")}
+                </h2>
+                <p style={{ color: "#64748b", fontSize: 13, margin: 0 }}>
+                  {t("admin.workshops.archiveHint")}
+                </p>
+              </div>
+              <button
+                onClick={handleClearArchive}
+                disabled={clearingArchive || actionId !== null}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "8px 14px",
+                  borderRadius: 8,
+                  border: "1px solid #fecaca",
+                  background: "#fff1f2",
+                  color: "#be123c",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: clearingArchive || actionId !== null ? "not-allowed" : "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {clearingArchive ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                {t("admin.workshops.clearArchive")}
+              </button>
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 14 }}>
               {archivedAssessments.map((assessment) => (
                 <WorkshopCard
                   key={assessment.id}
                   assessment={assessment}
                   actionId={actionId}
+                  pdfActionId={pdfActionId}
                   auto={auto}
                   t={t}
                   tp={tp}
@@ -790,6 +1020,8 @@ export function AdminWorkshopsPage() {
                   onDelete={handleDelete}
                   onArchive={handleArchive}
                   onRestore={handleRestore}
+                  onViewPdf={handleViewPdf}
+                  onReplacePdf={handleReplacePdf}
                 />
               ))}
             </div>
@@ -802,6 +1034,7 @@ export function AdminWorkshopsPage() {
           onClose={() => savingStatus === null && setModal(null)}
           onSave={handleSave}
           savingStatus={savingStatus}
+          gradeOptions={gradeOptions}
         />
       )}
     </AdminLayout>

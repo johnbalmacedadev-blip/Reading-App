@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ClassType;
+use App\Models\PlatformSetting;
 use App\Models\School;
 use App\Models\SchoolBoard;
 use App\Models\SchoolClass;
@@ -53,6 +55,7 @@ class SchoolAcademicsController extends Controller
 
         $classes = $classesQuery->get();
         $classIds = $classes->pluck('id');
+        $classTypesByKey = $this->classTypeLookup();
 
         $evaluationsByKey = StudentEvaluation::query()
             ->whereIn('class_id', $classIds)
@@ -65,14 +68,14 @@ class SchoolAcademicsController extends Controller
         foreach ($classes as $class) {
             $teacherId = $class->teacher_id;
             $teacherName = $this->teacherName($class->teacher);
-            $normalizedGrade = $this->normalizeGrade($class->grade);
+            $grade = $this->resolveGradeLabel($class->grade, $classTypesByKey);
 
             if ($teacherId) {
                 if (! isset($teachersById[$teacherId])) {
                     $teachersById[$teacherId] = [
                         'id' => $teacherId,
                         'name' => $teacherName,
-                        'grade' => $normalizedGrade,
+                        'grade' => $grade,
                         'classes' => [],
                         'student_ateliers' => [],
                         'student_statuses' => [],
@@ -95,7 +98,7 @@ class SchoolAcademicsController extends Controller
                     'id' => $student->id,
                     'name' => $student->fullName(),
                     'class_name' => $class->name,
-                    'grade' => $normalizedGrade,
+                    'grade' => $grade,
                     'teacher' => $teacherName,
                     'atelier' => $atelier,
                     'en_voie' => $enVoie,
@@ -134,12 +137,38 @@ class SchoolAcademicsController extends Controller
             ->values()
             ->all();
 
-        $grades = collect($students)
-            ->pluck('grade')
-            ->unique()
-            ->sortBy(fn (string $grade) => $this->gradeSortOrder($grade))
+        // Grade filter options come from configured class types in the database.
+        $configuredGrades = ClassType::activeOrdered()
+            ->get(['name', 'name_fr', 'sort_order'])
+            ->map(fn (ClassType $type) => [
+                'value' => $type->name,
+                'label' => $type->name,
+                'label_fr' => $type->name_fr ?: $type->name,
+            ])
             ->values()
             ->all();
+
+        // Keep any school class grades that are not in class_types (legacy labels).
+        $presentGrades = collect($students)
+            ->pluck('grade')
+            ->merge($classes->pluck('grade')->map(fn ($grade) => $this->resolveGradeLabel($grade, $classTypesByKey)))
+            ->filter(fn ($grade) => is_string($grade) && $grade !== '')
+            ->unique()
+            ->values()
+            ->all();
+
+        $configuredValues = array_column($configuredGrades, 'value');
+        foreach ($presentGrades as $grade) {
+            if (! in_array($grade, $configuredValues, true)) {
+                $configuredGrades[] = [
+                    'value' => $grade,
+                    'label' => $grade,
+                    'label_fr' => $grade,
+                ];
+            }
+        }
+
+        $grades = array_values(array_column($configuredGrades, 'value'));
 
         return response()->json([
             'school' => [
@@ -150,6 +179,7 @@ class SchoolAcademicsController extends Controller
             'school_year' => $schoolYear !== '' ? $schoolYear : SchoolYear::defaultLabel(),
             'available_years' => $availableYears,
             'grades' => $grades,
+            'grade_options' => $configuredGrades,
             'students' => $students,
             'teachers' => $teachers,
             'summary' => [
@@ -251,36 +281,74 @@ class SchoolAcademicsController extends Controller
         return $teacher->name;
     }
 
-    private function normalizeGrade(?string $grade): string
+    /**
+     * @return array{by_name: array<string, string>, by_alias: array<string, string>}
+     */
+    private function classTypeLookup(): array
     {
-        $value = strtolower(trim($grade ?? ''));
+        $byName = [];
+        $byAlias = [];
 
-        return match (true) {
-            $value === '' => 'Other',
-            str_contains($value, 'maternelle'), $value === 'kindergarten' => 'Maternelle',
-            str_contains($value, 'jardin') => 'Jardin',
-            str_contains($value, '1re'), str_contains($value, 'grade 1'), str_contains($value, '1st') => '1re année',
-            str_contains($value, '2e'), str_contains($value, 'grade 2'), str_contains($value, '2nd') => '2e année',
-            str_contains($value, '3e'), str_contains($value, 'grade 3') => '3e année',
-            default => $grade ?? 'Other',
-        };
+        foreach (ClassType::query()->orderBy('sort_order')->get(['name', 'name_fr', 'code']) as $type) {
+            $byName[$type->name] = $type->name;
+            foreach (array_filter([$type->name, $type->name_fr, $type->code]) as $alias) {
+                $byAlias[mb_strtolower(trim((string) $alias))] = $type->name;
+            }
+        }
+
+        return ['by_name' => $byName, 'by_alias' => $byAlias];
     }
 
-    private function gradeSortOrder(string $grade): int
+    /**
+     * Prefer the class-type label stored on the class (matches class_types.name).
+     * Fall back to resolving aliases so legacy French labels still filter cleanly.
+     *
+     * @param  array{by_name: array<string, string>, by_alias: array<string, string>}|null  $lookup
+     */
+    private function resolveGradeLabel(?string $grade, ?array $lookup = null): string
     {
-        return match ($grade) {
-            'Maternelle' => 1,
-            'Jardin' => 2,
-            '1re année' => 3,
-            '2e année' => 4,
-            '3e année' => 5,
-            default => 99,
-        };
+        $trimmed = trim((string) $grade);
+        if ($trimmed === '') {
+            return 'Other';
+        }
+
+        $lookup ??= $this->classTypeLookup();
+
+        if (isset($lookup['by_name'][$trimmed])) {
+            return $lookup['by_name'][$trimmed];
+        }
+
+        $aliasKey = mb_strtolower($trimmed);
+        if (isset($lookup['by_alias'][$aliasKey])) {
+            return $lookup['by_alias'][$aliasKey];
+        }
+
+        // Legacy French / short labels -> configured class type when possible.
+        $legacyMap = [
+            'Maternelle' => 'Junior Kindergarten (JK)',
+            'Jardin' => 'Senior Kindergarten (SK)',
+            'Kindergarten' => 'Junior Kindergarten (JK)',
+            '1re année' => 'Grade 1',
+            '2e année' => 'Grade 2',
+            '3e année' => 'Grade 3+',
+            '3e année+' => 'Grade 3+',
+            'Grade 3' => 'Grade 3+',
+        ];
+
+        if (isset($legacyMap[$trimmed]) && isset($lookup['by_name'][$legacyMap[$trimmed]])) {
+            return $legacyMap[$trimmed];
+        }
+
+        return $trimmed;
     }
 
     /** @return array{code: string, name: string}|null */
     private function formatSchoolBoard(?string $boardCode): ?array
     {
+        if (! PlatformSetting::boolValue('school_can_view_board', false)) {
+            return null;
+        }
+
         $code = trim((string) ($boardCode ?? ''));
 
         if ($code === '') {

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import {
-  BookOpen, LogOut, TrendingUp, GraduationCap, User, Settings,
+  LogOut, TrendingUp, GraduationCap, User, Settings,
   ClipboardList, Search, ChevronDown, Eye, Edit2, CheckCircle2, Loader2, X, CheckSquare, Archive, RotateCcw, UserPlus,
 } from "lucide-react";
+import { BrandMark } from "../components/BrandMark";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
+import { schoolNavItems } from "../i18n/navHelpers";
 import { usePortalLogout } from "../hooks/usePortalLogout";
 import { AssessmentEditModal, type AssessmentEditData } from "../components/AssessmentEditModal";
 import {
@@ -358,24 +360,14 @@ export function SchoolAssessmentsPage() {
     ? t("assessments.viewOnlyBoard")
     : null;
 
-  const navItems = [
-    { icon: TrendingUp, label: "Overview", path: "/school/reports", active: false },
-    { icon: GraduationCap, label: "Academics", path: "/school/academics", active: false },
-    { icon: ClipboardList, label: "Assessments", path: "/school/assessments", active: true },
-    { icon: UserPlus, label: t("nav.teacherRequests"), path: "/school/teachers", active: false },
-    { icon: User, label: "Profile", path: "/profile?portal=school", active: false },
-    { icon: Settings, label: "Settings", path: "/school/settings", active: false },
-  ];
+  const navItems = schoolNavItems("assessments", t("nav.teacherRequests"));
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "#dff3ff" }}>
       <aside style={{ width: 220, background: "#ffffff", borderRight: "1px solid #dff3ff", display: "flex", flexDirection: "column", padding: "28px 16px 20px", flexShrink: 0 }}>
         <div style={{ marginBottom: 28 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-            <BookOpen size={24} style={{ color: "#004aad" }} />
-            <span style={{ fontWeight: 700, fontSize: 15, color: "#004aad" }}>Lecture Scientifique</span>
-          </div>
-          <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10, background: "#dff3ff", color: "#004aad" }}>
+          <BrandMark height={32} />
+          <span style={{ display: "inline-block", marginTop: 8, fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10, background: "#dff3ff", color: "#004aad" }}>
             School Portal
           </span>
         </div>

@@ -23,8 +23,10 @@ import { UserAvatar } from "../components/UserAvatar";
 import { TeacherLayout } from "../components/TeacherLayout";
 import { useLanguage } from "../i18n";
 import { useAuth } from "../context/AuthContext";
+import { toast } from "sonner";
 import { formatAtelierLabel } from "../i18n/atelierHelpers";
 import { teacherLibraryApi, teacherUnitsApi, type DownloadableCategoryItem, type PedagogicalUnitItem } from "../api/client";
+import { userMayAccessResource } from "../utils/teacherAccess";
 
 interface Resource {
   id: number;
@@ -95,7 +97,13 @@ export function LibraryPage() {
               <p className="text-sm mt-1" style={{ color: "#004aad", opacity: 0.6 }}>{t("library.smlSubtitle")}</p>
             </div>
             <button
-              onClick={() => window.open(teacherLibraryApi.continuumDownloadUrl(), "_blank")}
+              onClick={() => {
+                if (!userMayAccessResource(user, "export", "continuum")) {
+                  toast.error(t("resource.upgradeToDownload"));
+                  return;
+                }
+                window.open(teacherLibraryApi.continuumDownloadUrl(), "_blank");
+              }}
               className="px-5 py-2.5 rounded-xl flex items-center gap-2 text-sm transition-all cursor-pointer"
               style={{ background: "#004aad", color: "#ffffff" }}
             >
@@ -356,9 +364,12 @@ export function LibraryPage() {
                     <div className="w-full space-y-2 mt-4">
                       <button
                         onClick={() => {
-                          if (unit?.has_quick_sheet) {
-                            window.open(teacherUnitsApi.quickSheetDownloadUrl(unit.id), "_blank");
+                          if (!unit?.has_quick_sheet) return;
+                          if (!userMayAccessResource(user, "export", "pedagogical_sheets")) {
+                            toast.error(t("resource.upgradeToDownload"));
+                            return;
                           }
+                          window.open(teacherUnitsApi.quickSheetDownloadUrl(unit.id), "_blank");
                         }}
                         disabled={!unit?.has_quick_sheet}
                         className="w-full py-2 rounded-full text-xs font-semibold transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
@@ -472,6 +483,11 @@ export function LibraryPage() {
                         key={resource.id}
                         href={teacherLibraryApi.downloadableDownloadUrl(resource.id)}
                         download
+                        onClick={(e) => {
+                          if (userMayAccessResource(user, "downloadable", resource.id)) return;
+                          e.preventDefault();
+                          toast.error(t("resource.upgradeToDownload"));
+                        }}
                         className="flex items-center gap-2 px-4 py-3 rounded-xl transition-all text-left"
                         style={{
                           background: `${category.color}08`,

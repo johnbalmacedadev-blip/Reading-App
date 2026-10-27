@@ -1,0 +1,848 @@
+[
+  {
+    "title": "Workshop 1 Assessment",
+    "unit": null,
+    "atelier": 1,
+    "grade": "All",
+    "status": "published",
+    "template_id": "format_1",
+    "template_draft": {
+      "name": "Template Format 1",
+      "instructionsFr": "Présenter chaque lettre majuscule à l'élève et demander : \"Quel est le nom de cette lettre ?\" puis \"Quel son fait cette lettre ?\"",
+      "sections": [
+        {
+          "titleFr": "Lettres majuscules",
+          "letters": [
+            "A",
+            "B",
+            "C",
+            "D",
+            "E",
+            "F",
+            "G",
+            "H",
+            "I",
+            "J",
+            "K",
+            "L",
+            "M",
+            "N",
+            "O",
+            "P",
+            "Q",
+            "R",
+            "S",
+            "T",
+            "U",
+            "V",
+            "W",
+            "X",
+            "Y",
+            "Z"
+          ],
+          "columns": [
+            "name",
+            "sound"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "title": "Workshop 2 Assessment",
+    "unit": null,
+    "atelier": 2,
+    "grade": "All",
+    "status": "published",
+    "template_id": "format_2",
+    "template_draft": {
+      "name": "Template Format 2",
+      "instructionsFr": "Présenter chaque lettre minuscule à l'élève et demander : « Quel est le nom de cette lettre ? » puis « Quel son fait cette lettre ? »",
+      "sections": [
+        {
+          "titleFr": "Lettres minuscules",
+          "letters": [
+            "a",
+            "b",
+            "c",
+            "d",
+            "e",
+            "f",
+            "g",
+            "h",
+            "i",
+            "j",
+            "k",
+            "l",
+            "m",
+            "n",
+            "o",
+            "p",
+            "q",
+            "r",
+            "s",
+            "t",
+            "u",
+            "v",
+            "w",
+            "x",
+            "y",
+            "z"
+          ],
+          "columns": [
+            "name",
+            "sound"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "title": "Workshop 3 Assessment",
+    "unit": null,
+    "atelier": 3,
+    "grade": "All",
+    "status": "published",
+    "template_id": "format_3",
+    "template_draft": {
+      "name": "Template Format 3",
+      "instructionsFr": "Dire le nom de chaque lettre majuscule à l'élève et lui demander de l'écrire.",
+      "sections": [
+        {
+          "titleFr": "Écrire les lettres majuscules",
+          "items": [
+            "A",
+            "B",
+            "C",
+            "D",
+            "E",
+            "F",
+            "G",
+            "H",
+            "I",
+            "J",
+            "K",
+            "L",
+            "M",
+            "N",
+            "O",
+            "P",
+            "Q",
+            "R",
+            "S",
+            "T",
+            "U",
+            "V",
+            "W",
+            "X",
+            "Y",
+            "Z"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "title": "Workshop 4 Assessment",
+    "unit": null,
+    "atelier": 4,
+    "grade": "All",
+    "status": "published",
+    "template_id": "format_4",
+    "template_draft": {
+      "name": "Template Format 4",
+      "instructionsFr": "Dire le nom de chaque lettre minuscule à l'élève et lui demander de l'écrire.",
+      "sections": [
+        {
+          "titleFr": "Écrire les lettres minuscules",
+          "items": [
+            "a",
+            "b",
+            "c",
+            "d",
+            "e",
+            "f",
+            "g",
+            "h",
+            "i",
+            "j",
+            "k",
+            "l",
+            "m",
+            "n",
+            "o",
+            "p",
+            "q",
+            "r",
+            "s",
+            "t",
+            "u",
+            "v",
+            "w",
+            "x",
+            "y",
+            "z"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "title": "Workshop 5 Assessment",
+    "unit": null,
+    "atelier": 5,
+    "grade": "All",
+    "status": "published",
+    "template_id": "format_5",
+    "template_draft": {
+      "name": "Template Format 5",
+      "instructionsFr": "Évaluer la capacité de l'élève à identifier les rimes, segmenter/fusionner et compter les syllabes. Pour chaque section, demander à l'élève d'écouter attentivement et de répondre.",
+      "sections": [
+        {
+          "titleFr": "Identifier des mots qui riment",
+          "promptFr": "Demander à l'élève : « Est-ce que ces mots riment? »",
+          "columns": [
+            {
+              "key": "pair",
+              "labelFr": "Paire de mots",
+              "align": "left"
+            },
+            {
+              "key": "answer",
+              "labelFr": "Réponse correcte",
+              "align": "center"
+            },
+            {
+              "key": "passed",
+              "labelFr": "Réussi",
+              "align": "center"
+            }
+          ],
+          "rows": [
+            {
+              "pair": "chat / rat",
+              "answer": "Oui"
+            },
+            {
+              "pair": "fleur / table",
+              "answer": "Non"
+            },
+            {
+              "pair": "bateau / chapeau",
+              "answer": "Oui"
+            },
+            {
+              "pair": "pain / main",
+              "answer": "Oui"
+            },
+            {
+              "pair": "lune / porte",
+              "answer": "Non"
+            }
+          ],
+          "showPassedColumn": true
+        },
+        {
+          "titleFr": "Segmenter et fusionner des syllabes",
+          "promptFr": "Lire le mot segmenté. Demander à l'élève : « Quel mot est-ce que ça fait? »",
+          "columns": [
+            {
+              "key": "segmented",
+              "labelFr": "Mot segmenté",
+              "align": "left"
+            },
+            {
+              "key": "full",
+              "labelFr": "Mot complet",
+              "align": "center"
+            },
+            {
+              "key": "passed",
+              "labelFr": "Réussi",
+              "align": "center"
+            }
+          ],
+          "rows": [
+            {
+              "segmented": "ma-man",
+              "full": "maman"
+            },
+            {
+              "segmented": "ta-ble",
+              "full": "table"
+            },
+            {
+              "segmented": "cha-peau",
+              "full": "chapeau"
+            },
+            {
+              "segmented": "voi-ture",
+              "full": "voiture"
+            },
+            {
+              "segmented": "ba-na-ne",
+              "full": "banane"
+            }
+          ],
+          "showPassedColumn": true
+        },
+        {
+          "titleFr": "Compter les syllabes dans un mot",
+          "promptFr": "Dire le mot à l'élève. Demander : « Combien de syllabes entends-tu dans ce mot? » L'élève doit vous dire le nombre.",
+          "promptShowsInstructionsLabel": true,
+          "columns": [
+            {
+              "key": "word",
+              "labelFr": "Mot",
+              "align": "left"
+            },
+            {
+              "key": "count",
+              "labelFr": "Nombre de syllabes",
+              "align": "center"
+            },
+            {
+              "key": "passed",
+              "labelFr": "Réussi",
+              "align": "center"
+            }
+          ],
+          "rows": [
+            {
+              "word": "chat",
+              "count": 1
+            },
+            {
+              "word": "livre",
+              "count": 1
+            },
+            {
+              "word": "éléphant",
+              "count": 3
+            },
+            {
+              "word": "chocolat",
+              "count": 3
+            },
+            {
+              "word": "papillon",
+              "count": 3
+            }
+          ],
+          "showPassedColumn": true
+        }
+      ]
+    }
+  },
+  {
+    "title": "Workshop 6 Assessment",
+    "unit": null,
+    "atelier": 6,
+    "grade": "All",
+    "status": "published",
+    "template_id": "format_6",
+    "template_draft": {
+      "name": "Template Format 6",
+      "instructionsFr": "Demander à l'élève d'identifier les sons au début et à la fin des mots. Dire le mot clairement et demander : « Quel son entends-tu au début/à la fin? »",
+      "sections": [
+        {
+          "titleFr": "Identifier le son au début d'un mot",
+          "items": [
+            {
+              "word": "maison",
+              "sound": "/m/"
+            },
+            {
+              "word": "ballon",
+              "sound": "/b/"
+            },
+            {
+              "word": "soleil",
+              "sound": "/s/"
+            },
+            {
+              "word": "fenêtre",
+              "sound": "/f/"
+            },
+            {
+              "word": "chat",
+              "sound": "/ʃ/"
+            }
+          ]
+        },
+        {
+          "titleFr": "Identifier le son à la fin d'un mot",
+          "items": [
+            {
+              "word": "chat",
+              "sound": "/a/"
+            },
+            {
+              "word": "pomme",
+              "sound": "/m/"
+            },
+            {
+              "word": "souris",
+              "sound": "/i/"
+            },
+            {
+              "word": "sac",
+              "sound": "/k/"
+            },
+            {
+              "word": "fil",
+              "sound": "/l/"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "title": "Workshop 7 Assessment",
+    "unit": null,
+    "atelier": 7,
+    "grade": "All",
+    "status": "published",
+    "template_id": "format_7",
+    "template_draft": {
+      "name": "Template Format 7",
+      "instructionsFr": "Évaluer la lecture de syllabes simples et la correspondance son-lettre. Pour la section correspondance, montrer 3 lettres à l'élève et demander de pointer la lettre qui fait le son indiqué.",
+      "sections": [
+        {
+          "titleFr": "Lire des syllabes CV, VC et CVC",
+          "promptFr": "Demander à l'élève de lire chaque syllabe.",
+          "items": [
+            "ma",
+            "li",
+            "po",
+            "ru",
+            "sa",
+            "il",
+            "or",
+            "pa",
+            "mi",
+            "bol"
+          ]
+        },
+        {
+          "titleFr": "Associer les sons aux graphèmes correspondants",
+          "promptFr": "Montrer 3 lettres à l'élève. Dire : « Pointe la lettre qui fait le son /___/. » Par exemple, montrer « b – f – l » et demander : « Pointe la lettre qui fait le son /f/. »",
+          "promptShowsInstructionsLabel": true,
+          "columns": [
+            {
+              "key": "letters",
+              "labelFr": "Lettres montrées",
+              "align": "left"
+            },
+            {
+              "key": "sound",
+              "labelFr": "Son demandé",
+              "align": "center"
+            },
+            {
+              "key": "correct",
+              "labelFr": "Lettre correcte",
+              "align": "center"
+            },
+            {
+              "key": "passed",
+              "labelFr": "Réussi",
+              "align": "center"
+            }
+          ],
+          "rows": [
+            {
+              "letters": "a – e – t",
+              "sound": "/a/",
+              "correct": "a"
+            },
+            {
+              "letters": "e – s – n",
+              "sound": "/e/",
+              "correct": "e"
+            },
+            {
+              "letters": "t – a – s",
+              "sound": "/t/",
+              "correct": "t"
+            },
+            {
+              "letters": "n – e – s",
+              "sound": "/s/",
+              "correct": "s"
+            },
+            {
+              "letters": "a – t – n",
+              "sound": "/n/",
+              "correct": "n"
+            }
+          ],
+          "showPassedColumn": true
+        }
+      ]
+    }
+  },
+  {
+    "title": "Workshop 8 Assessment",
+    "unit": null,
+    "atelier": 8,
+    "grade": "All",
+    "status": "published",
+    "template_id": "format_8",
+    "template_draft": {
+      "name": "Template Format 8",
+      "instructionsFr": "Évaluer la lecture de différents types de syllabes et de mots usuels.",
+      "sections": [
+        {
+          "titleFr": "Lire des syllabes ouvertes et fermées",
+          "promptFr": "Demander à l'élève de lire chaque syllabe à voix haute.",
+          "items": [
+            "ba",
+            "li",
+            "por",
+            "val",
+            "tur"
+          ]
+        },
+        {
+          "titleFr": "Lire des syllabes complexes - CVCC, CCVC",
+          "promptFr": "Demander à l'élève de lire chaque syllabe complexe à voix haute.",
+          "items": [
+            "pla",
+            "bri",
+            "tro",
+            "flan",
+            "gros"
+          ]
+        },
+        {
+          "titleFr": "Lire 5 mots usuels",
+          "promptFr": "Ces mots doivent être reconnus instantanément. Demander à l'élève de lire chaque mot rapidement.",
+          "items": [
+            "le",
+            "de",
+            "un",
+            "petit",
+            "papa"
+          ],
+          "variant": "highlight"
+        }
+      ]
+    }
+  },
+  {
+    "title": "Workshop 9 Assessment",
+    "unit": null,
+    "atelier": 9,
+    "grade": "All",
+    "status": "published",
+    "template_id": "format_9",
+    "template_draft": {
+      "name": "Template Format 9",
+      "instructionsFr": "Demander à l'élève de lire les 15 mots usuels suivants.",
+      "sections": [
+        {
+          "titleFr": "Lire 15 mots usuels",
+          "promptFr": "Demander à l'élève de lire chaque mot à voix haute.",
+          "items": [
+            "maman",
+            "c'est",
+            "voici",
+            "dit",
+            "ami",
+            "avec",
+            "grand",
+            "a",
+            "regarde",
+            "pour",
+            "une",
+            "elle",
+            "est",
+            "il y a",
+            "ici"
+          ],
+          "variant": "highlight"
+        }
+      ]
+    }
+  },
+  {
+    "title": "Workshop 10 Assessment",
+    "unit": null,
+    "atelier": 10,
+    "grade": "All",
+    "status": "published",
+    "template_id": "format_10",
+    "template_draft": {
+      "name": "Template Format 10",
+      "instructionsFr": "Évaluer la lecture de mots contenant des graphèmes complexes. Demander à l'élève de lire chaque mot à voix haute.",
+      "sections": [
+        {
+          "titleFr": "Lire 10 mots contenant: ch, gn, ou, oi, ai, au, eau",
+          "promptFr": "Chaque graphème cible doit être représenté au moins une fois.",
+          "items": [
+            "chat",
+            "agneau",
+            "montagne",
+            "oiseau",
+            "maison",
+            "bateau",
+            "soupe",
+            "lait",
+            "auto",
+            "poire"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "title": "Workshop 11 Assessment",
+    "unit": null,
+    "atelier": 11,
+    "grade": "All",
+    "status": "published",
+    "template_id": "format_11",
+    "template_draft": {
+      "name": "Template Format 11",
+      "instructionsFr": "Évaluer la capacité de l'élève à lire des familles de mots (variations d'un même mot), des mots avec différentes terminaisons, et des mots usuels.",
+      "sections": [
+        {
+          "titleFr": "Lire et reconnaître des familles de mots",
+          "promptFr": "Demander à l'élève de lire tous les mots de chaque famille et observer s'il reconnaît le lien entre eux.",
+          "families": [
+            [
+              "grand",
+              "grande",
+              "grands",
+              "grandes"
+            ],
+            [
+              "petit",
+              "petite",
+              "petits",
+              "petites"
+            ],
+            [
+              "beau",
+              "belle",
+              "beaux",
+              "belles"
+            ],
+            [
+              "chaud",
+              "chaude",
+              "chauds",
+              "chaudes"
+            ],
+            [
+              "blanc",
+              "blanche",
+              "blancs",
+              "blanches"
+            ]
+          ]
+        },
+        {
+          "titleFr": "Lire des mots avec les terminaisons fréquentes: -s, -es, -er, -ez, -ait, -aient",
+          "promptFr": "L'élève doit lire chaque mot en prononçant correctement la terminaison.",
+          "items": [
+            "chats",
+            "livres",
+            "danser",
+            "parlez",
+            "jouait",
+            "allaient",
+            "tables",
+            "manger",
+            "marchez",
+            "parlait"
+          ]
+        },
+        {
+          "titleFr": "Lire 5 mots usuels",
+          "promptFr": "Demander à l'élève de lire chaque mot à voix haute.",
+          "items": [
+            "dans",
+            "mon",
+            "aller",
+            "cherche",
+            "j'aime"
+          ],
+          "variant": "highlight"
+        }
+      ]
+    }
+  },
+  {
+    "title": "Workshop 12 Assessment",
+    "unit": null,
+    "atelier": 12,
+    "grade": "All",
+    "status": "published",
+    "template_id": "format_12",
+    "template_draft": {
+      "name": "Template Format 12",
+      "instructionsFr": "Demander à l'élève de lire les phrases à voix haute en respectant la ponctuation et l'intonation, puis de lire les pseudo-mots pour évaluer le décodage.",
+      "sections": [
+        {
+          "titleFr": "Lire 3 phrases répétées avec fluidité",
+          "promptFr": "Demander à l'élève de lire chaque phrase plusieurs fois pour améliorer la fluidité.",
+          "sentences": [
+            "Le chat dort sur le canapé.",
+            "Ma maman dort sur le canapé.",
+            "L'enfant dort sur le canapé."
+          ],
+          "criteria": [
+            {
+              "key": "fluency",
+              "labelFr": "Fluidité"
+            },
+            {
+              "key": "punctuation",
+              "labelFr": "Ponctuation"
+            },
+            {
+              "key": "intonation",
+              "labelFr": "Intonation"
+            }
+          ]
+        },
+        {
+          "titleFr": "Amélioration du débit et de l'exactitude",
+          "promptFr": "Demander à l'élève de lire ces pseudo-mots (mots inventés) pour évaluer ses compétences en décodage.",
+          "promptShowsInstructionsLabel": true,
+          "items": [
+            "choui",
+            "groin",
+            "drasse",
+            "ploi",
+            "trouche"
+          ],
+          "variant": "highlight"
+        }
+      ]
+    }
+  },
+  {
+    "title": "Workshop 13 Assessment",
+    "unit": null,
+    "atelier": 13,
+    "grade": "All",
+    "status": "published",
+    "template_id": "format_13",
+    "template_draft": {
+      "name": "Template Format 13",
+      "instructionsFr": "Évaluer la lecture de mots contenant des graphèmes avancés (ail, eil, euil, ouil). Demander à l'élève de lire chaque mot à voix haute en identifiant le son cible.",
+      "sections": [
+        {
+          "titleFr": "Lire 10 mots contenant: ail, eil, euil, ouil",
+          "promptFr": "Chaque graphème doit être lu correctement dans le contexte du mot.",
+          "items": [
+            "travail",
+            "soleil",
+            "réveil",
+            "fauteuil",
+            "écureuil",
+            "grenouille",
+            "chandail",
+            "appareil",
+            "seuil",
+            "citrouille"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "title": "Workshop 14 Assessment",
+    "unit": null,
+    "atelier": 14,
+    "grade": "All",
+    "status": "published",
+    "template_id": "format_14",
+    "template_draft": {
+      "name": "Template Format 14",
+      "instructionsFr": "Demander à l'élève de visualiser l'histoire. Dire : « Ferme les yeux et imagine ce que tu entends pendant que je lis. » Lire le texte à voix haute, puis poser les 5 questions de compréhension.",
+      "sections": [
+        {
+          "titleFr": "Texte lu par l'enseignant(e)",
+          "promptFr": "L'élève ferme les yeux et écoute attentivement pendant la lecture.",
+          "passageFr": "C'est une belle journée d'été. Sophie et son frère Marc vont au parc avec leur chien Félix. Ils apportent un ballon rouge et un pique-nique. Au parc, ils jouent au ballon sur l'herbe verte. Félix court après le ballon et aboie joyeusement. Après le jeu, ils mangent des sandwichs et boivent du jus. Sophie et Marc sont très contents de leur journée au parc. Ils rentrent à la maison fatigués mais heureux."
+        },
+        {
+          "titleFr": "Répondre à 5 questions de compréhension",
+          "questions": [
+            {
+              "questionFr": "Où vont Sophie et Marc?",
+              "answerFr": "Au parc"
+            },
+            {
+              "questionFr": "Qui va au parc avec eux?",
+              "answerFr": "Leur chien Félix / Félix"
+            },
+            {
+              "questionFr": "De quelle couleur est le ballon?",
+              "answerFr": "Rouge"
+            },
+            {
+              "questionFr": "Que font-ils après le jeu?",
+              "answerFr": "Ils mangent des sandwichs et boivent du jus"
+            },
+            {
+              "questionFr": "Comment se sentent-ils à la fin?",
+              "answerFr": "Fatigués mais heureux"
+            }
+          ],
+          "variant": "highlight"
+        }
+      ]
+    }
+  },
+  {
+    "title": "Workshop 15 Assessment",
+    "unit": null,
+    "atelier": 15,
+    "grade": "All",
+    "status": "published",
+    "template_id": "format_15",
+    "template_draft": {
+      "name": "Template Format 15",
+      "instructionsFr": "Demander à l'élève de lire un court texte de 4-5 phrases de façon autonome, puis poser 5 questions de compréhension.",
+      "sections": [
+        {
+          "titleFr": "Texte lu par l'élève (lecture autonome)",
+          "passageFr": "Mon chat s'appelle Minou. Il est noir et blanc avec de grands yeux verts. Minou aime dormir sur mon lit et jouer avec une balle rouge. Tous les matins, il boit du lait dans son bol bleu. C'est mon meilleur ami!",
+          "fluencyCriterionFr": "Fluidité de lecture"
+        },
+        {
+          "titleFr": "Répondre à 5 questions de compréhension",
+          "questions": [
+            {
+              "questionFr": "Comment s'appelle le chat?",
+              "answerFr": "Minou"
+            },
+            {
+              "questionFr": "De quelle couleur est le chat?",
+              "answerFr": "Noir et blanc"
+            },
+            {
+              "questionFr": "Qu'est-ce que Minou aime faire?",
+              "answerFr": "Dormir sur le lit et jouer avec une balle rouge"
+            },
+            {
+              "questionFr": "De quelle couleur est son bol?",
+              "answerFr": "Bleu"
+            },
+            {
+              "questionFr": "Quand est-ce que Minou boit du lait?",
+              "answerFr": "Tous les matins"
+            }
+          ],
+          "variant": "highlight"
+        }
+      ]
+    }
+  }
+]

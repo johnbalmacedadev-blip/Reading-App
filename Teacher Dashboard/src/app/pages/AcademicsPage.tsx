@@ -1,11 +1,13 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router";
 import {
-  BookOpen, Users, School, LogOut, BarChart3, Settings, Filter, X, UserCircle, GraduationCap,
+  Users, School, LogOut, BarChart3, Settings, Filter, X, UserCircle, GraduationCap,
   ArrowUpRight, Search, User, ClipboardList, Loader2, ChevronDown, UserPlus,
 } from "lucide-react";
+import { BrandMark } from "../components/BrandMark";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
+import { schoolNavItems } from "../i18n/navHelpers";
 import { usePortalLogout } from "../hooks/usePortalLogout";
 import {
   schoolAcademicsApi,
@@ -87,14 +89,7 @@ export function AcademicsPage() {
     loadAcademics(newYear);
   };
 
-  const menuItems = [
-    { icon: BarChart3, label: "Overview", active: false, path: "/school/reports" },
-    { icon: GraduationCap, label: "Academics", active: true, path: "/school/academics" },
-    { icon: ClipboardList, label: "Assessments", active: false, path: "/school/assessments" },
-    { icon: UserPlus, label: t("nav.teacherRequests"), active: false, path: "/school/teachers" },
-    { icon: User, label: "Profile", active: false, path: "/profile?portal=school" },
-    { icon: Settings, label: "Settings", active: false, path: "/school/settings" },
-  ];
+  const menuItems = schoolNavItems("academics", t("nav.teacherRequests"));
 
   const gradeLabel = (grade: string) => {
     const map: Record<string, string> = {
@@ -241,12 +236,9 @@ export function AcademicsPage() {
   return (
     <div className="h-screen flex overflow-hidden" style={{ background: "#dff3ff" }}>
       <div className="w-64 p-6 flex flex-col overflow-y-auto" style={{ background: "#ffffff", borderRight: "1px solid #dff3ff" }}>
-        <div className="flex items-center gap-3 mb-10">
-          <BookOpen className="w-8 h-8" style={{ color: "#004aad" }} />
-          <div>
-            <h1 className="text-base font-bold leading-tight" style={{ color: "#004aad" }}>Lecture Scientifique</h1>
-            <p className="text-xs mt-0.5 px-2 py-0.5 rounded-full inline-block" style={{ background: "#dff3ff", color: "#004aad" }}>{t("school.portal")}</p>
-          </div>
+        <div className="mb-10 min-w-0">
+          <BrandMark height={34} />
+          <p className="text-xs mt-1.5 px-2 py-0.5 rounded-full inline-block" style={{ background: "#dff3ff", color: "#004aad" }}>{t("school.portal")}</p>
         </div>
 
         <nav className="flex-1 space-y-1">

@@ -15,6 +15,8 @@ import { LangToggle } from "../components/LangToggle";
 import { useLanguage, type TranslationKey } from "../i18n";
 import { teacherApi, type EvaluationStatus } from "../api/client";
 import { exportStudentReportPdf } from "../utils/exportStudentReportPdf";
+import { useAuth } from "../context/AuthContext";
+import { userMayAccessResource } from "../utils/teacherAccess";
 
 interface Evaluation {
   number: number;
@@ -78,6 +80,7 @@ export function StudentDetailPage() {
   const location = useLocation();
   const { studentId } = useParams();
   const { t, tp, auto } = useLanguage();
+  const { user } = useAuth();
   const navState = (location.state as StudentNavState | null) ?? {};
   const [student, setStudent] = useState<StudentReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -192,6 +195,10 @@ export function StudentDetailPage() {
 
   const handleExportPdf = async () => {
     if (!reportRef.current || exporting) return;
+    if (!userMayAccessResource(user, "export", "student_report")) {
+      toast.error(t("resource.upgradeToDownload"));
+      return;
+    }
 
     setExporting(true);
     try {

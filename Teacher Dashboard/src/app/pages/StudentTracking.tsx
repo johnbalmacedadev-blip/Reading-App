@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
-import { ArrowLeft, FileText, Download, Plus, X, Info } from "lucide-react";
+import { ArrowLeft, Download, Plus, X, Info, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useLanguage } from "../i18n";
 import { LangToggle } from "../components/LangToggle";
 import { teacherApi, type ClassStudent, type EvaluationStatus, type StudentLimitInfo } from "../api/client";
+import { exportWorkshopReportPdf } from "../utils/exportStudentReportPdf";
+import { useAuth } from "../context/AuthContext";
+import { userMayAccessResource } from "../utils/teacherAccess";
 import {
   getEvaluationStatusBorder,
   getEvaluationStatusColor,
@@ -61,6 +64,7 @@ export function StudentTracking() {
   const location = useLocation();
   const { classId } = useParams();
   const { t, tp } = useLanguage();
+  const { user } = useAuth();
   const [className, setClassName] = useState("");
   const [classSchoolYear, setClassSchoolYear] = useState("");
   const [publishedWorkshops, setPublishedWorkshops] = useState<boolean[]>(
@@ -74,6 +78,8 @@ export function StudentTracking() {
   const [newStudentLastName, setNewStudentLastName] = useState("");
   const [hoveredEvaluation, setHoveredEvaluation] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const reportRef = useRef<HTMLDivElement>(null);
   const [studentLimit, setStudentLimit] = useState<StudentLimitInfo>({
     max: 30,
     used: 0,
@@ -197,6 +203,26 @@ export function StudentTracking() {
     }
   };
 
+  const handleExportPdf = async () => {
+    if (!reportRef.current || exporting) return;
+    if (!userMayAccessResource(user, "export", "class_report")) {
+      toast.error(t("resource.upgradeToDownload"));
+      return;
+    }
+    setHoveredEvaluation(null);
+    setExporting(true);
+    try {
+      // Let tooltip unmount before capturing.
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+      await exportWorkshopReportPdf(reportRef.current, className || "classe");
+      toast.success(t("student.exportSuccess"));
+    } catch {
+      toast.error(t("student.exportFailed"));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: "#dff3ff" }}>
@@ -213,43 +239,15 @@ export function StudentTracking() {
         style={{ background: "#ffffff", borderColor: "#dff3ff" }}
       >
         <div className="max-w-7xl mx-auto">
-          <button
-            onClick={() => navigate("/dashboard")}
-            className="flex items-center gap-2 mb-4 text-sm"
-            style={{ color: "#38b6ff" }}
-          >
-            <ArrowLeft className="w-4 h-4" />
-            {t("tracking.backToClasses")}
-          </button>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <div
-                className="inline-block px-4 py-2 rounded-lg mb-3"
-                style={{ background: "#004aad", color: "#ffffff" }}
-              >
-                <p className="text-sm">{t("tracking.smlSystem")}</p>
-              </div>
-              <h1 className="text-3xl mb-2" style={{ color: "#004aad" }}>
-                {className}
-              </h1>
-              <p className="text-lg" style={{ color: "#000000" }}>
-                {tp("common.studentCount", { count: students.length })}
-                <span className="text-sm ml-2" style={{ color: "#64748b" }}>
-                  {studentLimit.unlimited
-                    ? t("tracking.studentLimitUnlimited")
-                    : tp("tracking.studentLimitUsage", {
-                        used: studentLimit.used,
-                        max: studentLimit.max ?? 0,
-                      })}
-                </span>
-                {refreshing ? (
-                  <span className="text-sm ml-2" style={{ color: "#64748b" }}>
-                    {t("tracking.refreshing")}
-                  </span>
-                ) : null}
-              </p>
-            </div>
+          <div className="flex items-center justify-between gap-4">
+            <button
+              onClick={() => navigate("/dashboard")}
+              className="flex items-center gap-2 text-sm"
+              style={{ color: "#38b6ff" }}
+            >
+              <ArrowLeft className="w-4 h-4" />
+              {t("tracking.backToClasses")}
+            </button>
 
             <div className="flex gap-3 items-center">
               <LangToggle className="" />
@@ -279,25 +277,19 @@ export function StudentTracking() {
                 {t("tracking.addStudent")}
               </button>
               <button
-                className="px-6 py-3 rounded-xl flex items-center gap-2 transition-all"
-                style={{
-                  background: "#004aad",
-                  color: "#ffffff",
-                }}
-              >
-                <FileText className="w-5 h-5" />
-                {t("eval.saveAtelier")}
-              </button>
-              <button
-                className="px-6 py-3 rounded-xl flex items-center gap-2 transition-all"
+                type="button"
+                onClick={() => void handleExportPdf()}
+                disabled={exporting || students.length === 0}
+                className="px-6 py-3 rounded-xl flex items-center gap-2 transition-all disabled:opacity-60"
                 style={{
                   background: "#ffffff",
                   border: "1px solid #dff3ff",
                   color: "#004aad",
+                  cursor: exporting || students.length === 0 ? "not-allowed" : "pointer",
                 }}
               >
-                <Download className="w-5 h-5" />
-                {t("common.export")}
+                {exporting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
+                {exporting ? t("student.exporting") : t("common.export")}
               </button>
             </div>
           </div>
@@ -307,6 +299,40 @@ export function StudentTracking() {
       {/* Table */}
       <div className="p-6 flex-1 overflow-y-auto">
         <div className="max-w-7xl mx-auto">
+          <div ref={reportRef} style={{ background: "#dff3ff", paddingBottom: 8 }}>
+            <div className="mb-6">
+              <div
+                className="inline-block px-4 py-2 rounded-xl mb-3"
+                style={{ background: "#004aad", color: "#ffffff" }}
+              >
+                <p className="text-sm">{t("tracking.smlSystem")}</p>
+              </div>
+              <h1 className="text-3xl mb-2" style={{ color: "#004aad" }}>
+                {className}
+              </h1>
+              <p className="text-lg" style={{ color: "#000000" }}>
+                {tp("common.studentCount", { count: students.length })}
+                <span className="text-sm ml-2" style={{ color: "#64748b" }}>
+                  {studentLimit.unlimited
+                    ? t("tracking.studentLimitUnlimited")
+                    : tp("tracking.studentLimitUsage", {
+                        used: studentLimit.used,
+                        max: studentLimit.max ?? 0,
+                      })}
+                </span>
+                {classSchoolYear ? (
+                  <span className="text-sm ml-2" style={{ color: "#64748b" }}>
+                    · {classSchoolYear}
+                  </span>
+                ) : null}
+                {refreshing ? (
+                  <span className="text-sm ml-2" style={{ color: "#64748b" }}>
+                    {t("tracking.refreshing")}
+                  </span>
+                ) : null}
+              </p>
+            </div>
+
           <div
             className="rounded-2xl overflow-hidden shadow-lg"
             style={{ background: "#ffffff" }}
@@ -473,6 +499,7 @@ export function StudentTracking() {
                 <span style={{ color: "#000000" }}>{t(getEvaluationStatusLabelKey(status))}</span>
               </div>
             ))}
+          </div>
           </div>
         </div>
       </div>

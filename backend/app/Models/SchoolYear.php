@@ -43,9 +43,65 @@ class SchoolYear extends Model
         return "{$startYear}-".($startYear + 1);
     }
 
+    /**
+     * Canonical storage format: "2025-2026".
+     * Accepts "2025-2026", "2025-26", "2025 - 26", en/em dashes.
+     */
+    public static function normalizeLabel(?string $label): string
+    {
+        $raw = trim((string) ($label ?? ''));
+        if ($raw === '') {
+            return '';
+        }
+
+        $raw = str_replace(['–', '—'], '-', $raw);
+        $raw = preg_replace('/\s+/', '', $raw) ?? $raw;
+
+        if (preg_match('/^(\d{4})-(\d{4})$/', $raw, $matches)) {
+            return $matches[1].'-'.$matches[2];
+        }
+
+        if (preg_match('/^(\d{4})-(\d{2})$/', $raw, $matches)) {
+            $start = (int) $matches[1];
+            $endTwo = (int) $matches[2];
+            $century = intdiv($start, 100) * 100;
+            $end = $century + $endTwo;
+            if ($end <= $start) {
+                $end += 100;
+            }
+
+            return $start.'-'.$end;
+        }
+
+        return trim((string) ($label ?? ''));
+    }
+
+    /** Display format: "2025 - 26". */
+    public static function displayLabel(?string $label): string
+    {
+        $canonical = static::normalizeLabel($label);
+        if (preg_match('/^(\d{4})-(\d{4})$/', $canonical, $matches)) {
+            return $matches[1].' - '.substr($matches[2], -2);
+        }
+
+        $raw = trim((string) ($label ?? ''));
+
+        return $raw === '' ? '' : preg_replace('/\s*[-–—]\s*/', ' - ', $raw) ?? $raw;
+    }
+
+    public static function isValidSpan(?string $label): bool
+    {
+        $canonical = static::normalizeLabel($label);
+        if (! preg_match('/^(\d{4})-(\d{4})$/', $canonical, $matches)) {
+            return false;
+        }
+
+        return ((int) $matches[2]) === ((int) $matches[1]) + 1;
+    }
+
     public static function resolve(?string $requested): string
     {
-        $label = trim((string) ($requested ?? ''));
+        $label = static::normalizeLabel($requested);
 
         if ($label !== '' && static::query()->where('label', $label)->exists()) {
             return $label;

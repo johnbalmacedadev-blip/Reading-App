@@ -58,15 +58,25 @@ class TeacherClassController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'grade' => ['required', 'string', 'max:255', Rule::in($allowedGrades)],
-            'school_year' => ['nullable', 'string', 'max:20'],
+            'school_year' => ['required', 'string', 'max:20'],
         ]);
+
+        $schoolYear = SchoolYear::normalizeLabel($data['school_year']);
+        if (! SchoolYear::isValidSpan($schoolYear)) {
+            return response()->json([
+                'message' => 'Enter a valid school year (e.g. 2025 - 26).',
+                'errors' => [
+                    'school_year' => ['Enter a valid school year (e.g. 2025 - 26).'],
+                ],
+            ], 422);
+        }
 
         $class = SchoolClass::create([
             'teacher_id' => $teacher->id,
             'school_id' => $teacher->school_id,
             'name' => $data['name'],
             'grade' => $data['grade'],
-            'school_year' => $data['school_year'] ?? SchoolYear::defaultLabel(),
+            'school_year' => $schoolYear,
         ]);
 
         AuditLogger::log('Create', 'Access', "Class {$class->name} created", 'info', $request, subject: $class);
@@ -93,13 +103,23 @@ class TeacherClassController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'grade' => ['required', 'string', 'max:255', Rule::in($allowedGrades)],
-            'school_year' => ['nullable', 'string', 'max:20'],
+            'school_year' => ['required', 'string', 'max:20'],
         ]);
+
+        $schoolYear = SchoolYear::normalizeLabel($data['school_year']);
+        if (! SchoolYear::isValidSpan($schoolYear)) {
+            return response()->json([
+                'message' => 'Enter a valid school year (e.g. 2025 - 26).',
+                'errors' => [
+                    'school_year' => ['Enter a valid school year (e.g. 2025 - 26).'],
+                ],
+            ], 422);
+        }
 
         $schoolClass->update([
             'name' => $data['name'],
             'grade' => $data['grade'],
-            'school_year' => $data['school_year'] ?? $schoolClass->school_year,
+            'school_year' => $schoolYear,
         ]);
 
         AuditLogger::log('Edit', 'Access', "Class {$schoolClass->name} updated", 'info', $request, subject: $schoolClass);
@@ -216,6 +236,8 @@ class TeacherClassController extends Controller
 
     public function destroyStudent(Request $request, Student $student): JsonResponse
     {
+        PlatformSetting::assertPermission('teacher_can_edit_student', true);
+
         /** @var User $teacher */
         $teacher = $request->user();
 
@@ -265,6 +287,8 @@ class TeacherClassController extends Controller
 
     public function addStudent(Request $request, SchoolClass $schoolClass): JsonResponse
     {
+        PlatformSetting::assertPermission('teacher_can_edit_student', true);
+
         $this->authorizeClass($request, $schoolClass);
 
         /** @var User $teacher */
@@ -398,7 +422,11 @@ class TeacherClassController extends Controller
         $publishedAteliers = Assessment::query()
             ->whereNull('school_board')
             ->whereNull('archived_at')
-            ->where('grade', $normalizedGrade)
+            ->where(function ($q) use ($grade, $normalizedGrade) {
+                $q->where('grade', $grade)
+                    ->orWhere('grade', $normalizedGrade)
+                    ->orWhere('grade', 'All');
+            })
             ->where('status', 'published')
             ->whereNotNull('template_id')
             ->pluck('atelier')

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\PedagogicalLesson;
 use App\Models\PedagogicalUnit;
+use App\Models\PlatformSetting;
 use App\Services\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -163,6 +164,12 @@ class PedagogicalUnitController extends Controller
 
     public function downloadQuickSheet(Request $request, PedagogicalUnit $pedagogicalUnit): StreamedResponse|JsonResponse
     {
+        PlatformSetting::assertTrialDownloadExportAllowed(
+            $request->user(),
+            \App\Services\ResourceAccessService::KIND_EXPORT,
+            'pedagogical_sheets',
+        );
+
         if (! $pedagogicalUnit->quick_sheet_path || ! Storage::disk('public')->exists($pedagogicalUnit->quick_sheet_path)) {
             return response()->json(['message' => 'Quick sheet not found.'], 404);
         }
@@ -196,6 +203,12 @@ class PedagogicalUnitController extends Controller
 
     public function downloadActivitySheet(Request $request, PedagogicalUnit $pedagogicalUnit, int $lessonNumber): StreamedResponse|JsonResponse
     {
+        PlatformSetting::assertTrialDownloadExportAllowed(
+            $request->user(),
+            \App\Services\ResourceAccessService::KIND_EXPORT,
+            'pedagogical_sheets',
+        );
+
         $lesson = $pedagogicalUnit->lessons()->where('lesson_number', $lessonNumber)->firstOrFail();
 
         if (! $lesson->activity_sheet_path || ! Storage::disk('public')->exists($lesson->activity_sheet_path)) {

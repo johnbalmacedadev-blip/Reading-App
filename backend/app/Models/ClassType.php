@@ -78,4 +78,30 @@ class ClassType extends Model
             ->values()
             ->all();
     }
+
+    /**
+     * Distinct assessment-grade bands configured on class types (DB-backed).
+     *
+     * @return list<string>
+     */
+    public static function assessmentGradeOptions(bool $activeOnly = true): array
+    {
+        $canonical = ['Kindergarten', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 3+'];
+
+        $query = $activeOnly ? static::activeOrdered() : static::query()->orderBy('sort_order')->orderBy('name');
+        $fromDb = $query->pluck('assessment_grade')
+            ->filter(fn ($grade) => is_string($grade) && $grade !== '')
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($fromDb === []) {
+            return $canonical;
+        }
+
+        $ordered = array_values(array_intersect($canonical, $fromDb));
+        $extras = array_values(array_diff($fromDb, $canonical));
+
+        return array_values(array_merge($ordered, $extras));
+    }
 }

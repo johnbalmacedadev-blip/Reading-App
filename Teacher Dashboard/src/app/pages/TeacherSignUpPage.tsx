@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   BookOpen, ArrowRight, ArrowLeft, Eye, EyeOff,
-  Check, School, User, GraduationCap, Users,
+  Check, User, GraduationCap,
 } from "lucide-react";
 import classroomPhoto from "../../imports/image-1.png";
+import { BrandMark } from "../components/BrandMark";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
 import {
@@ -125,27 +126,6 @@ export function TeacherSignUpPage() {
     () => [
       { title: t("signup.step1.title"), subtitle: t("signup.step1.subtitle") },
       { title: t("signup.step2.title"), subtitle: t("signup.step2.subtitle") },
-      { title: t("signup.step3.title"), subtitle: t("signup.step3.subtitle") },
-    ],
-    [t]
-  );
-
-  const accountOptions = useMemo(
-    () => [
-      {
-        value: "school" as const,
-        icon: School,
-        title: t("signup.viaSchool.title"),
-        desc: t("signup.viaSchool.desc"),
-        badge: t("signup.recommended"),
-      },
-      {
-        value: "individual" as const,
-        icon: Users,
-        title: t("signup.individual.title"),
-        desc: t("signup.individual.desc"),
-        badge: null,
-      },
     ],
     [t]
   );
@@ -175,14 +155,15 @@ export function TeacherSignUpPage() {
 
   const handleNext = () => {
     if (step === 1 && !validateStep1()) return;
-    if (step === 2 && !validateStep2()) return;
-    if (step === 3) {
-      if (!form.accountType) { setErrors({ accountType: t("signup.err.accountType") }); return; }
-      saveSignupDraft(3, form);
-      navigate(form.accountType === "school" ? "/signup/join" : "/signup/plan");
+    if (step === 2) {
+      if (!validateStep2()) return;
+      const nextForm = { ...form, accountType: "individual" as const };
+      setForm(nextForm);
+      saveSignupDraft(2, nextForm);
+      navigate("/signup/plan");
       return;
     }
-    setStep((s) => (s + 1) as Step);
+    setStep(2);
   };
 
   return (
@@ -192,9 +173,8 @@ export function TeacherSignUpPage() {
         <img src={classroomPhoto} alt="Classe de lecture" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(0,74,173,0.75) 0%, rgba(0,74,173,0.45) 50%, rgba(0,74,173,0.82) 100%)" }} />
         <div style={{ position: "relative", height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between", padding: 48 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <BookOpen size={36} color="white" />
-            <span style={{ fontSize: 22, fontWeight: 700, color: "white" }}>{t("common.appName")}</span>
+          <div style={{ alignSelf: "flex-start" }}>
+            <BrandMark height={48} onDark />
           </div>
           <div>
             <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 12, letterSpacing: 2, textTransform: "uppercase", marginBottom: 12 }}>
@@ -234,8 +214,8 @@ export function TeacherSignUpPage() {
         <div style={{ width: "100%", maxWidth: 460, paddingTop: 40 }}>
           <StepIndicator
             current={step}
-            total={3}
-            label={tp("signup.stepOf", { current: step, total: 3 })}
+            total={2}
+            label={tp("signup.stepOf", { current: step, total: 2 })}
           />
 
           <h2 style={{ fontSize: 26, fontWeight: 800, color: "#004aad", margin: "0 0 4px" }}>{stepTitles[step - 1].title}</h2>
@@ -322,68 +302,17 @@ export function TeacherSignUpPage() {
             </div>
           )}
 
-          {/* Step 3 — Account type */}
-          {step === 3 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <p style={{ fontSize: 14, color: "#374151", marginBottom: 4 }}>
-                {t("signup.accountQuestion")}
-              </p>
-              {accountOptions.map((opt) => {
-                const selected = form.accountType === opt.value;
-                return (
-                  <button key={opt.value} type="button" onClick={() => set("accountType", opt.value)}
-                    style={{
-                      display: "flex", alignItems: "flex-start", gap: 14, padding: "18px 20px", borderRadius: 14,
-                      border: `2px solid ${selected ? "#004aad" : "#dff3ff"}`,
-                      background: selected ? "#dff3ff" : "#f8ffdb",
-                      cursor: "pointer", textAlign: "left", transition: "all 0.2s",
-                    }}>
-                    <div style={{ width: 42, height: 42, borderRadius: 10, background: selected ? "#004aad" : "white", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "1.5px solid #dff3ff" }}>
-                      <opt.icon size={18} color={selected ? "white" : "#004aad"} />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                        <span style={{ fontSize: 15, fontWeight: 700, color: selected ? "#004aad" : "#1e293b" }}>{opt.title}</span>
-                        {opt.badge && (
-                          <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: "#ecfdf5", color: "#059669" }}>{opt.badge}</span>
-                        )}
-                      </div>
-                      <p style={{ fontSize: 13, color: "#64748b", margin: 0, lineHeight: 1.5 }}>{opt.desc}</p>
-                    </div>
-                    <div style={{ width: 20, height: 20, borderRadius: "50%", border: `2px solid ${selected ? "#004aad" : "#cbd5e1"}`, background: selected ? "#004aad" : "white", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2 }}>
-                      {selected && <div style={{ width: 8, height: 8, borderRadius: "50%", background: "white" }} />}
-                    </div>
-                  </button>
-                );
-              })}
-              {errors.accountType && <p style={{ fontSize: 12, color: "#ff5757" }}>{errors.accountType}</p>}
-
-              {form.accountType === "school" && (
-                <div style={{ background: "#ecfdf5", borderRadius: 10, padding: "12px 16px", fontSize: 13, color: "#374151" }}>
-                  ✅ {t("signup.schoolNotify")}
-                </div>
-              )}
-              {form.accountType === "individual" && (
-                <div style={{ background: "#eff6ff", borderRadius: 10, padding: "12px 16px", fontSize: 13, color: "#374151" }}>
-                  💳 {t("signup.individualNotify")}
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Navigation buttons */}
           <div style={{ display: "flex", gap: 10, marginTop: 28 }}>
             {step > 1 && (
-              <button type="button" onClick={() => setStep((s) => (s - 1) as Step)}
+              <button type="button" onClick={() => setStep(1)}
                 style={{ flex: 1, padding: "12px", borderRadius: 12, border: "1.5px solid #dff3ff", background: "white", fontSize: 14, fontWeight: 600, cursor: "pointer", color: "#004aad", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                 <ArrowLeft size={15} /> {t("common.back")}
               </button>
             )}
             <button type="button" onClick={handleNext}
               style={{ flex: 2, padding: "12px", borderRadius: 12, border: "none", background: "#004aad", color: "white", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-              {step === 3
-                ? (form.accountType === "school" ? t("signup.continueToJoin") : t("signup.continueToPlans"))
-                : t("signup.continue")}
+              {step === 2 ? t("signup.continueToPlans") : t("signup.continue")}
               <ArrowRight size={15} />
             </button>
           </div>

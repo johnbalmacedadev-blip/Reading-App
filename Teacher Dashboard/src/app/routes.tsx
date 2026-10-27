@@ -56,7 +56,10 @@ import {
 } from "./components/TeacherRoute";
 import { AdminRoute } from "./components/AdminRoute";
 import { BoardRoute } from "./components/BoardRoute";
+import { SchoolRoute } from "./components/SchoolRoute";
 import { AdminLoginPage } from "./pages/admin/AdminLoginPage";
+import { BoardSubscriptionPage, SchoolSubscriptionPage } from "./pages/InstitutionalSubscriptionPage";
+import { SchoolProfilePage } from "./pages/SchoolProfilePage";
 
 function withTeacherRoute(Component: ComponentType) {
   return function ProtectedPage() {
@@ -96,6 +99,16 @@ function withBoardRoute(Component: ComponentType) {
       <BoardRoute>
         <Component />
       </BoardRoute>
+    );
+  };
+}
+
+function withSchoolRoute(Component: ComponentType) {
+  return function ProtectedPage() {
+    return (
+      <SchoolRoute>
+        <Component />
+      </SchoolRoute>
     );
   };
 }
@@ -159,7 +172,7 @@ export const router = createBrowserRouter([
   },
   {
     path: "/school",
-    Component: SchoolReportsPage,
+    Component: withSchoolRoute(SchoolReportsPage),
   },
   {
     path: "/board",
@@ -252,24 +265,36 @@ export const router = createBrowserRouter([
     Component: withBoardRoute(BoardTeacherRequestsPage),
   },
   {
+    path: "/board/subscription",
+    Component: withBoardRoute(BoardSubscriptionPage),
+  },
+  {
     path: "/school/settings",
-    Component: SettingsPage,
+    Component: withSchoolRoute(SettingsPage),
   },
   {
     path: "/school/reports",
-    Component: SchoolReportsPage,
+    Component: withSchoolRoute(SchoolReportsPage),
   },
   {
     path: "/school/academics",
-    Component: AcademicsPage,
+    Component: withSchoolRoute(AcademicsPage),
   },
   {
     path: "/school/assessments",
-    Component: SchoolAssessmentsPage,
+    Component: withSchoolRoute(SchoolAssessmentsPage),
   },
   {
     path: "/school/teachers",
-    Component: SchoolTeacherRequestsPage,
+    Component: withSchoolRoute(SchoolTeacherRequestsPage),
+  },
+  {
+    path: "/school/subscription",
+    Component: withSchoolRoute(SchoolSubscriptionPage),
+  },
+  {
+    path: "/school/profile",
+    Component: withSchoolRoute(SchoolProfilePage),
   },
   {
     path: "/admin/login",

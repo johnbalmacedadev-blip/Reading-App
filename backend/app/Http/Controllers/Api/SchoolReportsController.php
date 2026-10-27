@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\PlatformSetting;
 use App\Models\School;
 use App\Models\SchoolBoard;
 use App\Models\SchoolClass;
@@ -312,6 +313,10 @@ class SchoolReportsController extends Controller
     /** @return array{code: string, name: string}|null */
     private function formatSchoolBoard(?string $boardCode): ?array
     {
+        if (! PlatformSetting::boolValue('school_can_view_board', false)) {
+            return null;
+        }
+
         $code = trim((string) ($boardCode ?? ''));
 
         if ($code === '') {

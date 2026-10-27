@@ -3,7 +3,7 @@
 return [
     'trial_started' => [
         'title' => 'Essai gratuit actif',
-        'message' => 'Votre essai gratuit de 30 jours est actif jusqu\'au :date.',
+        'message' => 'Votre essai gratuit de :days jours est actif jusqu\'au :date.',
     ],
     'trial_ending' => [
         'title' => 'Fin d\'essai bientôt',
@@ -11,7 +11,11 @@ return [
     ],
     'trial_expired' => [
         'title' => 'Essai expiré',
-        'message' => 'Votre essai gratuit a expiré le :date. Choisissez un forfait pour rétablir l\'accès complet.',
+        'message' => 'Votre essai gratuit a expiré le :date. Abonnez-vous maintenant pour rétablir l\'accès complet.',
+    ],
+    'trial_extended' => [
+        'title' => 'Essai prolongé',
+        'message' => 'Votre essai gratuit a été prolongé jusqu\'au :date (:days jours).',
     ],
     'subscription_activated' => [
         'title' => 'Paiement réussi',
@@ -27,8 +31,8 @@ return [
     ],
     'subscription_renewed' => [
         'title' => 'Abonnement renouvelé',
-        'message' => 'Votre abonnement :plan a été renouvelé.',
-        'message_until' => 'Votre abonnement :plan a été renouvelé jusqu\'au :date.',
+        'message' => 'Votre abonnement :plan a été renouvelé automatiquement et payé pour la nouvelle période.',
+        'message_until' => 'Votre abonnement :plan a été renouvelé automatiquement et payé. Nouvelle période active jusqu\'au :date.',
     ],
     'subscription_cancelled' => [
         'title' => 'Abonnement annulé',

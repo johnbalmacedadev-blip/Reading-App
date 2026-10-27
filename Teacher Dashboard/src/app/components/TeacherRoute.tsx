@@ -1,7 +1,12 @@
 import { Navigate, useLocation } from "react-router";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../i18n";
-import { teacherCanAccessAssessments, teacherHomePath, teacherIsAccountDeactivated } from "../utils/teacherAccess";
+import {
+  teacherCanAccessAssessments,
+  teacherHomePath,
+  teacherIsAccountDeactivated,
+  teacherIsInstitutional,
+} from "../utils/teacherAccess";
 
 export function TeacherRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -24,8 +29,10 @@ export function TeacherRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/account-status" replace />;
   }
 
+  // School/board teachers inherit institutional access — never send them to personal plans.
   if (
     !teacherIsAccountDeactivated(user)
+    && !teacherIsInstitutional(user)
     && location.pathname !== "/subscription"
     && user.subscription
     && !user.subscription.is_trial_active
@@ -113,6 +120,9 @@ export function ActiveSubscriptionReportsRoute({ children }: { children: React.R
   }
 
   if (!user.subscription?.can_access_reports) {
+    if (teacherIsInstitutional(user)) {
+      return <Navigate to={teacherHomePath(user)} replace />;
+    }
     return <Navigate to="/subscription" replace />;
   }
 

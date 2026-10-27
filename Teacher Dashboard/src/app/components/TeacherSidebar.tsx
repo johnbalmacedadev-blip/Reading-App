@@ -1,6 +1,7 @@
-import { BookOpen, LogOut } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { useNavigate } from "react-router";
 import { LangToggle } from "./LangToggle";
+import { BrandMark } from "./BrandMark";
 import { useLanguage } from "../i18n";
 import { teacherNavItems } from "../i18n/navHelpers";
 import { useAuth } from "../context/AuthContext";
@@ -33,11 +34,8 @@ export function TeacherSidebar({ active, onLogout }: TeacherSidebarProps) {
       className="w-64 p-6 flex flex-col overflow-y-auto"
       style={{ background: "#ffffff", borderRight: "1px solid #dff3ff" }}
     >
-      <div className="flex items-center gap-3 mb-12">
-        <BookOpen className="w-8 h-8" style={{ color: "#004aad" }} />
-        <h1 className="text-xl" style={{ color: "#004aad" }}>
-          {t("common.appName")}
-        </h1>
+      <div className="mb-12 min-w-0">
+        <BrandMark height={36} />
       </div>
 
       {deactivated && (

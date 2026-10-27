@@ -13,13 +13,10 @@ import { toast } from "sonner";
 import { NotificationDropdown } from "../components/NotificationDropdown";
 import { UserAvatar } from "../components/UserAvatar";
 import { TeacherLayout } from "../components/TeacherLayout";
+import { TeacherWalkthroughPromo } from "../components/TeacherWalkthroughPromo";
 import { useLanguage } from "../i18n";
 import { useAuth } from "../context/AuthContext";
 import { teacherApi, schoolYearsApi, type ClassSummary, type ClassTypeOption } from "../api/client";
-
-function firstClassNudgeKey(userId: number | undefined) {
-  return `lecture-first-class-nudge-dismissed-${userId ?? "guest"}`;
-}
 
 export function TeacherDashboard() {
   const navigate = useNavigate();
@@ -54,21 +51,14 @@ export function TeacherDashboard() {
         if (class_types.length > 0) {
           setClassGrade((prev) => prev || class_types[0].name);
         }
-        if (loadedClasses.length === 0) {
-          const dismissed = sessionStorage.getItem(firstClassNudgeKey(user?.id)) === "1";
-          if (!dismissed) setShowFirstClassNudge(true);
-        }
+        // Always nudge on dashboard visits until the teacher has at least one class.
+        setShowFirstClassNudge(loadedClasses.length === 0);
       })
       .finally(() => setLoading(false));
   }, [user?.id]);
 
   const dismissFirstClassNudge = () => {
     setShowFirstClassNudge(false);
-    try {
-      sessionStorage.setItem(firstClassNudgeKey(user?.id), "1");
-    } catch {
-      // ignore
-    }
   };
 
   const defaultGrade = classTypes[0]?.name ?? "";
@@ -196,6 +186,8 @@ export function TeacherDashboard() {
             <UserAvatar />
           </div>
         </div>
+
+        <TeacherWalkthroughPromo />
 
         {/* Class Card */}
         <div>

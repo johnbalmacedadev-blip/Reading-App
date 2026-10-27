@@ -17,16 +17,23 @@ class RunScheduledBackup extends Command
 
     public function handle(BackupService $backups, BackupScheduleService $schedule): int
     {
+        // Always mark the scheduler as alive so the admin UI can detect cron / schedule:work.
+        $schedule->pingScheduler();
+
         $settings = BackupSetting::current();
 
-        if (! $this->option('force') && ! $schedule->isDue($settings)) {
-            $this->components->info('No automatic backup is due.');
+        if (! $settings->enabled && ! $this->option('force')) {
+            $this->components->info('Automatic backups are disabled.');
 
             return self::SUCCESS;
         }
 
-        if (! $settings->enabled && ! $this->option('force')) {
-            $this->components->info('Automatic backups are disabled.');
+        if (! $this->option('force') && ! $schedule->isDue($settings)) {
+            $next = $schedule->nextRun($settings);
+            $this->components->info(
+                'No automatic backup is due.'
+                .($next ? ' Next run: '.$next->toDayDateTimeString().' ('.$settings->timezone.').' : '')
+            );
 
             return self::SUCCESS;
         }

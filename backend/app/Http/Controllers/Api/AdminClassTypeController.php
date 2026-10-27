@@ -33,7 +33,7 @@ class AdminClassTypeController extends Controller
         return response()->json([
             'class_types' => $types->values()->all(),
             'max_students_per_teacher' => PlatformSetting::maxStudentsPerTeacher(),
-            'assessment_grades' => self::ASSESSMENT_GRADES,
+            'assessment_grades' => ClassType::assessmentGradeOptions(),
         ]);
     }
 

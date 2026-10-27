@@ -2,6 +2,7 @@
 
 namespace App\Mail;
 
+use App\Mail\Concerns\EmbedsEmailLogo;
 use App\Models\User;
 use App\Services\EmailLocale;
 use App\Services\EmailTemplate;
@@ -13,9 +14,11 @@ use Illuminate\Queue\SerializesModels;
 
 class TeacherAccountCreatedEmail extends Mailable
 {
-    use Queueable, SerializesModels;
+    use EmbedsEmailLogo, Queueable, SerializesModels;
 
     public string $emailLocale;
+
+    public string $emailAudience;
 
     public function __construct(
         public User $user,
@@ -23,13 +26,21 @@ class TeacherAccountCreatedEmail extends Mailable
         public string $temporaryPassword,
     ) {
         $this->emailLocale = EmailLocale::resolve($user);
+        $this->emailAudience = EmailTemplate::audienceFromUser($user);
         $this->locale($this->emailLocale);
+        $this->embedEmailLogo();
     }
 
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: EmailTemplate::line('teacher_created', 'subject', [], $this->emailLocale),
+            subject: EmailTemplate::line(
+                'teacher_created',
+                'subject',
+                [],
+                $this->emailLocale,
+                $this->emailAudience,
+            ),
         );
     }
 
@@ -43,6 +54,7 @@ class TeacherAccountCreatedEmail extends Mailable
                 'temporaryPassword' => $this->temporaryPassword,
                 'activationUrl' => $this->activationUrl,
                 'loginUrl' => rtrim(config('app.frontend_url', config('app.url')), '/').'/signin',
+                'emailAudience' => $this->emailAudience,
             ],
         );
     }

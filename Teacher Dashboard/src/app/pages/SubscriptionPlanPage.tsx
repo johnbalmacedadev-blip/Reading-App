@@ -5,6 +5,7 @@ import {
   BarChart3, Users, FileText, Bell, Download, Headphones,
 } from "lucide-react";
 import classroomPhoto from "../../imports/image-1.png";
+import { BrandMark } from "../components/BrandMark";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
 import { clearSignupDraft, saveSignupDraft, loadSignupDraft } from "../signupDraft";
@@ -47,6 +48,7 @@ export function SubscriptionPlanPage() {
         popular: false,
         comingSoon: false,
         features: [
+          { icon: Users, text: "Up to 30 students" },
           { icon: BookOpen, text: "Full Lecture Scientifique curriculum (15 workshops)" },
           { icon: BookOpen, text: "Teacher resource library" },
           { icon: Headphones, text: "Email support (48-hour response)" },
@@ -75,7 +77,6 @@ export function SubscriptionPlanPage() {
         comingSoon: false,
         features: [
           { icon: BookOpen, text: "Everything in Essentials" },
-          { icon: Users, text: "Unlimited students" },
           { icon: Users, text: "Classroom management" },
           { icon: BarChart3, text: "Student progress tracking" },
           { icon: FileText, text: "Individual student reports" },
@@ -140,9 +141,8 @@ export function SubscriptionPlanPage() {
         <img src={classroomPhoto} alt="Classe" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(0,74,173,0.78) 0%, rgba(0,74,173,0.5) 50%, rgba(0,74,173,0.85) 100%)" }} />
         <div style={{ position: "relative", height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between", padding: 40 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <BookOpen size={28} color="white" />
-            <span style={{ fontSize: 18, fontWeight: 700, color: "white" }}>{t("common.appName")}</span>
+          <div style={{ alignSelf: "flex-start" }}>
+            <BrandMark height={48} onDark />
           </div>
           <div>
             <div style={{ background: "rgba(255,255,255,0.13)", borderRadius: 14, padding: "20px", backdropFilter: "blur(4px)", marginBottom: 20 }}>
@@ -174,7 +174,7 @@ export function SubscriptionPlanPage() {
           <button
             onClick={() => {
               const draft = loadSignupDraft();
-              if (draft) saveSignupDraft(3, draft.form);
+              if (draft) saveSignupDraft(2, draft.form);
               navigate("/signup");
             }}
             style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 13, marginBottom: 28 }}
@@ -190,7 +190,7 @@ export function SubscriptionPlanPage() {
             </div>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginBottom: 18 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginBottom: 18, alignItems: "stretch" }}>
             {plans.map((plan) => {
               const isSelected = selected === plan.id;
               const price = plan.price;
@@ -208,6 +208,9 @@ export function SubscriptionPlanPage() {
                     position: "relative",
                     opacity: plan.comingSoon ? 0.85 : 1,
                     boxShadow: isSelected ? `0 0 0 4px ${plan.bg}` : "0 1px 4px rgba(0,0,0,0.05)",
+                    display: "flex",
+                    flexDirection: "column",
+                    height: "100%",
                   }}
                 >
                   {plan.popular && (
@@ -238,7 +241,7 @@ export function SubscriptionPlanPage() {
                     </div>
                   </div>
 
-                  <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 7, flex: 1 }}>
                     {plan.features.map((f) => (
                       <div key={f.text} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
                         <div style={{ width: 16, height: 16, borderRadius: "50%", background: plan.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>
@@ -258,7 +261,7 @@ export function SubscriptionPlanPage() {
                   </div>
 
                   {isSelected && !plan.comingSoon && (
-                    <div style={{ marginTop: 14, padding: "6px 0", borderTop: "1px solid #f1f5f9", display: "flex", alignItems: "center", gap: 5 }}>
+                    <div style={{ marginTop: "auto", padding: "14px 0 0", borderTop: "1px solid #f1f5f9", display: "flex", alignItems: "center", gap: 5 }}>
                       <Check size={13} color={plan.color} />
                       <span style={{ fontSize: 12, fontWeight: 600, color: plan.color }}>{t("plan.selected")}</span>
                     </div>
@@ -288,7 +291,7 @@ export function SubscriptionPlanPage() {
                 gap: 6,
               }}
             >
-              {processing ? "Creating your account…" : "Start 30-day free trial — No credit card"}
+              {processing ? "Creating your account…" : "Start 30-day free trial — No credit card to get started"}
               {!processing && <ArrowRight size={16} />}
             </button>
           </div>

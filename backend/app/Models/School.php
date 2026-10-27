@@ -11,6 +11,8 @@ class School extends Model
         'name',
         'city',
         'school_board',
+        'code',
+        'contact_person',
         'grades',
         'status',
         'portal_password_encrypted',

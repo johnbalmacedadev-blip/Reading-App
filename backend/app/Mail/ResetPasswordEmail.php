@@ -2,6 +2,7 @@
 
 namespace App\Mail;
 
+use App\Mail\Concerns\EmbedsEmailLogo;
 use App\Models\User;
 use App\Services\EmailLocale;
 use App\Services\EmailTemplate;
@@ -13,9 +14,11 @@ use Illuminate\Queue\SerializesModels;
 
 class ResetPasswordEmail extends Mailable
 {
-    use Queueable, SerializesModels;
+    use EmbedsEmailLogo, Queueable, SerializesModels;
 
     public string $emailLocale;
+
+    public string $emailAudience;
 
     public function __construct(
         public User $user,
@@ -23,13 +26,15 @@ class ResetPasswordEmail extends Mailable
         public int $expiresMinutes = 30,
     ) {
         $this->emailLocale = EmailLocale::resolve($user);
+        $this->emailAudience = EmailTemplate::audienceFromUser($user);
         $this->locale($this->emailLocale);
+        $this->embedEmailLogo();
     }
 
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: EmailTemplate::line('reset', 'subject', [], $this->emailLocale),
+            subject: EmailTemplate::line('reset', 'subject', [], $this->emailLocale, $this->emailAudience),
         );
     }
 
@@ -41,6 +46,7 @@ class ResetPasswordEmail extends Mailable
                 'name' => $this->user->displayName(),
                 'resetUrl' => $this->resetUrl,
                 'expiresMinutes' => $this->expiresMinutes,
+                'emailAudience' => $this->emailAudience,
             ],
         );
     }

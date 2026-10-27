@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\LibraryContent;
+use App\Models\PlatformSetting;
 use App\Services\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -143,6 +144,12 @@ class LibraryContentController extends Controller
 
   public function downloadContinuum(Request $request): StreamedResponse|JsonResponse
   {
+    PlatformSetting::assertTrialDownloadExportAllowed(
+      $request->user(),
+      \App\Services\ResourceAccessService::KIND_EXPORT,
+      'continuum',
+    );
+
     if (! Storage::disk('public')->exists(self::CONTINUUM_PDF_PATH)) {
       return response()->json(['message' => 'Continuum PDF not found.'], 404);
     }
@@ -157,6 +164,12 @@ class LibraryContentController extends Controller
 
   public function download(Request $request, LibraryContent $libraryContent): StreamedResponse|JsonResponse
   {
+    PlatformSetting::assertTrialDownloadExportAllowed(
+      $request->user(),
+      \App\Services\ResourceAccessService::KIND_EXPORT,
+      'library_content',
+    );
+
     if (! $libraryContent->file_path || ! Storage::disk('public')->exists($libraryContent->file_path)) {
       return response()->json(['message' => 'File not found.'], 404);
     }

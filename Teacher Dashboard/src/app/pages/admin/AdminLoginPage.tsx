@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { BookOpen, ShieldCheck, ArrowRight, Eye, EyeOff } from "lucide-react";
+import { ShieldCheck, ArrowRight, Eye, EyeOff } from "lucide-react";
+import { BrandMark } from "../../components/BrandMark";
 import { LangToggle } from "../../components/LangToggle";
 import { useLanguage } from "../../i18n";
 import { useAuth } from "../../context/AuthContext";
@@ -49,9 +50,8 @@ export function AdminLoginPage() {
         background: "linear-gradient(160deg, #0a1628 0%, #004aad 55%, #0a1628 100%)",
       }}>
         <div style={{ position: "relative", height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between", padding: 48 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <BookOpen size={36} color="white" />
-            <span style={{ fontSize: 22, fontWeight: 700, color: "white" }}>{t("common.appName")}</span>
+          <div style={{ alignSelf: "flex-start" }}>
+            <BrandMark height={48} onDark />
           </div>
           <div>
             <div style={{

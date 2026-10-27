@@ -4,6 +4,7 @@ import {
   BookOpen, ArrowLeft, Lock, CreditCard, Check, Shield,
 } from "lucide-react";
 import { LangToggle } from "../components/LangToggle";
+import { BrandMark } from "../components/BrandMark";
 import { useLanguage } from "../i18n";
 import { authApi, ApiError } from "../api/client";
 import { useAuth } from "../context/AuthContext";
@@ -162,9 +163,8 @@ export function PaymentPage() {
           <div style={{ width: 72, height: 72, borderRadius: "50%", background: "#ecfdf5", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
             <Check size={32} color="#059669" />
           </div>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 6 }}>
-            <BookOpen size={20} color="#004aad" />
-            <span style={{ fontSize: 14, fontWeight: 700, color: "#004aad" }}>{t("common.appName")}</span>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 6 }}>
+            <BrandMark height={28} />
           </div>
           <h2 style={{ fontSize: 26, fontWeight: 800, color: "#1e293b", margin: "0 0 8px" }}>{t("payment.success.welcome")}</h2>
           <p style={{ fontSize: 15, color: "#64748b", marginBottom: 24, lineHeight: 1.6 }}>
@@ -202,10 +202,7 @@ export function PaymentPage() {
   return (
     <div style={{ minHeight: "100vh", background: "#f8fafc", display: "flex", flexDirection: "column" }}>
       <div style={{ background: "white", borderBottom: "1px solid #f1f5f9", padding: "14px 32px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <BookOpen size={22} color="#004aad" />
-          <span style={{ fontSize: 16, fontWeight: 700, color: "#004aad" }}>{t("common.appName")}</span>
-        </div>
+        <BrandMark height={28} />
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#64748b", fontSize: 12 }}>
             <Lock size={13} />

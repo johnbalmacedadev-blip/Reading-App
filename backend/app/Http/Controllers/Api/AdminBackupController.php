@@ -109,7 +109,13 @@ class AdminBackupController extends Controller
     public function updateSettings(Request $request): JsonResponse
     {
         $this->authorizeAdmin($request);
-        $data = $request->validate([
+
+        $payload = $request->all();
+        if (isset($payload['time']) && is_string($payload['time'])) {
+            $payload['time'] = $this->schedule->normalizeTime($payload['time']);
+        }
+
+        $data = validator($payload, [
             'enabled' => ['required', 'boolean'],
             'frequency' => ['required', 'in:daily,weekly,monthly'],
             'time' => ['required', 'date_format:H:i'],
@@ -118,7 +124,7 @@ class AdminBackupController extends Controller
             'backup_type' => ['required', 'in:database,full'],
             'retention_count' => ['required', 'integer', 'between:1,50'],
             'timezone' => ['required', 'timezone'],
-        ]);
+        ])->validate();
 
         $settings = BackupSetting::current();
         $settings->update($data);
@@ -134,8 +140,54 @@ class AdminBackupController extends Controller
 
         return response()->json([
             'settings' => $this->formatSettings($settings->fresh()),
-            'message' => 'Backup schedule saved.',
+            'message' => $settings->enabled
+                ? 'Backup schedule saved. Automatic backups will run when the scheduler is active.'
+                : 'Backup schedule saved. Automatic backups are disabled.',
         ]);
+    }
+
+    public function runScheduled(Request $request): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+        set_time_limit(0);
+
+        $settings = BackupSetting::current();
+
+        try {
+            $record = $this->backups->create($settings->backup_type, 'scheduled');
+            $settings->update(['last_run_at' => now()]);
+            $this->backups->pruneScheduled($settings->retention_count);
+            $this->schedule->pingScheduler();
+
+            AuditLogger::log(
+                'Backup',
+                'Maintenance',
+                ucfirst($settings->backup_type).' automatic backup generated (manual trigger)',
+                'info',
+                $request,
+                subject: $record,
+            );
+
+            return response()->json([
+                'backup' => $this->formatRecord($record),
+                'settings' => $this->formatSettings($settings->fresh()),
+                'message' => 'Scheduled backup ran successfully.',
+            ], 201);
+        } catch (Throwable $exception) {
+            report($exception);
+            AuditLogger::log(
+                'Backup',
+                'Maintenance',
+                'Automatic backup failed (manual trigger)',
+                'critical',
+                $request,
+                metadata: ['error' => $exception->getMessage()],
+            );
+
+            return response()->json([
+                'message' => 'Scheduled backup failed: '.$exception->getMessage(),
+            ], 500);
+        }
     }
 
     private function authorizeAdmin(Request $request): void
@@ -168,17 +220,25 @@ class AdminBackupController extends Controller
 
     private function formatSettings(BackupSetting $settings): array
     {
+        $schedulerActive = $this->schedule->isSchedulerActive();
+        $heartbeat = $this->schedule->lastHeartbeat();
+        $nextRun = $this->schedule->nextRun($settings);
+        $due = $this->schedule->isDue($settings);
+
         return [
             'enabled' => $settings->enabled,
             'frequency' => $settings->frequency,
-            'time' => substr($settings->time, 0, 5),
+            'time' => $this->schedule->normalizeTime((string) $settings->time),
             'day_of_week' => $settings->day_of_week,
             'day_of_month' => $settings->day_of_month,
             'backup_type' => $settings->backup_type,
             'retention_count' => $settings->retention_count,
             'timezone' => $settings->timezone,
             'last_run_at' => $settings->last_run_at?->toIso8601String(),
-            'next_run_at' => $this->schedule->nextRun($settings)?->toIso8601String(),
+            'next_run_at' => $nextRun?->toIso8601String(),
+            'is_due' => $due,
+            'scheduler_active' => $schedulerActive,
+            'scheduler_last_seen_at' => $heartbeat?->toIso8601String(),
         ];
     }
 

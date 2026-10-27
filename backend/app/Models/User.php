@@ -19,6 +19,9 @@ class User extends Authenticatable
         'first_name',
         'last_name',
         'email',
+        'contact_email',
+        'pending_contact_email',
+        'pending_username',
         'preferred_language',
         'password',
         'portal_password_encrypted',
@@ -30,6 +33,7 @@ class User extends Authenticatable
         'school_board',
         'account_status',
         'affiliation_type',
+        'registration_source',
         'requested_board_code',
         'join_requested_at',
         'started_at',
@@ -42,6 +46,7 @@ class User extends Authenticatable
         'stripe_subscription_id',
         'subscription_started_at',
         'subscription_ends_at',
+        'subscription_auto_renew',
     ];
 
     protected $hidden = [
@@ -60,6 +65,7 @@ class User extends Authenticatable
             'trial_ends_at' => 'datetime',
             'subscription_started_at' => 'datetime',
             'subscription_ends_at' => 'datetime',
+            'subscription_auto_renew' => 'boolean',
             'last_login_at' => 'datetime',
         ];
     }
@@ -105,6 +111,24 @@ class User extends Authenticatable
         return $this->name;
     }
 
+    /** Admin portal username (local-part of email@portal.local). */
+    public function adminUsername(): string
+    {
+        $email = strtolower(trim((string) $this->email));
+        if (str_ends_with($email, '@portal.local')) {
+            return substr($email, 0, -strlen('@portal.local'));
+        }
+
+        return strtok($email, '@') ?: $email;
+    }
+
+    public static function adminLoginEmail(string $username): string
+    {
+        $username = strtolower(trim($username));
+
+        return "{$username}@portal.local";
+    }
+
     public function initials(): string
     {
         $first = $this->first_name ?: strtok($this->name, ' ');
@@ -118,6 +142,7 @@ class User extends Authenticatable
         if (
             $this->role !== 'teacher'
             || $this->account_status !== 'active'
+            || $this->isRegistrationLicensedTeacher()
             || $this->isInstitutionalTeacher()
             || $this->trial_started_at
             || $this->hasActiveSubscription()
@@ -127,9 +152,25 @@ class User extends Authenticatable
 
         $this->forceFill([
             'trial_started_at' => now(),
-            'trial_ends_at' => now()->addDays(30),
+            'trial_ends_at' => now()->addDays(PlatformSetting::trialPeriodDays()),
             'subscription_status' => 'trialing',
         ])->save();
+    }
+
+    /** Created via school/board registration wizard or admin assignment to an institution. */
+    public function isRegistrationLicensedTeacher(): bool
+    {
+        if ($this->role !== 'teacher') {
+            return false;
+        }
+
+        return in_array($this->registration_source, [
+            'school_registration',
+            'board_registration',
+            'school_assigned',
+            'board_assigned',
+        ], true)
+            || ($this->affiliation_type === 'institutional' && $this->subscription_plan === 'institutional');
     }
 
     public function isInstitutionalTeacher(): bool
@@ -138,14 +179,122 @@ class User extends Authenticatable
             return false;
         }
 
-        return (bool) $this->school_id || trim((string) ($this->school_board ?? '')) !== '';
+        if ($this->isRegistrationLicensedTeacher()) {
+            return true;
+        }
+
+        if ($this->subscription_plan === 'institutional' || $this->affiliation_type === 'institutional') {
+            return true;
+        }
+
+        // Linked to a school or board institution — access follows that licence.
+        if ($this->school_id) {
+            return true;
+        }
+
+        if ($this->affiliation_type === 'board' && trim((string) ($this->school_board ?? '')) !== '') {
+            return true;
+        }
+
+        // Affiliation "school" with a school_id already covered above; board-only link after approval.
+        if ($this->affiliation_type === 'school' && $this->school_id) {
+            return true;
+        }
+
+        // Individual trial / paid teachers who only typed a free-text board name stay personal.
+        if ($this->affiliation_type === 'individual') {
+            return false;
+        }
+
+        if (trim((string) ($this->school_board ?? '')) !== '') {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * School / board portal user whose subscription window this teacher inherits.
+     */
+    public function institutionalSponsor(): ?User
+    {
+        if ($this->role !== 'teacher') {
+            return null;
+        }
+
+        if ($this->school_id) {
+            $schoolAdmin = static::query()
+                ->where('role', 'school_admin')
+                ->where('school_id', $this->school_id)
+                ->orderByDesc('id')
+                ->first();
+
+            if ($schoolAdmin) {
+                return $schoolAdmin;
+            }
+        }
+
+        $board = trim((string) ($this->school_board ?? ''));
+        if ($board !== '') {
+            return static::query()
+                ->where('role', 'board_admin')
+                ->where('school_board', $board)
+                ->orderByDesc('id')
+                ->first();
+        }
+
+        return null;
+    }
+
+    /** Institutional licence still within the school/board coverage window. */
+    public function hasInstitutionalCoverage(): bool
+    {
+        if (! $this->isInstitutionalTeacher()) {
+            return false;
+        }
+
+        if ($this->subscription_plan === 'institutional') {
+            return in_array($this->subscription_status, ['active', 'past_due'], true)
+                && ($this->subscription_ends_at === null || $this->subscription_ends_at->isFuture());
+        }
+
+        // Legacy school/board-linked teachers without an explicit institutional plan.
+        return true;
     }
 
     public function hasActiveTrial(): bool
     {
+        if ($this->role === 'teacher' && ($this->isRegistrationLicensedTeacher() || $this->isInstitutionalTeacher())) {
+            return false;
+        }
+
         return $this->subscription_status === 'trialing'
             && $this->trial_ends_at !== null
             && $this->trial_ends_at->isFuture();
+    }
+
+    /** Individual teacher or school/board portal still on trial, with no paid/institutional subscription. */
+    public function isTrialOnlyAccount(): bool
+    {
+        if ($this->hasActiveSubscription()) {
+            return false;
+        }
+
+        if ($this->role === 'teacher' && $this->hasInstitutionalCoverage()) {
+            return false;
+        }
+
+        if ($this->isInstitutionalAdmin()) {
+            return $this->hasActiveTrial()
+                || ($this->subscription_status === 'trialing' && $this->trial_ends_at !== null);
+        }
+
+        if ($this->role !== 'teacher') {
+            return false;
+        }
+
+        return $this->hasActiveTrial()
+            || ($this->subscription_status === 'trialing' && ! $this->hasActiveSubscription());
     }
 
     public function hasActiveSubscription(): bool
@@ -156,15 +305,16 @@ class User extends Authenticatable
 
     public function canAccessReports(): bool
     {
-        return $this->isInstitutionalTeacher()
-            || ($this->hasActiveSubscription() && $this->subscription_plan === 'insights');
+        return $this->hasInstitutionalCoverage()
+            || $this->hasActiveTrial()
+            || ($this->hasActiveSubscription() && in_array($this->subscription_plan, ['essentials', 'insights'], true));
     }
 
     public function canAccessClassroomFeatures(): bool
     {
-        return $this->isInstitutionalTeacher()
+        return $this->hasInstitutionalCoverage()
             || $this->hasActiveTrial()
-            || ($this->hasActiveSubscription() && $this->subscription_plan === 'insights');
+            || ($this->hasActiveSubscription() && in_array($this->subscription_plan, ['essentials', 'insights'], true));
     }
 
     public function trialDaysRemaining(): int
@@ -174,5 +324,38 @@ class User extends Authenticatable
         }
 
         return max(1, now()->startOfDay()->diffInDays($this->trial_ends_at->copy()->startOfDay()));
+    }
+
+    public function subscriptionDaysRemaining(): int
+    {
+        if (! $this->hasActiveSubscription() || $this->subscription_ends_at === null) {
+            return 0;
+        }
+
+        return max(0, (int) now()->startOfDay()->diffInDays($this->subscription_ends_at->copy()->startOfDay()));
+    }
+
+    public function isInstitutionalAdmin(): bool
+    {
+        return in_array($this->role, ['school_admin', 'board_admin'], true);
+    }
+
+    /** School / board portal access (manual trial or subscription; no in-platform payment). */
+    public function canAccessInstitutionalPortal(): bool
+    {
+        if (! $this->isInstitutionalAdmin()) {
+            return false;
+        }
+
+        if ($this->account_status === 'archived') {
+            return false;
+        }
+
+        // Accounts created before institutional billing had no trial/subscription fields.
+        if ($this->subscription_status === null && $this->trial_ends_at === null) {
+            return true;
+        }
+
+        return $this->hasActiveTrial() || $this->hasActiveSubscription();
     }
 }

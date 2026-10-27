@@ -1,10 +1,12 @@
 import { type ReactNode } from "react";
 import { useNavigate } from "react-router";
-import { BookOpen, LogOut, PanelLeftClose, PanelLeft } from "lucide-react";
+import { LogOut, PanelLeftClose, PanelLeft } from "lucide-react";
 import { LangToggle } from "../components/LangToggle";
+import { BrandMark } from "../components/BrandMark";
 import { useLanguage } from "../i18n";
 import { boardNavItems, type BoardNavActive } from "../i18n/navHelpers";
 import { usePortalLogout } from "../hooks/usePortalLogout";
+import { InstitutionalTrialBanner } from "./InstitutionalTrialBanner";
 
 import { useCollapsibleSidebar } from "../hooks/useCollapsibleSidebar";
 
@@ -40,19 +42,14 @@ export function BoardLayout({
         aria-hidden={collapsed}
       >
         <div className="flex items-center justify-between gap-2 mb-10 min-w-[208px]">
-          <div className="flex items-center gap-3 min-w-0">
-            <BookOpen className="w-8 h-8 shrink-0" style={{ color: "#004aad" }} />
-            <div className="min-w-0">
-              <h1 className="text-base font-bold leading-tight" style={{ color: "#004aad" }}>
-                {t("common.appName")}
-              </h1>
-              <p
-                className="text-xs mt-0.5 px-2 py-0.5 rounded-full inline-block"
-                style={{ background: "#dff3ff", color: "#004aad" }}
-              >
-                {t("board.portal")}
-              </p>
-            </div>
+          <div className="min-w-0 flex-1">
+            <BrandMark height={34} />
+            <p
+              className="text-xs mt-1.5 px-2 py-0.5 rounded-full inline-block"
+              style={{ background: "#dff3ff", color: "#004aad" }}
+            >
+              {t("board.portal")}
+            </p>
           </div>
           <button
             type="button"
@@ -83,7 +80,8 @@ export function BoardLayout({
           ))}
         </nav>
 
-        <div className="min-w-[208px]">
+        <div className="min-w-[208px] space-y-2">
+          <InstitutionalTrialBanner subscriptionPath="/board/subscription" compact />
           <LangToggle />
           <button
             onClick={handleLogout}

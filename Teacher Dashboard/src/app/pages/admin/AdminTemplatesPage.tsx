@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, FileText, HelpCircle, LayoutTemplate, ListChecks, RotateCcw, Save } from "lucide-react";
+import { ChevronDown, ChevronRight, FileText, LayoutTemplate, RotateCcw, Save } from "lucide-react";
 import { AdminLayout } from "./AdminLayout";
 import { useLanguage } from "../../i18n";
 import {
@@ -17,20 +17,18 @@ import { WorkshopTemplatePreview } from "../../components/WorkshopTemplatePrevie
 
 function templateFormatLabel(format: (typeof WORKSHOP_TEMPLATES)[number]["format"]): string {
   if (format === "letter_grid") return "Letter grid";
+  if (format === "letter_write_list") return "Letter writing list";
+  if (format === "checkbox_sections") return "Section checklists";
   if (format === "word_sound_list") return "Sound identification";
   if (format === "mixed_sections") return "Syllable & grapheme";
   if (format === "item_grid_sections") return "Reading grids";
   if (format === "mixed_reading_sections") return "Word families & reading";
   if (format === "fluency_sections") return "Fluency & decoding";
-  if (format === "comprehension_sections") return "Listening comprehension";
-  if (format === "multiple_choice") return "Multiple choice";
+  if (format === "comprehension_sections") return "Reading comprehension";
   return "Section checklists";
 }
 
 function templateItemCount(template: WorkshopTemplate): { count: number; label: "section" | "question" } {
-  if (template.format === "multiple_choice") {
-    return { count: template.questions.length, label: "question" };
-  }
   return { count: template.sections.length, label: "section" };
 }
 
@@ -128,12 +126,8 @@ export function AdminTemplatesPage() {
                       flexShrink: 0,
                     }}
                   >
-                    {template.format === "letter_grid" ? (
+                    {template.format === "letter_grid" || template.format === "letter_write_list" ? (
                       <LayoutTemplate size={18} color="#004aad" />
-                    ) : template.format === "word_sound_list" ? (
-                      <ListChecks size={18} color="#004aad" />
-                    ) : template.format === "multiple_choice" ? (
-                      <HelpCircle size={18} color="#004aad" />
                     ) : (
                       <FileText size={18} color="#004aad" />
                     )}
@@ -294,17 +288,11 @@ export function AdminTemplatesPage() {
                       }}
                     >
                       <p style={{ fontSize: 12, color: "#64748b", margin: 0 }}>
-                        {template.format === "multiple_choice" ? (
-                          <>Multiple choice questionnaire preview.</>
-                        ) : (
-                          <>
-                            Preview based on{" "}
-                            <strong style={{ color: "#334155" }}>
-                              {tp("evaluation.workshopN", { n: template.sourceWorkshop })}
-                            </strong>{" "}
-                            evaluation form structure.
-                          </>
-                        )}
+                        Preview based on{" "}
+                        <strong style={{ color: "#334155" }}>
+                          {tp("evaluation.workshopN", { n: template.sourceWorkshop })}
+                        </strong>{" "}
+                        evaluation form structure.
                       </p>
                     </div>
                     <div

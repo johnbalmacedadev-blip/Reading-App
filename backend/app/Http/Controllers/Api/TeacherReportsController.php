@@ -431,7 +431,8 @@ class TeacherReportsController extends Controller
     /** @return array{0: Carbon, 1: Carbon} */
     private function schoolYearRange(string $schoolYear): array
     {
-        if (preg_match('/^(\d{4})-(\d{4})$/', $schoolYear, $matches)) {
+        $normalized = \App\Models\SchoolYear::normalizeLabel($schoolYear);
+        if (preg_match('/^(\d{4})-(\d{4})$/', $normalized, $matches)) {
             $start = Carbon::create((int) $matches[1], 9, 1)->startOfDay();
             $end = Carbon::create((int) $matches[2], 8, 31)->endOfDay();
 

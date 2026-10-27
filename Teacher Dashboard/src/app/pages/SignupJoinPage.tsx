@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   ArrowLeft,
-  BookOpen,
   Building2,
   Check,
   Loader2,
@@ -10,6 +9,7 @@ import {
   Search,
 } from "lucide-react";
 import classroomPhoto from "../../imports/image-1.png";
+import { BrandMark } from "../components/BrandMark";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
 import { ApiError, authApi } from "../api/client";
@@ -194,9 +194,8 @@ export function SignupJoinPage() {
         <img src={classroomPhoto} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(0,74,173,0.78), rgba(0,74,173,0.85))" }} />
         <div style={{ position: "relative", height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between", padding: 40 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <BookOpen size={28} color="white" />
-            <span style={{ fontSize: 18, fontWeight: 700, color: "white" }}>{t("common.appName")}</span>
+          <div style={{ alignSelf: "flex-start" }}>
+            <BrandMark height={48} onDark />
           </div>
           <p style={{ color: "rgba(255,255,255,0.85)", fontSize: 14, lineHeight: 1.6, margin: 0 }}>
             {t("signup.join.subtitle")}
@@ -213,7 +212,7 @@ export function SignupJoinPage() {
           <button
             type="button"
             onClick={() => {
-              if (form) saveSignupDraft(3, form);
+              if (form) saveSignupDraft(2, form);
               navigate("/signup");
             }}
             style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 13, marginBottom: 24 }}

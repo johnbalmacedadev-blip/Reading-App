@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { BookOpen, ArrowLeft, Lock, Eye, EyeOff, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Lock, Eye, EyeOff, CheckCircle2 } from "lucide-react";
+import { BrandMark } from "../components/BrandMark";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
 import { authApi, ApiError } from "../api/client";
@@ -55,9 +56,8 @@ export function ResetPasswordPage() {
         <LangToggle className="" />
       </div>
       <div style={{ background: "white", borderRadius: 20, padding: "40px 44px", maxWidth: 440, width: "100%", boxShadow: "0 8px 40px rgba(0,74,173,0.08)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
-          <BookOpen size={22} color="#004aad" />
-          <span style={{ fontSize: 15, fontWeight: 700, color: "#004aad" }}>{t("common.appName")}</span>
+        <div style={{ marginBottom: 20 }}>
+          <BrandMark height={28} />
         </div>
 
         {done ? (

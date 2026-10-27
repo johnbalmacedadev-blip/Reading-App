@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useSearchParams } from "react-router";
+import { Navigate, useSearchParams } from "react-router";
 import {
   CalendarDays,
   Check,
@@ -15,6 +15,7 @@ import {
   type TeacherSubscription,
 } from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import { teacherHomePath, teacherIsInstitutional } from "../utils/teacherAccess";
 
 type PlanId = "essentials" | "insights";
 
@@ -25,6 +26,7 @@ const plans = [
     description: "Everything you need to teach with Lecture Scientifique.",
     price: 14.99,
     features: [
+      "Up to 30 students",
       "Full Lecture Scientifique curriculum (15 workshops)",
       "Teacher resource library",
       "Email support (48-hour response)",
@@ -47,7 +49,6 @@ const plans = [
     price: 19.99,
     features: [
       "Everything in Essentials",
-      "Unlimited students",
       "Classroom management",
       "Student progress tracking",
       "Individual student reports",
@@ -75,13 +76,14 @@ function formatDate(value: string | null) {
 
 export function TeacherSubscriptionPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { refreshUser } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [subscription, setSubscription] = useState<TeacherSubscription | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<PlanId>("insights");
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState<PlanId | "portal" | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const institutional = teacherIsInstitutional(user);
 
   const load = useCallback(async () => {
     const result = await teacherSubscriptionApi.get();
@@ -92,6 +94,11 @@ export function TeacherSubscriptionPage() {
   }, []);
 
   useEffect(() => {
+    if (institutional) {
+      setLoading(false);
+      return;
+    }
+
     const initialize = async () => {
       setLoading(true);
       setError("");
@@ -124,7 +131,7 @@ export function TeacherSubscriptionPage() {
     };
 
     void initialize();
-  }, [load, refreshUser, searchParams, setSearchParams]);
+  }, [institutional, load, refreshUser, searchParams, setSearchParams]);
 
   const startCheckout = async (plan: PlanId) => {
     setSelectedPlan(plan);
@@ -150,6 +157,10 @@ export function TeacherSubscriptionPage() {
       setProcessing(null);
     }
   };
+
+  if (institutional) {
+    return <Navigate to={teacherHomePath(user)} replace />;
+  }
 
   if (loading) {
     return (
@@ -208,7 +219,7 @@ export function TeacherSubscriptionPage() {
           )}
         </section>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 20, alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 20, alignItems: "stretch" }}>
           {plans.map((plan) => {
             const tax = plan.price * 0.13;
             const total = plan.price + tax;
@@ -227,6 +238,9 @@ export function TeacherSubscriptionPage() {
                   boxShadow: isCurrent || selected ? `0 7px 24px ${plan.color}18` : "0 2px 10px rgba(15,23,42,0.04)",
                   cursor: active ? "default" : "pointer",
                   position: "relative",
+                  display: "flex",
+                  flexDirection: "column",
+                  height: "100%",
                 }}
               >
                 {(isCurrent || (!active && selected)) && (
@@ -244,16 +258,18 @@ export function TeacherSubscriptionPage() {
                   13% tax: {money(tax)} · Total: <strong style={{ color: "#334155" }}>{money(total)}/month</strong>
                 </div>
 
-                {plan.features.map((feature) => (
-                  <Feature key={feature} included>{feature}</Feature>
-                ))}
+                <div style={{ flex: 1 }}>
+                  {plan.features.map((feature) => (
+                    <Feature key={feature} included>{feature}</Feature>
+                  ))}
 
-                {plan.excluded.length > 0 && (
-                  <div style={{ borderTop: "1px solid #e2e8f0", marginTop: 16, paddingTop: 14 }}>
-                    <div style={{ fontSize: 11, fontWeight: 750, color: "#64748b", marginBottom: 9 }}>NOT INCLUDED</div>
-                    {plan.excluded.map((feature) => <Feature key={feature}>{feature}</Feature>)}
-                  </div>
-                )}
+                  {plan.excluded.length > 0 && (
+                    <div style={{ borderTop: "1px solid #e2e8f0", marginTop: 16, paddingTop: 14 }}>
+                      <div style={{ fontSize: 11, fontWeight: 750, color: "#64748b", marginBottom: 9 }}>NOT INCLUDED</div>
+                      {plan.excluded.map((feature) => <Feature key={feature}>{feature}</Feature>)}
+                    </div>
+                  )}
+                </div>
 
                 {!active && (
                   <button
@@ -262,7 +278,7 @@ export function TeacherSubscriptionPage() {
                       void startCheckout(plan.id);
                     }}
                     disabled={processing !== null}
-                    style={{ ...primaryButtonStyle, background: plan.color }}
+                    style={{ ...primaryButtonStyle, background: plan.color, marginTop: "auto" }}
                   >
                     {processing === plan.id ? <Loader2 size={16} className="animate-spin" /> : <CreditCard size={16} />}
                     Subscribe to {plan.name}

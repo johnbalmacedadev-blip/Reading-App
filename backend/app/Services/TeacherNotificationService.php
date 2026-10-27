@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\PlatformSetting;
 use App\Models\SchoolClass;
 use App\Models\Student;
 use App\Models\StudentEvaluation;
@@ -10,6 +11,7 @@ use App\Models\TeacherNotification;
 use App\Models\User;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\App;
+use Illuminate\Validation\ValidationException;
 
 class TeacherNotificationService
 {
@@ -36,7 +38,10 @@ class TeacherNotificationService
             "trial-started:{$teacher->id}",
             'info',
             self::text($locale, 'notifications.trial_started.title'),
-            self::text($locale, 'notifications.trial_started.message', ['date' => $date]),
+            self::text($locale, 'notifications.trial_started.message', [
+                'days' => PlatformSetting::trialPeriodDays(),
+                'date' => $date,
+            ]),
             '/subscription',
         );
     }
@@ -62,6 +67,30 @@ class TeacherNotificationService
             '/subscription',
             'trial_ending',
             ['days' => $daysLeft],
+        );
+    }
+
+    public static function trialExpired(User $teacher): void
+    {
+        if ($teacher->isInstitutionalTeacher() || $teacher->hasActiveSubscription() || $teacher->hasActiveTrial()) {
+            return;
+        }
+
+        if (! $teacher->trial_ends_at || $teacher->trial_ends_at->isFuture()) {
+            return;
+        }
+
+        $locale = EmailLocale::resolve($teacher);
+        $ended = self::formatDate($teacher->trial_ends_at, $locale) ?: self::formatDate(now(), $locale);
+
+        self::create(
+            $teacher,
+            "trial-expired:{$teacher->id}",
+            'warning',
+            self::text($locale, 'notifications.trial_expired.title'),
+            self::text($locale, 'notifications.trial_expired.message', ['date' => $ended]),
+            '/subscription',
+            'trial_expired',
         );
     }
 
@@ -186,6 +215,95 @@ class TeacherNotificationService
     /**
      * Admin-triggered notice that always creates a fresh in-app notification and email.
      *
+     * @param  'trial_ending'|'trial_expired'|'subscription_started'|'subscription_renewed'|'subscription_cancelled'|'subscription_expired'|'inactive_reminder'|'suspension_reminder'  $type
+     */
+    public static function adminForceBillingNotice(User $teacher, string $type): void
+    {
+        if (in_array($type, ['trial_ending', 'trial_expired'], true)) {
+            self::adminForceTrialNotice($teacher, $type);
+
+            return;
+        }
+
+        if (in_array($type, ['inactive_reminder', 'suspension_reminder'], true)) {
+            self::inactiveAccountNudge($teacher, $type, force: true);
+
+            return;
+        }
+
+        $locale = EmailLocale::resolve($teacher);
+        $stamp = now()->format('YmdHis');
+        $plan = self::planLabel($teacher, $locale);
+        $ends = self::formatDate($teacher->subscription_ends_at, $locale) ?: self::formatDate(now(), $locale);
+
+        if ($type === 'subscription_started') {
+            TeacherNotification::query()->create([
+                'teacher_id' => $teacher->id,
+                'event_key' => "admin-subscription-started:{$teacher->id}:{$stamp}",
+                'type' => 'success',
+                'title' => self::text($locale, 'notifications.subscription_activated.title'),
+                'message' => self::text($locale, 'notifications.subscription_activated.message', ['plan' => $plan]),
+                'url' => '/subscription',
+            ]);
+            NotificationMailer::sendSubscriptionStarted($teacher);
+
+            return;
+        }
+
+        if ($type === 'subscription_renewed') {
+            TeacherNotification::query()->create([
+                'teacher_id' => $teacher->id,
+                'event_key' => "admin-subscription-renewed:{$teacher->id}:{$stamp}",
+                'type' => 'success',
+                'title' => self::text($locale, 'notifications.subscription_renewed.title'),
+                'message' => $ends
+                    ? self::text($locale, 'notifications.subscription_renewed.message_until', ['plan' => $plan, 'date' => $ends])
+                    : self::text($locale, 'notifications.subscription_renewed.message', ['plan' => $plan]),
+                'url' => '/subscription',
+            ]);
+            NotificationMailer::sendSubscriptionRenewed($teacher, $teacher->subscription_ends_at);
+
+            return;
+        }
+
+        if ($type === 'subscription_cancelled') {
+            TeacherNotification::query()->create([
+                'teacher_id' => $teacher->id,
+                'event_key' => "admin-subscription-cancelled:{$teacher->id}:{$stamp}",
+                'type' => 'warning',
+                'title' => self::text($locale, 'notifications.subscription_cancelled.title'),
+                'message' => $ends
+                    ? self::text($locale, 'notifications.subscription_cancelled.message_until', ['date' => $ends])
+                    : self::text($locale, 'notifications.subscription_cancelled.message'),
+                'url' => '/subscription',
+            ]);
+            NotificationMailer::sendSubscriptionCancelled($teacher);
+
+            return;
+        }
+
+        if ($type === 'subscription_expired') {
+            TeacherNotification::query()->create([
+                'teacher_id' => $teacher->id,
+                'event_key' => "admin-subscription-expired:{$teacher->id}:{$stamp}",
+                'type' => 'warning',
+                'title' => self::text($locale, 'notifications.subscription_expired.title'),
+                'message' => self::text($locale, 'notifications.subscription_expired.message', ['date' => $ends]),
+                'url' => '/subscription',
+            ]);
+            NotificationMailer::sendSubscriptionExpired($teacher);
+
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'type' => ['Invalid notice type.'],
+        ]);
+    }
+
+    /**
+     * Admin-triggered notice that always creates a fresh in-app notification and email.
+     *
      * @param  'trial_ending'|'trial_expired'  $type
      */
     public static function adminForceTrialNotice(User $teacher, string $type): void
@@ -225,6 +343,36 @@ class TeacherNotificationService
             'url' => '/subscription',
         ]);
         NotificationMailer::sendTrialExpired($teacher);
+    }
+
+    /**
+     * Extend or reactivate a teacher's trial, then notify by email and in-app.
+     *
+     * @return array{days: int, trial_ends_at: \Carbon\Carbon}
+     */
+    public static function extendTrial(User $teacher, ?int $days = null): array
+    {
+        $result = InstitutionalSubscriptionService::extendTrial($teacher, $days);
+        $teacher->refresh();
+
+        $locale = EmailLocale::resolve($teacher);
+        $ends = self::formatDate($teacher->trial_ends_at, $locale) ?: self::formatDate(now(), $locale);
+        $stamp = now()->format('YmdHis');
+
+        TeacherNotification::query()->create([
+            'teacher_id' => $teacher->id,
+            'event_key' => "admin-trial-extended:{$teacher->id}:{$stamp}",
+            'type' => 'success',
+            'title' => self::text($locale, 'notifications.trial_extended.title'),
+            'message' => self::text($locale, 'notifications.trial_extended.message', [
+                'date' => $ends,
+                'days' => $result['days'],
+            ]),
+            'url' => '/subscription',
+        ]);
+        NotificationMailer::sendTrialExtended($teacher, $result['days']);
+
+        return $result;
     }
 
     /**
@@ -312,18 +460,52 @@ class TeacherNotificationService
         return true;
     }
 
-    public static function systemAnnouncement(User $teacher, SystemAnnouncement $announcement): void
-    {
-        self::create(
-            $teacher,
-            "announcement:{$announcement->id}:teacher:{$teacher->id}",
-            $announcement->notificationType(),
-            $announcement->title,
-            $announcement->message,
-            $announcement->url ?: null,
-            'announcement',
-            ['announcement' => $announcement],
-        );
+    /**
+     * @return array{
+     *   id: int,
+     *   name: string,
+     *   email: string,
+     *   portal_sent: bool,
+     *   email_sent: bool,
+     *   email_status: 'sent'|'skipped'|'failed'|'not_attempted'
+     * }
+     */
+    public static function systemAnnouncement(
+        User $teacher,
+        SystemAnnouncement $announcement,
+        bool $sendPortal = true,
+        bool $sendEmail = true,
+    ): array {
+        $result = [
+            'id' => $teacher->id,
+            'name' => $teacher->displayName(),
+            'email' => (string) $teacher->email,
+            'portal_sent' => false,
+            'email_sent' => false,
+            'email_status' => 'not_attempted',
+        ];
+
+        if ($sendPortal) {
+            TeacherNotification::query()->firstOrCreate(
+                ['event_key' => "announcement:{$announcement->id}:teacher:{$teacher->id}"],
+                [
+                    'teacher_id' => $teacher->id,
+                    'type' => $announcement->notificationType(),
+                    'title' => $announcement->title,
+                    'message' => $announcement->message,
+                    'url' => $announcement->url ?: null,
+                ],
+            );
+            $result['portal_sent'] = true;
+        }
+
+        if ($sendEmail) {
+            $emailStatus = NotificationMailer::sendAnnouncement($teacher, $announcement);
+            $result['email_status'] = $emailStatus;
+            $result['email_sent'] = $emailStatus === 'sent';
+        }
+
+        return $result;
     }
 
     public static function classCreated(User $teacher, SchoolClass $schoolClass): void
@@ -463,6 +645,7 @@ class TeacherNotificationService
         if ($notification->wasRecentlyCreated && $emailEvent) {
             match ($emailEvent) {
                 'trial_ending' => NotificationMailer::sendTrialEnding($teacher, (int) ($emailParams['days'] ?? 1)),
+                'trial_expired' => NotificationMailer::sendTrialExpired($teacher),
                 'subscription_started' => NotificationMailer::sendSubscriptionStarted($teacher),
                 'payment_successful' => NotificationMailer::sendPaymentSuccessful($teacher),
                 'payment_failed' => NotificationMailer::sendPaymentFailed($teacher),

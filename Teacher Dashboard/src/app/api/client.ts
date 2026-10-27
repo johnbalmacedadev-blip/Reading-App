@@ -94,16 +94,27 @@ export type AuthUser = {
   avatar_url?: string | null;
   school: { id: number; name: string; city: string | null } | null;
   school_board?: string | null;
+  permissions?: PlatformSettings;
+  resource_access?: ResourceAccessPayload;
+  is_trial_only?: boolean;
+  account_activated_at?: string | null;
   subscription?: {
-    status: string;
+    status: string | null;
     plan: string | null;
     billing: string | null;
+    access_mode?: "trial" | "subscription" | null;
+    trial_started_at?: string | null;
     trial_ends_at: string | null;
     trial_days_remaining: number;
     is_trial_active: boolean;
     is_active: boolean;
+    subscription_started_at?: string | null;
+    subscription_ends_at?: string | null;
     can_access_classroom: boolean;
     can_access_reports: boolean;
+    can_access_portal?: boolean;
+    is_registration_licensed?: boolean;
+    is_institutional?: boolean;
   } | null;
 };
 
@@ -116,6 +127,8 @@ export type TeacherSubscription = {
   trial_days_remaining: number;
   is_trial_active: boolean;
   is_active: boolean;
+  is_institutional?: boolean;
+  is_registration_licensed?: boolean;
   can_access_classroom: boolean;
   can_access_reports: boolean;
   tax_rate_percent: number;
@@ -302,6 +315,14 @@ export const teacherProfileApi = {
   },
 };
 
+export type TeacherAtelierFile = {
+  id: number;
+  name: string;
+  type: string;
+  mime_type?: string | null;
+  size: string;
+};
+
 export const teacherApi = {
   classes: () =>
     apiRequest<{
@@ -415,8 +436,25 @@ export const teacherApi = {
         grade: string;
         template_id: import("../evaluation/workshopTemplates").WorkshopTemplateId;
         template_draft: import("../evaluation/workshopTemplates").TemplateDraft | null;
+        has_atelier_files?: boolean;
+        atelier_files?: TeacherAtelierFile[];
+        has_atelier_pdf?: boolean;
+        atelier_pdf_name?: string | null;
       } | null;
     }>(`/api/teacher/assessments/published?atelier=${atelier}&grade=${encodeURIComponent(grade)}`),
+  atelierFileUrl: (fileId: number, atelier: number, grade: string) =>
+    `${API_BASE}/api/teacher/assessments/atelier-files/${fileId}/download?atelier=${atelier}&grade=${encodeURIComponent(grade)}`,
+  viewAtelierFile: async (fileId: number, atelier: number, grade: string) => {
+    const response = await fetch(
+      `${API_BASE}/api/teacher/assessments/atelier-files/${fileId}/download?atelier=${atelier}&grade=${encodeURIComponent(grade)}`,
+      { credentials: "include", headers: { Accept: "application/pdf" } },
+    );
+    if (!response.ok) {
+      throw new Error("Unable to open PDF.");
+    }
+    const blob = await response.blob();
+    return URL.createObjectURL(blob);
+  },
   addStudent: (
     classId: number | string,
     payload: { first_name: string; last_name: string }
@@ -690,6 +728,67 @@ export type DownloadableCategoryItem = {
   resources?: DownloadableResourceItem[];
 };
 
+export type ResourceAccessExportItem = {
+  key: string;
+  label: string;
+  description: string;
+};
+
+export type ResourceAccessCatalogCategory = {
+  id: number;
+  title: string;
+  color: string | null;
+  resources: {
+    id: number;
+    title: string;
+    format: string | null;
+    size: string;
+    has_file: boolean;
+  }[];
+};
+
+export type ResourceAccessItemPayload = {
+  kind: "downloadable" | "export";
+  resource_key: string;
+};
+
+export type ResourceAccessPayload = {
+  enabled: boolean;
+  downloadable_ids?: number[];
+  export_keys?: string[];
+};
+
+export type ResourceAccessGrantPayload = {
+  enabled: boolean;
+  items: ResourceAccessItemPayload[];
+  downloadable?: ResourceAccessCatalogCategory[];
+  exports?: ResourceAccessExportItem[];
+  name?: string;
+  resource_access_enabled?: boolean;
+  message?: string;
+};
+
+export const resourceAccessApi = {
+  catalog: () =>
+    apiRequest<{ downloadable: ResourceAccessCatalogCategory[]; exports: ResourceAccessExportItem[] }>(
+      "/api/admin/resource-access/catalog",
+    ),
+  teacher: (id: number) =>
+    apiRequest<ResourceAccessGrantPayload>(`/api/admin/teachers/${id}/resource-access`),
+  saveTeacher: (id: number, payload: { enabled: boolean; items: ResourceAccessItemPayload[] }) =>
+    apiRequest<ResourceAccessGrantPayload>(`/api/admin/teachers/${id}/resource-access`, {
+      method: "PUT",
+      json: payload,
+    }),
+  school: (id: number) =>
+    apiRequest<ResourceAccessGrantPayload>(`/api/admin/schools/${id}/resource-access`),
+  saveSchool: (id: number, payload: { enabled: boolean; items: ResourceAccessItemPayload[] }) =>
+    apiRequest<ResourceAccessGrantPayload>(`/api/admin/schools/${id}/resource-access`, {
+      method: "PUT",
+      json: payload,
+    }),
+};
+
 export const downloadableApi = {
   listCategories: () =>
     apiRequest<{ categories: DownloadableCategoryItem[] }>("/api/admin/downloadable-categories"),
@@ -778,8 +877,9 @@ export type AdminStudentRecord = {
   first_name: string;
   last_name: string;
   grade: string;
+  target: number;
   school: string;
-  school_id: number;
+  school_id: number | null;
   teacher: string;
   atelier: number;
   status: string;
@@ -790,6 +890,26 @@ export type AdminSchool = {
   id: number;
   name: string;
   city: string | null;
+  board_code: string | null;
+  board: string;
+};
+
+export type AdminGradeOption = {
+  value: string;
+  label: string;
+  label_fr: string;
+  assessment_grade: string;
+  target: number;
+};
+
+export type AdminStudentTeacher = {
+  id: number;
+  name: string;
+  email: string;
+  school_id: number | null;
+  school: string;
+  board_code: string | null;
+  board: string;
 };
 
 export type AdminStudentPayload = {
@@ -797,7 +917,7 @@ export type AdminStudentPayload = {
   last_name: string;
   date_of_birth?: string;
   grade: string;
-  school_id: number;
+  school_id: number | null;
   teacher_name: string;
   current_atelier: number;
   status: string;
@@ -915,6 +1035,41 @@ export type PlatformSettings = {
   timezone: string;
   platform_name: string;
   support_email: string;
+  teacher_can_export?: boolean;
+  teacher_can_edit_student?: boolean;
+  school_can_manage_teachers?: boolean;
+  school_can_view_board?: boolean;
+  board_can_edit_schools?: boolean;
+  trial_can_download_export?: boolean;
+  trial_period_days?: number;
+  trial_reminder_days?: number;
+  trial_reminder_days_enabled?: number[];
+  trial_expired_email?: boolean;
+  favicon_url?: string;
+  favicon_data_uri?: string | null;
+  has_custom_favicon?: boolean;
+  favicon_version?: string;
+  platform_logo_url?: string;
+  platform_logo_data_uri?: string | null;
+  has_custom_platform_logo?: boolean;
+  login_logo_url?: string;
+  login_logo_data_uri?: string | null;
+  has_custom_login_logo?: boolean;
+  logo_version?: string;
+};
+
+export type BrandingPayload = {
+  favicon_url: string;
+  favicon_data_uri: string | null;
+  has_custom_favicon: boolean;
+  favicon_version: string;
+  platform_logo_url: string;
+  platform_logo_data_uri: string | null;
+  has_custom_platform_logo: boolean;
+  login_logo_url: string;
+  login_logo_data_uri: string | null;
+  has_custom_login_logo: boolean;
+  logo_version: string;
 };
 
 export type EmailTemplateField = {
@@ -935,6 +1090,27 @@ export type EmailTemplatesPayload = {
   logo_data_uri: string | null;
   has_custom_logo: boolean;
 };
+
+export const brandingApi = {
+  get: () => apiRequest<BrandingPayload>("/api/branding"),
+  faviconUrl: (version?: string) =>
+    `${API_BASE}/api/branding/favicon${version ? `?v=${encodeURIComponent(version)}` : ""}`,
+  platformLogoUrl: (version?: string) =>
+    `${API_BASE}/api/branding/logo/platform${version ? `?v=${encodeURIComponent(version)}` : ""}`,
+  loginLogoUrl: (version?: string) =>
+    `${API_BASE}/api/branding/logo/login${version ? `?v=${encodeURIComponent(version)}` : ""}`,
+};
+
+export type LogoBrandingPayload = Pick<
+  BrandingPayload,
+  | "platform_logo_url"
+  | "platform_logo_data_uri"
+  | "has_custom_platform_logo"
+  | "login_logo_url"
+  | "login_logo_data_uri"
+  | "has_custom_login_logo"
+  | "logo_version"
+>;
 
 export const adminSettingsApi = {
   get: () => apiRequest<{ settings: PlatformSettings }>("/api/admin/settings"),
@@ -967,6 +1143,39 @@ export const adminSettingsApi = {
       has_custom_logo: boolean;
       message: string;
     }>("/api/admin/settings/email-logo", { method: "DELETE" }),
+  uploadFavicon: (file: File) => {
+    const formData = new FormData();
+    formData.append("favicon", file);
+    return apiFormRequest<BrandingPayload & { message: string }>("/api/admin/settings/favicon", formData);
+  },
+  resetFavicon: () =>
+    apiRequest<BrandingPayload & { message: string }>("/api/admin/settings/favicon", {
+      method: "DELETE",
+    }),
+  uploadPlatformLogo: (file: File) => {
+    const formData = new FormData();
+    formData.append("logo", file);
+    return apiFormRequest<LogoBrandingPayload & { message: string }>(
+      "/api/admin/settings/platform-logo",
+      formData,
+    );
+  },
+  resetPlatformLogo: () =>
+    apiRequest<LogoBrandingPayload & { message: string }>("/api/admin/settings/platform-logo", {
+      method: "DELETE",
+    }),
+  uploadLoginLogo: (file: File) => {
+    const formData = new FormData();
+    formData.append("logo", file);
+    return apiFormRequest<LogoBrandingPayload & { message: string }>(
+      "/api/admin/settings/login-logo",
+      formData,
+    );
+  },
+  resetLoginLogo: () =>
+    apiRequest<LogoBrandingPayload & { message: string }>("/api/admin/settings/login-logo", {
+      method: "DELETE",
+    }),
 };
 
 export type SystemAnnouncementCategory =
@@ -1006,10 +1215,22 @@ export const adminAnnouncementsApi = {
     }),
 };
 
+export type InstitutionalAccessMode = "trial" | "subscription";
+
+export type InstitutionalBillingNoticeType =
+  | "trial_ending"
+  | "trial_expired"
+  | "subscription_started"
+  | "subscription_renewed"
+  | "subscription_cancelled"
+  | "subscription_expired";
+
 export type AdminSchoolRecord = {
   id: number;
   name: string;
   board: string;
+  code?: string;
+  contact_person?: string;
   city: string;
   grades: string;
   teachers: number;
@@ -1017,15 +1238,44 @@ export type AdminSchoolRecord = {
   status: string;
   portal_username: string | null;
   portal_password: string | null;
+  portal_account_status?: string | null;
+  portal_email_verified_at?: string | null;
+  activation_pending?: boolean;
+  access_mode: InstitutionalAccessMode | null;
+  access: string;
+  trial_started_at: string | null;
+  trial_ends_at: string | null;
+  subscription_started_at: string | null;
+  subscription_ends_at: string | null;
+  is_trial_active: boolean;
+  is_subscription_active: boolean;
+  trial_days_remaining: number;
+  can_access_portal: boolean;
+  resource_access_enabled?: boolean;
+};
+
+export type AdminSchoolMemberTeacher = {
+  existing_id?: number | null;
+  name?: string;
+  email?: string;
+  password?: string;
 };
 
 export type AdminSchoolPayload = {
   name: string;
-  city: string;
+  city?: string;
   school_board: string | null;
+  code?: string;
+  contact_person?: string;
   grades?: string;
   portal_username: string;
   portal_password?: string;
+  access_mode?: InstitutionalAccessMode;
+  trial_started_at?: string | null;
+  trial_ends_at?: string | null;
+  subscription_started_at?: string | null;
+  subscription_ends_at?: string | null;
+  teachers?: AdminSchoolMemberTeacher[];
 };
 
 export const adminSchoolsApi = {
@@ -1041,30 +1291,59 @@ export const adminSchoolsApi = {
   },
   get: (id: number) =>
     apiRequest<{ school: AdminSchoolRecord }>(`/api/admin/schools/${id}`),
-  suggestCredentials: (name: string, school_board: string) =>
-    apiRequest<{ portal_username: string; portal_password: string }>(
+  suggestCredentials: (name: string, school_board: string, code?: string) =>
+    apiRequest<{ portal_username: string; portal_password: string; code: string }>(
       "/api/admin/schools/suggest-credentials",
-      { method: "POST", json: { name, school_board } }
+      { method: "POST", json: { name, school_board, code } }
     ),
   create: (payload: AdminSchoolPayload) =>
-    apiRequest<{ school: AdminSchoolRecord }>("/api/admin/schools", {
-      method: "POST",
-      json: payload,
-    }),
+    apiRequest<{ school: AdminSchoolRecord; emails_sent?: number; message?: string }>(
+      "/api/admin/schools",
+      { method: "POST", json: payload },
+    ),
   update: (id: number, payload: AdminSchoolPayload) =>
     apiRequest<{ school: AdminSchoolRecord }>(`/api/admin/schools/${id}`, {
       method: "POST",
       json: payload,
     }),
+  sendBillingNotice: (id: number, type: InstitutionalBillingNoticeType) =>
+    apiRequest<{ school: AdminSchoolRecord; message: string }>(
+      `/api/admin/schools/${id}/send-billing-notice`,
+      { method: "POST", json: { type } },
+    ),
+  extendTrial: (id: number, days: number) =>
+    apiRequest<{ school: AdminSchoolRecord; message: string }>(
+      `/api/admin/schools/${id}/extend-trial`,
+      { method: "POST", json: { days } },
+    ),
+  resendActivation: (id: number) =>
+    apiRequest<{ school: AdminSchoolRecord; message: string }>(
+      `/api/admin/schools/${id}/resend-activation`,
+      { method: "POST" },
+    ),
+  activateAccount: (id: number) =>
+    apiRequest<{ school: AdminSchoolRecord; message: string }>(
+      `/api/admin/schools/${id}/activate-account`,
+      { method: "PATCH" },
+    ),
   archive: (id: number) =>
     apiRequest<{ school: AdminSchoolRecord }>(`/api/admin/schools/${id}/archive`, {
       method: "PATCH",
     }),
+  remove: (id: number) =>
+    apiRequest<{ message: string }>(`/api/admin/schools/${id}`, { method: "DELETE" }),
 };
 
 export const adminStudentsApi = {
   list: () => apiRequest<{ students: AdminStudentRecord[] }>("/api/admin/students"),
-  schools: () => apiRequest<{ schools: AdminSchool[] }>("/api/admin/students/schools"),
+  schools: () =>
+    apiRequest<{ schools: AdminSchool[]; grades: AdminGradeOption[] }>(
+      "/api/admin/students/schools",
+    ),
+  teachers: (search: string) =>
+    apiRequest<{ teachers: AdminStudentTeacher[] }>(
+      `/api/admin/students/teachers?search=${encodeURIComponent(search)}`,
+    ),
   create: (payload: AdminStudentPayload) =>
     apiRequest<{ student: AdminStudentRecord }>("/api/admin/students", {
       method: "POST",
@@ -1091,6 +1370,7 @@ export type AdminTeacherRecord = {
   school_id: number;
   board: string;
   classes: number;
+  class_types: string[];
   students: number;
   status: string;
   activation_pending: boolean;
@@ -1099,6 +1379,11 @@ export type AdminTeacherRecord = {
   affiliation_type: string | null;
   subscription_status: string | null;
   subscription_plan: string | null;
+  subscription_billing: string | null;
+  subscription_started_at: string | null;
+  subscription_ends_at: string | null;
+  is_subscription_active: boolean;
+  subscription_days_remaining: number;
   is_trial_active: boolean;
   trial_days_remaining: number;
   trial_ends_at: string | null;
@@ -1111,10 +1396,11 @@ export type AdminTeacherRecord = {
   portal_password: string | null;
   has_avatar: boolean;
   avatar_url: string | null;
+  resource_access_enabled?: boolean;
 };
 
 export type AdminTeacherPayload = {
-  title?: string;
+  title?: string | null;
   first_name: string;
   last_name: string;
   phone?: string;
@@ -1125,10 +1411,20 @@ export type AdminTeacherPayload = {
   trial_ends_at?: string | null;
   portal_username: string;
   portal_password?: string;
+  class_types?: string[];
 };
 
 export const adminTeachersApi = {
-  list: () => apiRequest<{ teachers: AdminTeacherRecord[] }>("/api/admin/teachers"),
+  list: (params?: { search?: string; school?: string; status?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.search) query.set("search", params.search);
+    if (params?.school) query.set("school", params.school);
+    if (params?.status) query.set("status", params.status);
+    const qs = query.toString();
+    return apiRequest<{ teachers: AdminTeacherRecord[] }>(
+      `/api/admin/teachers${qs ? `?${qs}` : ""}`
+    );
+  },
   get: (id: number) =>
     apiRequest<{ teacher: AdminTeacherRecord }>(`/api/admin/teachers/${id}`),
   schools: () => apiRequest<{ schools: AdminSchool[] }>("/api/admin/teachers/schools"),
@@ -1168,6 +1464,11 @@ export const adminTeachersApi = {
       `/api/admin/teachers/${id}/send-billing-notice`,
       { method: "POST", json: { type } },
     ),
+  extendTrial: (id: number, days: number) =>
+    apiRequest<{ teacher: AdminTeacherRecord; message: string }>(
+      `/api/admin/teachers/${id}/extend-trial`,
+      { method: "POST", json: { days } },
+    ),
   sendInactivityNotice: (id: number, type: "inactive_reminder" | "suspension_reminder") =>
     apiRequest<{ teacher: AdminTeacherRecord; message: string }>(
       `/api/admin/teachers/${id}/send-inactivity-notice`,
@@ -1181,6 +1482,15 @@ export type AdminAssessmentQuestion = {
   text: string;
   options: string[];
   correct: number;
+};
+
+export type AdminAtelierFile = {
+  id: number;
+  name: string;
+  type: string;
+  mime_type?: string | null;
+  size: string;
+  size_bytes: number;
 };
 
 export type AdminAssessmentRecord = {
@@ -1197,6 +1507,18 @@ export type AdminAssessmentRecord = {
   archived_at?: string | null;
   is_archived?: boolean;
   has_student_completions?: boolean;
+  has_atelier_files?: boolean;
+  atelier_files?: AdminAtelierFile[];
+  has_atelier_pdf?: boolean;
+  atelier_pdf?: AdminAtelierFile | null;
+  atelier_pdf_name?: string | null;
+};
+
+export type AdminAssessmentGradeOption = {
+  value: string;
+  label: string;
+  label_fr?: string;
+  assessment_grade?: string;
 };
 
 export type AdminAssessmentListResponse = {
@@ -1207,6 +1529,8 @@ export type AdminAssessmentListResponse = {
     drafts: number;
     archived: number;
   };
+  assessment_grades?: string[];
+  grade_options?: AdminAssessmentGradeOption[];
 };
 
 export type AdminAssessmentPayload = {
@@ -1243,6 +1567,8 @@ export const adminAssessmentsApi = {
     }),
   remove: (id: number) =>
     apiRequest<{ message: string; can_archive?: boolean }>(`/api/admin/assessments/${id}`, { method: "DELETE" }),
+  clearArchived: () =>
+    apiRequest<{ message: string; deleted: number }>("/api/admin/assessments/archived", { method: "DELETE" }),
   archive: (id: number) =>
     apiRequest<{ assessment: AdminAssessmentRecord; message: string }>(`/api/admin/assessments/${id}/archive`, {
       method: "PATCH",
@@ -1255,11 +1581,38 @@ export const adminAssessmentsApi = {
     apiRequest<{ assessment: AdminAssessmentRecord }>(`/api/admin/assessments/${id}/duplicate`, {
       method: "POST",
     }),
+  replaceAtelierPdf: (id: number, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return apiFormRequest<{ assessment: AdminAssessmentRecord; message: string }>(
+      `/api/admin/assessments/${id}/atelier-pdf`,
+      formData,
+    );
+  },
+  atelierFileViewUrl: (assessmentId: number, fileId: number) =>
+    `${API_BASE}/api/admin/assessments/${assessmentId}/atelier-files/${fileId}/view`,
+  atelierFileDownloadUrl: (assessmentId: number, fileId: number) =>
+    `${API_BASE}/api/admin/assessments/${assessmentId}/atelier-files/${fileId}/download`,
+  viewAtelierPdf: async (assessmentId: number, fileId: number) => {
+    const response = await fetch(
+      `${API_BASE}/api/admin/assessments/${assessmentId}/atelier-files/${fileId}/view`,
+      { credentials: "include", headers: { Accept: "application/pdf" } },
+    );
+    if (!response.ok) {
+      const message = await response.text().catch(() => "");
+      throw new Error(message || "Unable to open PDF.");
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank", "noopener,noreferrer");
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  },
 };
 
 export type AdminSchoolBoardRecord = {
   id: number;
   name: string;
+  contact_person?: string | null;
   code: string;
   schools: number;
   teachers: number;
@@ -1268,14 +1621,54 @@ export type AdminSchoolBoardRecord = {
   created: string;
   portal_username: string | null;
   portal_password: string | null;
+  portal_account_status?: string | null;
+  portal_email_verified_at?: string | null;
+  activation_pending?: boolean;
+  access_mode: InstitutionalAccessMode | null;
+  access: string;
+  trial_started_at: string | null;
+  trial_ends_at: string | null;
+  subscription_started_at: string | null;
+  subscription_ends_at: string | null;
+  is_trial_active: boolean;
+  is_subscription_active: boolean;
+  trial_days_remaining: number;
+  can_access_portal: boolean;
 };
 
 export type AdminSchoolBoardPayload = {
   name: string;
   code: string;
+  contact_person?: string | null;
   status?: string;
   portal_username: string;
   portal_password?: string;
+  access_mode?: InstitutionalAccessMode;
+  trial_started_at?: string | null;
+  trial_ends_at?: string | null;
+  subscription_started_at?: string | null;
+  subscription_ends_at?: string | null;
+  schools?: AdminSchoolBoardMemberSchool[];
+  teachers?: AdminSchoolBoardMemberTeacher[];
+};
+
+export type AdminSchoolBoardMemberSchool = {
+  temp_key?: string;
+  existing_id?: number | null;
+  name?: string;
+  email?: string;
+  password?: string;
+  city?: string;
+};
+
+export type AdminSchoolBoardMemberTeacher = {
+  existing_id?: number | null;
+  name?: string;
+  email?: string;
+  password?: string;
+  school_temp_key?: string | null;
+  school_id?: number | null;
+  class_types?: string[];
 };
 
 export const adminSchoolBoardsApi = {
@@ -1291,12 +1684,12 @@ export const adminSchoolBoardsApi = {
   get: (id: number) =>
     apiRequest<{ board: AdminSchoolBoardRecord }>(`/api/admin/school-boards/${id}`),
   suggestCredentials: (name: string, code: string) =>
-    apiRequest<{ portal_username: string; portal_password: string }>(
+    apiRequest<{ portal_username: string; portal_password: string; code: string }>(
       "/api/admin/school-boards/suggest-credentials",
       { method: "POST", json: { name, code } }
     ),
   create: (payload: AdminSchoolBoardPayload) =>
-    apiRequest<{ board: AdminSchoolBoardRecord }>("/api/admin/school-boards", {
+    apiRequest<{ board: AdminSchoolBoardRecord; emails_sent?: number; message?: string }>("/api/admin/school-boards", {
       method: "POST",
       json: payload,
     }),
@@ -1305,6 +1698,21 @@ export const adminSchoolBoardsApi = {
       method: "POST",
       json: payload,
     }),
+  sendBillingNotice: (id: number, type: InstitutionalBillingNoticeType) =>
+    apiRequest<{ board: AdminSchoolBoardRecord; message: string }>(
+      `/api/admin/school-boards/${id}/send-billing-notice`,
+      { method: "POST", json: { type } },
+    ),
+  resendActivation: (id: number) =>
+    apiRequest<{ board: AdminSchoolBoardRecord; message: string }>(
+      `/api/admin/school-boards/${id}/resend-activation`,
+      { method: "POST" },
+    ),
+  activateAccount: (id: number) =>
+    apiRequest<{ board: AdminSchoolBoardRecord; message: string }>(
+      `/api/admin/school-boards/${id}/activate-account`,
+      { method: "PATCH" },
+    ),
   archive: (id: number) =>
     apiRequest<{ board: AdminSchoolBoardRecord }>(`/api/admin/school-boards/${id}/archive`, {
       method: "PATCH",
@@ -1644,6 +2052,44 @@ export const boardProfileApi = {
     const formData = new FormData();
     formData.append("avatar", file);
     return apiFormRequest<{ profile: BoardProfile }>("/api/board/profile/avatar", formData);
+  },
+};
+
+export type SchoolProfile = {
+  id: number;
+  first_name: string | null;
+  last_name: string | null;
+  name: string;
+  email: string;
+  phone: string | null;
+  role: string;
+  initials: string;
+  has_avatar: boolean;
+  avatar_url: string | null;
+  school: { id: number; name: string; city: string | null; board: string | null } | null;
+  started_at: string | null;
+  started_at_label: string | null;
+};
+
+export const schoolProfileApi = {
+  get: () => apiRequest<{ profile: SchoolProfile }>("/api/school/profile"),
+  update: (payload: {
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone?: string;
+    current_password?: string;
+    password?: string;
+    password_confirmation?: string;
+  }) =>
+    apiRequest<{ profile: SchoolProfile }>("/api/school/profile", {
+      method: "PUT",
+      json: payload,
+    }),
+  uploadAvatar: (file: File) => {
+    const formData = new FormData();
+    formData.append("avatar", file);
+    return apiFormRequest<{ profile: SchoolProfile }>("/api/school/profile/avatar", formData);
   },
 };
 

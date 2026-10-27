@@ -16,6 +16,10 @@ backend/public/assets/
 stripe keys.txt
 **/stripe keys.txt
 
+# Confidential handover (live credentials)
+docs/Lecture-Scientifique-Platform-Handover.docx
+**/Lecture-Scientifique-Platform-Handover.docx
+
 # IDE / OS
 .DS_Store
 Thumbs.db

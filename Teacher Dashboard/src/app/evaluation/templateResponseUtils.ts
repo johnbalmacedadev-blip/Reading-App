@@ -13,6 +13,7 @@ import {
   type FluencyMixedSection,
   type ItemGridSection,
   type LetterGridSection,
+  type LetterWriteListSection,
   type MixedSection,
   type ReadingMixedSection,
   type TemplateDraft,
@@ -31,13 +32,19 @@ export type TemplateEvalState = {
 export function classGradeToAssessmentGrade(classGrade: string): string {
   const map: Record<string, string> = {
     Maternelle: "Kindergarten",
+    Jardin: "Kindergarten",
     Kindergarten: "Kindergarten",
+    "Junior Kindergarten (JK)": "Kindergarten",
+    "Senior Kindergarten (SK)": "Kindergarten",
+    JK: "Kindergarten",
+    SK: "Kindergarten",
     "1re année": "Grade 1",
     "Grade 1": "Grade 1",
     "2e année": "Grade 2",
     "Grade 2": "Grade 2",
     "3e année": "Grade 3",
     "Grade 3": "Grade 3",
+    "3e année+": "Grade 3+",
     "4e année": "Grade 3+",
     "5e année": "Grade 3+",
     "6e année": "Grade 3+",
@@ -62,8 +69,11 @@ export function countTemplateCheckboxes(
 ): number {
   switch (template.format) {
     case "letter_grid":
-    case "multiple_choice":
       return 0;
+    case "letter_write_list": {
+      const sections = (draft.sections ?? []) as LetterWriteListSection[];
+      return sections.reduce((total, section) => total + section.items.length, 0);
+    }
     case "checkbox_sections": {
       const sections = (draft.sections ?? []) as CheckboxTableSection[];
       return sections.reduce((total, section) => {
@@ -106,7 +116,9 @@ export function countTemplateCheckboxes(
     case "comprehension_sections": {
       const sections = (draft.sections ?? []) as ComprehensionMixedSection[];
       return sections.reduce((total, section) => {
-        if (isPassageSection(section)) return total;
+        if (isPassageSection(section)) {
+          return total + (section.fluencyCriterionFr ? 1 : 0);
+        }
         return total + section.questions.length;
       }, 0);
     }
@@ -129,16 +141,6 @@ export function initTemplateEvalState(
       letterSound: hasSound ? Array(letterCount).fill(null) : [],
       checkboxes: [],
       mcqSelections: [],
-    };
-  }
-
-  if (template.format === "multiple_choice") {
-    const questions = draft.questions ?? defaultTemplateDraft(template.id).questions ?? [];
-    return {
-      letterName: [],
-      letterSound: [],
-      checkboxes: [],
-      mcqSelections: Array(questions.length).fill(null),
     };
   }
 
@@ -244,16 +246,6 @@ export function collectTemplateResponses(
       template_id: templateId,
       name: state.letterName,
       sound: state.letterSound,
-    };
-  }
-
-  if (template.format === "multiple_choice") {
-    const hasSelection = state.mcqSelections.some((selection) => selection !== null);
-    if (!hasSelection) return null;
-    return {
-      type: "template_mcq",
-      template_id: templateId,
-      selections: state.mcqSelections,
     };
   }
 
@@ -363,25 +355,6 @@ export function computeTemplateStatus(
   notRequired: boolean
 ): "success" | "adequate" | "needs-improvement" | "not-required" | null {
   if (notRequired) return "not-required";
-
-  if (template.format === "multiple_choice") {
-    const questions = draft.questions ?? [];
-    const answered = state.mcqSelections.filter((selection) => selection !== null);
-    if (answered.length === 0) return null;
-
-    const correctCount = state.mcqSelections.reduce((total, selection, index) => {
-      if (selection === null) return total;
-      return selection === questions[index]?.correct ? total + 1 : total;
-    }, 0);
-
-    if (correctCount === questions.length) return "success";
-    if (correctCount === 0) return "needs-improvement";
-
-    const ratio = correctCount / questions.length;
-    if (ratio >= 0.8) return "success";
-    if (ratio >= 0.5) return "adequate";
-    return "needs-improvement";
-  }
 
   const responses = collectTemplateResponses(template.id, state);
   return computeStatus(false, responses as import("./responses").EvaluationResponses | null);

@@ -22,6 +22,28 @@ function isRenderCancelled(err: unknown) {
   );
 }
 
+/** pdf.js v5+ removed PDFDocumentProxy.destroy(); tear down via loadingTask. */
+function releasePdfDocument(pdf: pdfjsLib.PDFDocumentProxy | null | undefined) {
+  if (!pdf) return;
+  try {
+    const loadingTask = pdf.loadingTask;
+    if (loadingTask && typeof loadingTask.destroy === "function") {
+      void loadingTask.destroy().catch(() => undefined);
+      return;
+    }
+    const legacyDestroy = (pdf as { destroy?: () => unknown }).destroy;
+    if (typeof legacyDestroy === "function") {
+      void Promise.resolve(legacyDestroy.call(pdf)).catch(() => undefined);
+      return;
+    }
+    if (typeof pdf.cleanup === "function") {
+      void pdf.cleanup().catch(() => undefined);
+    }
+  } catch {
+    // Ignore cleanup races during unmount.
+  }
+}
+
 export function SecurePdfViewer({ url, title }: SecurePdfViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -76,7 +98,7 @@ export function SecurePdfViewer({ url, title }: SecurePdfViewerProps) {
       setError("");
       renderTaskRef.current?.cancel();
       renderTaskRef.current = null;
-      pdfDocRef.current?.destroy();
+      releasePdfDocument(pdfDocRef.current);
       pdfDocRef.current = null;
 
       try {
@@ -86,7 +108,7 @@ export function SecurePdfViewer({ url, title }: SecurePdfViewerProps) {
         const buffer = await response.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
         if (cancelled) {
-          pdf.destroy();
+          releasePdfDocument(pdf);
           return;
         }
 
@@ -108,7 +130,7 @@ export function SecurePdfViewer({ url, title }: SecurePdfViewerProps) {
       cancelled = true;
       renderTaskRef.current?.cancel();
       renderTaskRef.current = null;
-      pdfDocRef.current?.destroy();
+      releasePdfDocument(pdfDocRef.current);
       pdfDocRef.current = null;
     };
   }, [url]);

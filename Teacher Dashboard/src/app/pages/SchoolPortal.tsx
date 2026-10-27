@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import {
-  BookOpen, BarChart3, Users, School, LogOut,
+  BarChart3, Users, School, LogOut,
   TrendingUp, AlertTriangle, CheckCircle2, ChevronDown,
   Settings, ArrowUpRight, ArrowRight,
 } from "lucide-react";
+import { BrandMark } from "../components/BrandMark";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
 import {
@@ -90,12 +91,9 @@ export function SchoolPortal() {
     <div className="h-screen flex overflow-hidden" style={{ background: "#dff3ff" }}>
       {/* Sidebar */}
       <div className="w-64 p-6 flex flex-col overflow-y-auto" style={{ background: "#ffffff", borderRight: "1px solid #dff3ff" }}>
-        <div className="flex items-center gap-3 mb-10">
-          <BookOpen className="w-8 h-8" style={{ color: "#004aad" }} />
-          <div>
-            <h1 className="text-base font-bold leading-tight" style={{ color: "#004aad" }}>Lecture Scientifique</h1>
-            <p className="text-xs mt-0.5 px-2 py-0.5 rounded-full inline-block" style={{ background: "#dff3ff", color: "#004aad" }}>{t("school.portal")}</p>
-          </div>
+        <div className="mb-10 min-w-0">
+          <BrandMark height={34} />
+          <p className="text-xs mt-1.5 px-2 py-0.5 rounded-full inline-block" style={{ background: "#dff3ff", color: "#004aad" }}>{t("school.portal")}</p>
         </div>
 
         <nav className="flex-1 space-y-1">

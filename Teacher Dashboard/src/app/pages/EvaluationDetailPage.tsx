@@ -1,18 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
-import { ArrowLeft, Save, ChevronDown, History, Loader2 } from "lucide-react";
+import { ArrowLeft, Save, ChevronDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
-import { teacherApi } from "../api/client";
 import { WorkshopTemplateEvaluator } from "../components/WorkshopTemplateEvaluator";
+import { WorkshopAccompanimentPdfModal } from "../components/WorkshopAccompanimentPdfModal";
 import {
   CHECKBOX_BULK_ACTIONS,
   EvaluationBulkToolbar,
 } from "../components/EvaluationBulkToolbar";
+import { PdfPreviewModal } from "../components/PdfPreviewModal";
+import {
+  renderElementToPdfDocument,
+  type PdfDocument,
+} from "../utils/exportStudentReportPdf";
+import { useAuth } from "../context/AuthContext";
+import { userMayAccessResource } from "../utils/teacherAccess";
+import { teacherApi, type TeacherAtelierFile } from "../api/client";
 import {
   applySavedResponsesToTemplateState,
-  classGradeToAssessmentGrade,
   collectTemplateResponses,
   computeTemplateStatus,
   initTemplateEvalState,
@@ -82,6 +89,7 @@ export function EvaluationDetailPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { t, tp, auto: a } = useLanguage();
+  const { user } = useAuth();
   const { studentId, evaluationNum } = useParams();
   const atelierNum = parseInt(evaluationNum || "1");
   const navState = (location.state ?? {}) as EvaluationNavState;
@@ -98,6 +106,23 @@ export function EvaluationDetailPage() {
   const [saving, setSaving] = useState(false);
   const [checkboxByWorkshop, setCheckboxByWorkshop] = useState<Record<number, boolean[]>>({});
   const checkboxCounters = useRef<Record<number, number>>({});
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const pdfDocRef = useRef<PdfDocument | null>(null);
+  const [pdfOpen, setPdfOpen] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfFileName, setPdfFileName] = useState("");
+  const [pdfError, setPdfError] = useState("");
+  const [classGrade, setClassGrade] = useState("");
+  const [accompanimentOpen, setAccompanimentOpen] = useState(false);
+  const [accompanimentBusy, setAccompanimentBusy] = useState(false);
+
+  useEffect(
+    () => () => {
+      pdfDocRef.current?.revoke();
+    },
+    [],
+  );
 
   const emptyLetterMarks = () => new Array(26).fill(null) as LetterMark[];
 
@@ -114,6 +139,8 @@ export function EvaluationDetailPage() {
     title: string;
     template_id: WorkshopTemplateId;
     template_draft: import("../evaluation/workshopTemplates").TemplateDraft | null;
+    atelier_files?: TeacherAtelierFile[];
+    has_atelier_pdf?: boolean;
   } | null>(null);
   const [templateEvalState, setTemplateEvalState] = useState<TemplateEvalState | null>(null);
 
@@ -308,12 +335,15 @@ export function EvaluationDetailPage() {
           resolvedGrade = classData.grade;
         }
 
-        const assessmentGrade = classGradeToAssessmentGrade(resolvedGrade);
+        if (!cancelled && resolvedGrade) {
+          setClassGrade(resolvedGrade);
+        }
+
         let assessment: typeof publishedAssessment = null;
         try {
           const assessmentResponse = await teacherApi.getPublishedAssessment(
             atelierNum,
-            assessmentGrade
+            resolvedGrade
           );
           assessment = assessmentResponse.assessment;
         } catch {
@@ -1484,6 +1514,60 @@ export function EvaluationDetailPage() {
     return colors[unitNum] || colors[1];
   };
 
+  const releasePdf = () => {
+    pdfDocRef.current?.revoke();
+    pdfDocRef.current = null;
+    setPdfUrl(null);
+  };
+
+  const handleSupportPdf = async () => {
+    const element = sheetRef.current;
+    if (!element || pdfBusy) return;
+    if (!userMayAccessResource(user, "export", "student_report")) {
+      toast.error(t("resource.upgradeToDownload"));
+      return;
+    }
+
+    releasePdf();
+    setPdfError("");
+    setPdfBusy(true);
+    setPdfOpen(true);
+
+    try {
+      const doc = await renderElementToPdfDocument(element, `${getAtelierTitle()} ${studentName}`, {
+        orientation: "p",
+        backgroundColor: "#ffffff",
+        fileSuffix: "fiche",
+      });
+      pdfDocRef.current = doc;
+      setPdfUrl(doc.url);
+      setPdfFileName(doc.fileName);
+    } catch {
+      setPdfError(t("pdfPreview.failed"));
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
+  const closePdf = () => {
+    setPdfOpen(false);
+    setPdfError("");
+    releasePdf();
+  };
+
+  const accompanimentPdfs = (publishedAssessment?.atelier_files ?? []).filter((f) => f.type === "pdf");
+  const hasAccompanimentPdf = accompanimentPdfs.length > 0 || Boolean(publishedAssessment?.has_atelier_pdf);
+
+  const handleAccompanimentPdf = () => {
+    if (!hasAccompanimentPdf) {
+      toast.error(t("evaluation.accompanimentPdfEmpty"));
+      return;
+    }
+    setAccompanimentBusy(true);
+    setAccompanimentOpen(true);
+    window.setTimeout(() => setAccompanimentBusy(false), 200);
+  };
+
   const renderAtelierContent = () => {
     if (templateConfig && templateEvalState) {
       return (
@@ -1494,6 +1578,11 @@ export function EvaluationDetailPage() {
           onStateChange={setTemplateEvalState}
           unitNumber={getUnitNumber()}
           unitColor={getUnitColor()}
+          onSupportPdf={() => void handleSupportPdf()}
+          supportPdfBusy={pdfBusy}
+          onAccompanimentPdf={handleAccompanimentPdf}
+          accompanimentPdfBusy={accompanimentBusy}
+          accompanimentPdfAvailable={hasAccompanimentPdf}
         />
       );
     }
@@ -1560,11 +1649,6 @@ export function EvaluationDetailPage() {
             <div className="flex gap-3 items-center">
               <LangToggle className="" />
 
-              <button className="px-6 py-3 rounded-xl flex items-center gap-2 transition-all" style={{ background: "#ffffff", border: "1px solid #dff3ff", color: "#004aad" }}>
-                <History className="w-5 h-5" />
-                {t("evaluation.history")}
-              </button>
-
               <div className="relative">
                 <select
                   value={atelierNum}
@@ -1619,7 +1703,16 @@ export function EvaluationDetailPage() {
               </div>
             ) : (
               <>
-                {renderAtelierContent()}
+                <div ref={sheetRef}>
+                  <div data-pdf-only style={{ display: "none", marginBottom: 24 }}>
+                    <h2 style={{ fontSize: 20, fontWeight: 700, color: "#004aad" }}>
+                      {getAtelierTitle()}
+                    </h2>
+                    <p style={{ fontSize: 14, color: "#0a1628", marginTop: 4 }}>{studentName}</p>
+                    <p style={{ fontSize: 12, color: "#64748b" }}>{schoolYear}</p>
+                  </div>
+                  {renderAtelierContent()}
+                </div>
 
                 {hasPublishedTemplate && (
                 <div className="mt-8">
@@ -1641,6 +1734,24 @@ export function EvaluationDetailPage() {
           </div>
         </div>
       </div>
+
+      <PdfPreviewModal
+        open={pdfOpen}
+        title={`${getAtelierTitle()} — ${studentName}`}
+        url={pdfUrl}
+        fileName={pdfFileName}
+        loading={pdfBusy}
+        error={pdfError}
+        onClose={closePdf}
+      />
+
+      <WorkshopAccompanimentPdfModal
+        open={accompanimentOpen}
+        atelier={atelierNum}
+        grade={classGrade}
+        files={accompanimentPdfs}
+        onClose={() => setAccompanimentOpen(false)}
+      />
     </div>
   );
 }

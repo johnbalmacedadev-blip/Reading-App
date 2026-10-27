@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\PlatformSetting;
 use App\Models\TeacherNotification;
 use App\Models\User;
 use App\Services\TeacherNotificationService;
@@ -17,9 +18,17 @@ class TeacherNotificationController extends Controller
         TeacherNotificationService::trialStarted($teacher);
         if ($teacher->hasActiveTrial() && ! $teacher->isInstitutionalTeacher()) {
             $daysLeft = $teacher->trialDaysRemaining();
-            if (in_array($daysLeft, [7, 3, 1], true)) {
+            if (in_array($daysLeft, PlatformSetting::trialReminderDaysLeft(), true)) {
                 TeacherNotificationService::trialEndingSoon($teacher, $daysLeft);
             }
+        } elseif (
+            PlatformSetting::trialExpiredEmailEnabled()
+            && $teacher->trial_ends_at
+            && $teacher->trial_ends_at->isPast()
+            && ! $teacher->hasActiveSubscription()
+            && ! $teacher->isInstitutionalTeacher()
+        ) {
+            TeacherNotificationService::trialExpired($teacher);
         }
         if (
             in_array($teacher->subscription_status, ['canceled', 'cancelled', 'unpaid'], true)

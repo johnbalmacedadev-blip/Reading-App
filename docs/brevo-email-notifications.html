@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Brevo Email Notifications — Technical Documentation</title>
+<style>
+  @page {
+    size: A4;
+    margin: 18mm 16mm 20mm;
+  }
+
+  :root {
+    --brand: #004aad;
+    --accent: #38b6ff;
+    --ink: #0a1628;
+    --muted: #64748b;
+    --rule: #e2e8f0;
+    --code-bg: #f6f8fb;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.55;
+    color: var(--ink);
+  }
+
+  .cover {
+    border-top: 6px solid var(--brand);
+    padding-top: 18px;
+    margin-bottom: 26px;
+  }
+
+  .eyebrow {
+    font-size: 8.5pt;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--accent);
+    margin: 0 0 6px;
+  }
+
+  h1 {
+    font-size: 23pt;
+    line-height: 1.15;
+    margin: 0 0 8px;
+    color: var(--brand);
+  }
+
+  .subtitle {
+    font-size: 11pt;
+    color: var(--muted);
+    margin: 0 0 14px;
+  }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 28px;
+    font-size: 9pt;
+    color: var(--muted);
+    border-top: 1px solid var(--rule);
+    padding-top: 10px;
+  }
+
+  .meta b { color: var(--ink); font-weight: 600; }
+
+  h2 {
+    font-size: 13pt;
+    color: var(--brand);
+    margin: 24px 0 8px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--rule);
+    page-break-after: avoid;
+  }
+
+  h2 .num {
+    display: inline-block;
+    min-width: 22px;
+    height: 22px;
+    line-height: 22px;
+    margin-right: 8px;
+    text-align: center;
+    border-radius: 50%;
+    background: var(--brand);
+    color: #fff;
+    font-size: 9pt;
+  }
+
+  h3 {
+    font-size: 10.5pt;
+    margin: 16px 0 4px;
+    color: var(--ink);
+    page-break-after: avoid;
+  }
+
+  p { margin: 0 0 9px; }
+
+  ul, ol { margin: 0 0 10px; padding-left: 20px; }
+  li { margin-bottom: 4px; }
+
+  code {
+    font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+    font-size: 9pt;
+    background: var(--code-bg);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 0 3px;
+  }
+
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    border-radius: 5px;
+    padding: 10px 12px;
+    margin: 0 0 12px;
+    font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+    font-size: 8.6pt;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+    page-break-inside: avoid;
+  }
+
+  pre code { background: none; border: none; padding: 0; font-size: inherit; }
+
+  .filepath {
+    display: block;
+    font-family: "Cascadia Mono", Consolas, monospace;
+    font-size: 8pt;
+    color: var(--muted);
+    margin-bottom: 3px;
+  }
+
+  .callout {
+    border: 1px solid #bfdbfe;
+    background: #eff6ff;
+    border-radius: 7px;
+    padding: 10px 12px;
+    margin: 0 0 12px;
+    font-size: 9.6pt;
+    page-break-inside: avoid;
+  }
+
+  .callout.warn { border-color: #fde68a; background: #fffbeb; }
+  .callout .label {
+    display: block;
+    font-weight: 700;
+    font-size: 8pt;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--brand);
+    margin-bottom: 3px;
+  }
+  .callout.warn .label { color: #b45309; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9.2pt;
+    margin: 0 0 12px;
+    page-break-inside: avoid;
+  }
+
+  th, td {
+    border: 1px solid var(--rule);
+    padding: 6px 9px;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    background: #f8fafc;
+    font-size: 8.4pt;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  td code { font-size: 8.4pt; }
+
+  .flow {
+    border: 1px solid var(--rule);
+    border-radius: 7px;
+    padding: 12px 14px;
+    margin: 0 0 14px;
+    font-size: 9.2pt;
+    background: #fcfdff;
+    page-break-inside: avoid;
+  }
+
+  .flow ol { margin: 0; padding-left: 18px; }
+  .flow li { margin-bottom: 3px; }
+
+  .section { page-break-inside: avoid; }
+
+  footer {
+    margin-top: 26px;
+    padding-top: 8px;
+    border-top: 1px solid var(--rule);
+    font-size: 8.4pt;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <p class="eyebrow">Lecture Scientifique &middot; Platform Documentation</p>
+  <h1>Brevo Email Notifications</h1>
+  <p class="subtitle">How the Laravel backend connects to Brevo and delivers every portal notification.</p>
+  <div class="meta">
+    <span><b>Applies to</b> backend (Laravel) &middot; lecturescientifique.ca</span>
+    <span><b>Transport</b> Brevo SMTP relay</span>
+    <span><b>Last verified</b> 1 August 2026</span>
+  </div>
+</div>
+
+<p>
+  Email notifications are delivered through Brevo's <b>SMTP relay</b> rather than its REST API, which is why
+  there is no Brevo SDK or HTTP client anywhere in the codebase. Laravel's standard mail stack is pointed at
+  Brevo's relay host, and every notification in the platform funnels through a single service class. The
+  sections below follow one message from configuration to delivery.
+</p>
+
+<div class="flow">
+  <b>Delivery chain at a glance</b>
+  <ol>
+    <li>Application event (school created, trial ending, password reset&hellip;)</li>
+    <li><code>NotificationMailer::send*()</code> builds a Mailable</li>
+    <li><code>safeSend()</code> filters the recipient and calls <code>Mail::to()-&gt;send()</code></li>
+    <li>Locale + template lines resolved, markdown view rendered</li>
+    <li>Laravel's SMTP transport connects to <code>smtp-relay.brevo.com:2525</code> over STARTTLS</li>
+    <li>Brevo authenticates the SMTP key, DKIM-signs, queues and delivers</li>
+  </ol>
+</div>
+
+<div class="section">
+<h2><span class="num">1</span>Brevo side: an SMTP relay account</h2>
+<p>
+  In the Brevo dashboard, under <b>SMTP &amp; API</b>, an SMTP key was generated. This produces two values used
+  as ordinary SMTP credentials:
+</p>
+<ul>
+  <li>A <b>login</b> in the form <code>b22c43001@smtp-brevo.com</code></li>
+  <li>A <b>key</b> beginning with <code>xsmtpsib-</code>, which is used as the SMTP password</li>
+</ul>
+<p>
+  The sender address <code>admin@apprendrefrancofun.com</code> must additionally be registered as a verified
+  sender (or belong to a verified, authenticated domain) in Brevo. Valid credentials alone are not enough &mdash;
+  Brevo rejects messages from unverified senders.
+</p>
+</div>
+
+<div class="section">
+<h2><span class="num">2</span>Credentials live in <code>.env</code></h2>
+<p>
+  Local and production carry the same block. The values confirmed on the live server are below, with the key
+  masked.
+</p>
+<pre><code>MAIL_MAILER=smtp
+MAIL_HOST=smtp-relay.brevo.com
+MAIL_PORT=2525
+MAIL_USERNAME=b22c43001@smtp-brevo.com
+MAIL_PASSWORD=&lt;the xsmtpsib- SMTP key&gt;
+MAIL_ENCRYPTION=tls
+MAIL_FROM_ADDRESS="admin@apprendrefrancofun.com"
+MAIL_FROM_NAME="Lecture Scientifique"</code></pre>
+<p>
+  Port <b>2525</b> is Brevo's alternate submission port, chosen because hosting providers frequently block
+  port 25 and sometimes 587. A template of this block ships with the repository at
+  <code>backend/.env.production.example</code>, with the password deliberately left blank.
+</p>
+</div>
+
+<div class="section">
+<h2><span class="num">3</span>Laravel turns the variables into a transport</h2>
+<p>
+  <code>config/mail.php</code> is stock Laravel. <code>'default' =&gt; env('MAIL_MAILER')</code> selects the
+  <code>smtp</code> mailer, and that mailer's block maps each <code>MAIL_*</code> variable onto the Symfony
+  Mailer ESMTP transport. The global <code>from</code> block is what makes every message originate from the
+  Brevo-verified sender without each Mailable having to declare it.
+</p>
+<span class="filepath">backend/config/mail.php</span>
+<pre><code>'smtp' =&gt; [
+    'transport'  =&gt; 'smtp',
+    'scheme'     =&gt; env('MAIL_SCHEME'),
+    'url'        =&gt; env('MAIL_URL'),
+    'host'       =&gt; env('MAIL_HOST', '127.0.0.1'),
+    'port'       =&gt; env('MAIL_PORT', 2525),
+    'username'   =&gt; env('MAIL_USERNAME'),
+    'password'   =&gt; env('MAIL_PASSWORD'),
+    'encryption' =&gt; env('MAIL_ENCRYPTION', 'tls'),
+],</code></pre>
+<div class="callout warn">
+  <span class="label">Operational note</span>
+  Laravel caches configuration in production, so editing a <code>MAIL_*</code> value in <code>.env</code> has
+  no effect until the cache is rebuilt. Every deployment therefore ends with
+  <code>php artisan optimize:clear</code>.
+</div>
+</div>
+
+<div class="section">
+<h2><span class="num">4</span>Application code never touches SMTP directly</h2>
+<p>
+  All notifications funnel through <code>App\Services\NotificationMailer</code>. Each event has a small static
+  method &mdash; <code>sendWelcome</code>, <code>sendVerifyAccount</code>, <code>sendResetPassword</code>,
+  <code>sendTrialEnding</code>, <code>sendSubscriptionStarted</code>, <code>sendSchoolAdded</code> and others
+  &mdash; that builds a Mailable and hands it to one private <code>safeSend()</code>. That method does two
+  protective things before Brevo ever sees the message: it skips synthetic portal addresses ending in
+  <code>@portal.local</code>, and it wraps the send in a <code>try/catch</code> so an SMTP failure is logged
+  rather than breaking the request that triggered it.
+</p>
+<span class="filepath">backend/app/Services/NotificationMailer.php</span>
+<pre><code>private static function safeSend(User $user, object $mailable): void
+{
+    $email = trim((string) $user-&gt;email);
+    if ($email === '' || str_ends_with(strtolower($email), '@portal.local')) {
+        Log::info('Skipped portal email for non-deliverable address', [...]);
+
+        return;
+    }
+
+    try {
+        Mail::to($email)-&gt;send($mailable);
+    } catch (Throwable $e) {
+        Log::error('Portal email failed', [...]);
+    }
+}</code></pre>
+<div class="callout">
+  <span class="label">Synchronous by design</span>
+  The call is <code>-&gt;send()</code>, not <code>-&gt;queue()</code>. The Mailables use the
+  <code>Queueable</code> trait, but nothing is queued, so messages are transmitted during the HTTP request &mdash;
+  which is why creating a school with three teachers takes a moment (four SMTP conversations inline).
+  <code>QUEUE_CONNECTION=database</code> is set, but there is no queue worker or cron on the server, so
+  switching to <code>-&gt;queue()</code> would silently park mail in the jobs table until a worker is added.
+</div>
+</div>
+
+<div class="section">
+<h2><span class="num">5</span>Content is assembled per recipient</h2>
+<p>
+  Each Mailable &mdash; <code>WelcomeEmail</code>, <code>TeacherAccountCreatedEmail</code>,
+  <code>ResetPasswordEmail</code>, and the general-purpose <code>PortalEventEmail</code> &mdash; resolves the
+  recipient's language through <code>EmailLocale::resolve()</code> (their <code>preferred_language</code>,
+  falling back to the platform default), then pulls every subject and body line through
+  <code>EmailTemplate::line()</code>.
+</p>
+<p>
+  That helper checks admin-authored overrides stored in platform settings first, and falls back to
+  <code>lang/en/emails.php</code> or <code>lang/fr/emails.php</code>. This is the extension point where new
+  templates plug in, such as the <code>school_added</code> board notification used by the school creation
+  wizard. The rendered markdown view embeds the platform logo, and Laravel hands the finished MIME message to
+  the transport.
+</p>
+</div>
+
+<div class="section">
+<h2><span class="num">6</span>The actual connection</h2>
+<p>
+  Laravel opens a TCP connection to <code>smtp-relay.brevo.com:2525</code>, issues <code>STARTTLS</code> to
+  upgrade the channel, authenticates with the SMTP login and key, and delivers the message. Verified from the
+  live server:
+</p>
+<pre><code>CONNECTION ESTABLISHED
+Protocol version: TLSv1.3
+Peer certificate: CN = smtp-relay-offshore-us-east1-v2.brevo.com
+Verification: OK
+250 SIZE 20971520</code></pre>
+<p>
+  From there Brevo takes over: it applies DKIM signing for the verified sender domain, queues the message on
+  its own infrastructure, and handles delivery and bounce processing. This is what makes the relay preferable
+  to the server's own sendmail &mdash; mail leaves from reputable, authenticated IPs and is far less likely to be
+  filtered as spam.
+</p>
+</div>
+
+<div class="section">
+<h2><span class="num">7</span>Troubleshooting order</h2>
+<table>
+  <thead>
+    <tr><th style="width:18%">Step</th><th style="width:34%">Where to look</th><th>What it tells you</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>1. Application</b></td>
+      <td><code>storage/logs/laravel.log</code> on the server</td>
+      <td>
+        A rejected credential or failed handshake appears as <code>Portal email failed</code> with the SMTP
+        error text. A filtered recipient appears as
+        <code>Skipped portal email for non-deliverable address</code>. If nothing is logged, Laravel handed the
+        message off successfully.
+      </td>
+    </tr>
+    <tr>
+      <td><b>2. Brevo</b></td>
+      <td>Transactional &rarr; Logs in the Brevo dashboard</td>
+      <td>
+        Per-message status: accepted, delivered, soft or hard bounced, blocked. Sender-verification problems
+        and daily quota limits surface here.
+      </td>
+    </tr>
+    <tr>
+      <td><b>3. Config cache</b></td>
+      <td><code>php artisan optimize:clear</code></td>
+      <td>
+        If the API reported emails sent, the log is empty and Brevo shows nothing, the server is almost
+        certainly running on a stale cached config.
+      </td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="section">
+<h2><span class="num">8</span>Reference: notifications sent through Brevo</h2>
+<table>
+  <thead>
+    <tr><th style="width:34%">Template key</th><th style="width:30%">Mailable</th><th>Triggered by</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>welcome</code></td><td>WelcomeEmail</td><td>New school or board portal account created</td></tr>
+    <tr><td><code>verify</code></td><td>PortalEventEmail</td><td>Portal account activation link</td></tr>
+    <tr><td><code>teacher_created</code></td><td>TeacherAccountCreatedEmail</td><td>Teacher account created by an admin</td></tr>
+    <tr><td><code>reset</code></td><td>ResetPasswordEmail</td><td>Password reset request</td></tr>
+    <tr><td><code>trial_ending</code> / <code>trial_expired</code></td><td>PortalEventEmail</td><td>Trial countdown and expiry</td></tr>
+    <tr><td><code>subscription_started</code>, <code>_renewed</code>, <code>_cancelled</code>, <code>_expired</code></td><td>PortalEventEmail</td><td>Subscription lifecycle / Stripe events</td></tr>
+    <tr><td><code>payment_successful</code> / <code>payment_failed</code></td><td>PortalEventEmail</td><td>Billing outcomes</td></tr>
+    <tr><td><code>school_added</code></td><td>PortalEventEmail</td><td>New school attached to a board (creation wizard)</td></tr>
+    <tr><td><code>announcement</code></td><td>PortalEventEmail</td><td>Admin system announcement</td></tr>
+    <tr><td><code>inactive_reminder</code> / <code>suspension_reminder</code></td><td>PortalEventEmail</td><td>Dormant and at-risk account nudges</td></tr>
+  </tbody>
+</table>
+</div>
+
+<footer>
+  Lecture Scientifique &mdash; Brevo email notification documentation. Configuration verified against the
+  production server on 1 August 2026. Secrets are intentionally masked; the live SMTP key lives only in
+  <code>backend/.env</code> on the server.
+</footer>
+
+</body>
+</html>

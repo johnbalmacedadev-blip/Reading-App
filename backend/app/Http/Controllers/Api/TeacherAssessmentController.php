@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Assessment;
+use App\Models\AssessmentAtelierFile;
 use App\Models\BoardAssessmentArchive;
 use App\Models\School;
 use App\Models\SchoolAssessmentArchive;
@@ -13,12 +14,17 @@ use App\Models\User;
 use App\Services\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class TeacherAssessmentController extends Controller
 {
-    private const GRADES = ['Kindergarten', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 3+'];
+    private const GRADE_ALL = 'All';
+
+    private const GRADES = ['All', 'Kindergarten', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 3+'];
 
     private const GRADE_FILTER_MAP = [
         'kindergarten' => 'Kindergarten',
@@ -33,9 +39,14 @@ class TeacherAssessmentController extends Controller
     private const GRADE_ALIASES = [
         'Maternelle' => 'Kindergarten',
         'Jardin' => 'Kindergarten',
+        'Junior Kindergarten (JK)' => 'Kindergarten',
+        'Senior Kindergarten (SK)' => 'Kindergarten',
+        'JK' => 'Kindergarten',
+        'SK' => 'Kindergarten',
         '1re année' => 'Grade 1',
         '2e année' => 'Grade 2',
         '3e année' => 'Grade 3',
+        '3e année+' => 'Grade 3+',
         '4e année' => 'Grade 3+',
         '5e année' => 'Grade 3+',
         '6e année' => 'Grade 3+',
@@ -312,9 +323,10 @@ class TeacherAssessmentController extends Controller
     public function published(Request $request): JsonResponse
     {
         $atelier = (int) $request->query('atelier', 0);
-        $grade = $this->normalizeGrade($request->query('grade'));
+        $rawGrade = is_string($request->query('grade')) ? trim($request->query('grade')) : '';
+        $grade = $this->normalizeGrade($rawGrade);
 
-        if ($atelier < 1 || $atelier > 15 || $grade === '') {
+        if ($atelier < 1 || $atelier > 15 || ($grade === '' && $rawGrade === '')) {
             return response()->json(['assessment' => null]);
         }
 
@@ -325,14 +337,16 @@ class TeacherAssessmentController extends Controller
         }
 
         $assessment = $context['board_code']
-            ? $this->resolveBoardPublished($context['board_code'], $atelier, $grade)
+            ? $this->resolveBoardPublished($context['board_code'], $atelier, $grade, $rawGrade)
             : ($context['school_id']
-                ? $this->resolveSchoolPublished($context['school_id'], $atelier, $grade)
-                : $this->resolveTeacherPublished($context['teacher_id'], $atelier, $grade));
+                ? $this->resolveSchoolPublished($context['school_id'], $atelier, $grade, $rawGrade)
+                : $this->resolveTeacherPublished($context['teacher_id'], $atelier, $grade, $rawGrade));
 
         if (! $assessment) {
             return response()->json(['assessment' => null]);
         }
+
+        $files = $this->resolveAtelierFiles($assessment);
 
         return response()->json([
             'assessment' => [
@@ -343,8 +357,115 @@ class TeacherAssessmentController extends Controller
                 'grade' => $assessment->grade,
                 'template_id' => $assessment->template_id,
                 'template_draft' => $assessment->template_draft,
+                'has_atelier_files' => $files->isNotEmpty(),
+                'atelier_files' => $files->map(fn (AssessmentAtelierFile $file) => [
+                    'id' => $file->id,
+                    'name' => $file->original_name,
+                    'type' => $file->file_type,
+                    'mime_type' => $file->mime_type,
+                    'size' => $file->formattedSize(),
+                ])->values()->all(),
+                'has_atelier_pdf' => $files->contains(fn (AssessmentAtelierFile $file) => $file->file_type === 'pdf'),
+                'atelier_pdf_name' => $files->firstWhere('file_type', 'pdf')?->original_name,
             ],
         ]);
+    }
+
+    public function downloadAtelierFile(Request $request, AssessmentAtelierFile $atelierFile): StreamedResponse|JsonResponse
+    {
+        $atelier = (int) $request->query('atelier', 0);
+        $rawGrade = is_string($request->query('grade')) ? trim($request->query('grade')) : '';
+        $grade = $this->normalizeGrade($rawGrade);
+
+        if ($atelier < 1 || $atelier > 15 || ($grade === '' && $rawGrade === '')) {
+            return response()->json(['message' => 'Invalid workshop or grade.'], 422);
+        }
+
+        $context = $this->resolveContext($request);
+
+        $assessment = $context['board_code']
+            ? $this->resolveBoardPublished($context['board_code'], $atelier, $grade, $rawGrade)
+            : ($context['school_id']
+                ? $this->resolveSchoolPublished($context['school_id'], $atelier, $grade, $rawGrade)
+                : $this->resolveTeacherPublished($context['teacher_id'], $atelier, $grade, $rawGrade));
+
+        if (! $assessment) {
+            return response()->json(['message' => 'Assessment not found.'], 404);
+        }
+
+        $allowedIds = $this->resolveAtelierFiles($assessment)->pluck('id')->all();
+        if (! in_array((int) $atelierFile->id, array_map('intval', $allowedIds), true)) {
+            return response()->json(['message' => 'Student support file not found.'], 404);
+        }
+
+        if (! Storage::disk('public')->exists($atelierFile->file_path)) {
+            return response()->json(['message' => 'Student support file not found.'], 404);
+        }
+
+        $filename = $atelierFile->original_name
+            ?: ('atelier-'.$assessment->atelier.'-support.'.$atelierFile->file_type);
+
+        $disposition = $atelierFile->file_type === 'pdf' ? 'inline' : 'attachment';
+
+        return Storage::disk('public')->response(
+            $atelierFile->file_path,
+            $filename,
+            ['Content-Type' => $atelierFile->contentType()],
+            $disposition
+        );
+    }
+
+    /** @return Collection<int, AssessmentAtelierFile> */
+    private function resolveAtelierFiles(Assessment $assessment): Collection
+    {
+        $visited = [];
+        $current = $assessment;
+
+        while ($current && ! isset($visited[$current->id])) {
+            $visited[$current->id] = true;
+            $files = $this->existingAtelierFiles($current);
+            if ($files->isNotEmpty()) {
+                return $files;
+            }
+
+            if (! $current->source_assessment_id) {
+                break;
+            }
+
+            $current = Assessment::query()->find($current->source_assessment_id);
+        }
+
+        $platformCandidates = Assessment::query()
+            ->whereNull('school_board')
+            ->whereNull('school_id')
+            ->whereNull('teacher_id')
+            ->where('atelier', $assessment->atelier)
+            ->whereHas('atelierFiles')
+            ->orderByRaw('CASE WHEN grade = ? THEN 0 ELSE 1 END', [$assessment->grade])
+            ->with('atelierFiles')
+            ->get();
+
+        foreach ($platformCandidates as $candidate) {
+            $files = $this->existingAtelierFiles($candidate);
+            if ($files->isNotEmpty()) {
+                return $files;
+            }
+        }
+
+        return collect();
+    }
+
+    /** @return Collection<int, AssessmentAtelierFile> */
+    private function existingAtelierFiles(Assessment $assessment): Collection
+    {
+        $files = $assessment->relationLoaded('atelierFiles')
+            ? $assessment->atelierFiles
+            : $assessment->atelierFiles()->get();
+
+        return $files
+            ->filter(fn (AssessmentAtelierFile $file) => filled($file->file_path)
+                && Storage::disk('public')->exists($file->file_path))
+            ->values();
     }
 
     /** @return array{school: School|null, school_id: int|null, teacher_id: int, board_code: string|null} */
@@ -404,19 +525,20 @@ class TeacherAssessmentController extends Controller
         return $query;
     }
 
-    private function resolvePlatformPublished(int $atelier, string $grade): ?Assessment
+    private function resolvePlatformPublished(int $atelier, string $grade, string $rawGrade = ''): ?Assessment
     {
-        return Assessment::query()
-            ->whereNull('school_board')
-            ->whereNull('school_id')
-            ->whereNull('teacher_id')
-            ->whereNull('archived_at')
-            ->where('atelier', $atelier)
-            ->where('grade', $grade)
-            ->where('status', 'published')
-            ->whereNotNull('template_id')
-            ->orderByDesc('updated_at')
-            ->first();
+        return $this->firstForAssignableGrade(
+            Assessment::query()
+                ->whereNull('school_board')
+                ->whereNull('school_id')
+                ->whereNull('teacher_id')
+                ->whereNull('archived_at')
+                ->where('atelier', $atelier)
+                ->where('status', 'published')
+                ->whereNotNull('template_id'),
+            $grade,
+            $rawGrade
+        );
     }
 
     private function boardSyncedQuery(string $boardCode, Request $request)
@@ -669,21 +791,22 @@ class TeacherAssessmentController extends Controller
         return $this->findPairedAssessment($assessment, $scopeId);
     }
 
-    private function resolveTeacherPublished(int $teacherId, int $atelier, string $grade): ?Assessment
+    private function resolveTeacherPublished(int $teacherId, int $atelier, string $grade, string $rawGrade = ''): ?Assessment
     {
         $archivedIds = TeacherAssessmentArchive::query()
             ->where('teacher_id', $teacherId)
             ->pluck('assessment_id');
 
-        $copy = Assessment::query()
-            ->where('teacher_id', $teacherId)
-            ->where('atelier', $atelier)
-            ->where('grade', $grade)
-            ->where('status', 'published')
-            ->whereNotNull('template_id')
-            ->whereNotIn('id', $archivedIds)
-            ->orderByDesc('updated_at')
-            ->first();
+        $copy = $this->firstForAssignableGrade(
+            Assessment::query()
+                ->where('teacher_id', $teacherId)
+                ->where('atelier', $atelier)
+                ->where('status', 'published')
+                ->whereNotNull('template_id')
+                ->whereNotIn('id', $archivedIds),
+            $grade,
+            $rawGrade
+        );
 
         if ($copy) {
             return $copy;
@@ -693,7 +816,9 @@ class TeacherAssessmentController extends Controller
             ->where('teacher_id', $teacherId)
             ->where('source_assessment_id', '>', 0)
             ->where('atelier', $atelier)
-            ->where('grade', $grade)
+            ->where(function ($q) use ($grade, $rawGrade) {
+                $this->applyGradeMatchScope($q, $grade, $rawGrade);
+            })
             ->whereNotIn('id', $archivedIds)
             ->exists();
 
@@ -701,17 +826,18 @@ class TeacherAssessmentController extends Controller
             return null;
         }
 
-        return Assessment::query()
-            ->whereNull('school_board')
-            ->whereNull('school_id')
-            ->whereNull('teacher_id')
-            ->whereNull('archived_at')
-            ->where('atelier', $atelier)
-            ->where('grade', $grade)
-            ->where('status', 'published')
-            ->whereNotNull('template_id')
-            ->orderByDesc('updated_at')
-            ->first();
+        return $this->firstForAssignableGrade(
+            Assessment::query()
+                ->whereNull('school_board')
+                ->whereNull('school_id')
+                ->whereNull('teacher_id')
+                ->whereNull('archived_at')
+                ->where('atelier', $atelier)
+                ->where('status', 'published')
+                ->whereNotNull('template_id'),
+            $grade,
+            $rawGrade
+        );
     }
 
     private function setActiveAssessment(Assessment $assessment, int $schoolId): void
@@ -747,21 +873,22 @@ class TeacherAssessmentController extends Controller
         return null;
     }
 
-    private function resolveBoardPublished(string $boardCode, int $atelier, string $grade): ?Assessment
+    private function resolveBoardPublished(string $boardCode, int $atelier, string $grade, string $rawGrade = ''): ?Assessment
     {
         $archivedIds = BoardAssessmentArchive::query()
             ->where('school_board', $boardCode)
             ->pluck('assessment_id');
 
-        $copy = Assessment::query()
-            ->where('school_board', $boardCode)
-            ->where('atelier', $atelier)
-            ->where('grade', $grade)
-            ->where('status', 'published')
-            ->whereNotNull('template_id')
-            ->whereNotIn('id', $archivedIds)
-            ->orderByDesc('updated_at')
-            ->first();
+        $copy = $this->firstForAssignableGrade(
+            Assessment::query()
+                ->where('school_board', $boardCode)
+                ->where('atelier', $atelier)
+                ->where('status', 'published')
+                ->whereNotNull('template_id')
+                ->whereNotIn('id', $archivedIds),
+            $grade,
+            $rawGrade
+        );
 
         if ($copy) {
             return $copy;
@@ -771,7 +898,9 @@ class TeacherAssessmentController extends Controller
             ->where('school_board', $boardCode)
             ->where('source_assessment_id', '>', 0)
             ->where('atelier', $atelier)
-            ->where('grade', $grade)
+            ->where(function ($q) use ($grade, $rawGrade) {
+                $this->applyGradeMatchScope($q, $grade, $rawGrade);
+            })
             ->where('status', 'published')
             ->whereNotIn('id', $archivedIds)
             ->exists();
@@ -780,35 +909,37 @@ class TeacherAssessmentController extends Controller
             return null;
         }
 
-        return Assessment::query()
-            ->whereNull('school_board')
-            ->whereNull('school_id')
-            ->whereNull('teacher_id')
-            ->whereNull('archived_at')
-            ->where('atelier', $atelier)
-            ->where('grade', $grade)
-            ->where('status', 'published')
-            ->whereNotNull('template_id')
-            ->whereNotIn('id', $archivedIds)
-            ->orderByDesc('updated_at')
-            ->first();
+        return $this->firstForAssignableGrade(
+            Assessment::query()
+                ->whereNull('school_board')
+                ->whereNull('school_id')
+                ->whereNull('teacher_id')
+                ->whereNull('archived_at')
+                ->where('atelier', $atelier)
+                ->where('status', 'published')
+                ->whereNotNull('template_id')
+                ->whereNotIn('id', $archivedIds),
+            $grade,
+            $rawGrade
+        );
     }
 
-    private function resolveSchoolPublished(int $schoolId, int $atelier, string $grade): ?Assessment
+    private function resolveSchoolPublished(int $schoolId, int $atelier, string $grade, string $rawGrade = ''): ?Assessment
     {
         $archivedIds = SchoolAssessmentArchive::query()
             ->where('school_id', $schoolId)
             ->pluck('assessment_id');
 
-        $copy = Assessment::query()
-            ->where('school_id', $schoolId)
-            ->where('atelier', $atelier)
-            ->where('grade', $grade)
-            ->where('status', 'published')
-            ->whereNotNull('template_id')
-            ->whereNotIn('id', $archivedIds)
-            ->orderByDesc('updated_at')
-            ->first();
+        $copy = $this->firstForAssignableGrade(
+            Assessment::query()
+                ->where('school_id', $schoolId)
+                ->where('atelier', $atelier)
+                ->where('status', 'published')
+                ->whereNotNull('template_id')
+                ->whereNotIn('id', $archivedIds),
+            $grade,
+            $rawGrade
+        );
 
         if ($copy) {
             return $copy;
@@ -818,7 +949,9 @@ class TeacherAssessmentController extends Controller
             ->where('school_id', $schoolId)
             ->where('source_assessment_id', '>', 0)
             ->where('atelier', $atelier)
-            ->where('grade', $grade)
+            ->where(function ($q) use ($grade, $rawGrade) {
+                $this->applyGradeMatchScope($q, $grade, $rawGrade);
+            })
             ->whereNotIn('id', $archivedIds)
             ->exists();
 
@@ -826,17 +959,54 @@ class TeacherAssessmentController extends Controller
             return null;
         }
 
-        return Assessment::query()
-            ->whereNull('school_board')
-            ->whereNull('school_id')
-            ->whereNull('teacher_id')
-            ->whereNull('archived_at')
-            ->where('atelier', $atelier)
-            ->where('grade', $grade)
-            ->where('status', 'published')
-            ->whereNotNull('template_id')
-            ->orderByDesc('updated_at')
-            ->first();
+        return $this->firstForAssignableGrade(
+            Assessment::query()
+                ->whereNull('school_board')
+                ->whereNull('school_id')
+                ->whereNull('teacher_id')
+                ->whereNull('archived_at')
+                ->where('atelier', $atelier)
+                ->where('status', 'published')
+                ->whereNotNull('template_id'),
+            $grade,
+            $rawGrade
+        );
+    }
+
+    /**
+     * Prefer class-type grade, then assessment band, then Assign to All.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<\App\Models\Assessment>  $query
+     */
+    private function firstForAssignableGrade($query, string $grade, string $rawGrade = ''): ?Assessment
+    {
+        foreach ($this->gradeLookupOrder($grade, $rawGrade) as $candidate) {
+            $match = (clone $query)->where('grade', $candidate)->orderByDesc('updated_at')->first();
+            if ($match) {
+                return $match;
+            }
+        }
+
+        return (clone $query)->where('grade', self::GRADE_ALL)->orderByDesc('updated_at')->first();
+    }
+
+    /** @return list<string> */
+    private function gradeLookupOrder(string $grade, string $rawGrade = ''): array
+    {
+        return array_values(array_unique(array_filter(
+            [$rawGrade, $grade],
+            fn ($value) => is_string($value) && $value !== '' && $value !== self::GRADE_ALL
+        )));
+    }
+
+    private function applyGradeMatchScope($query, string $grade, string $rawGrade = ''): void
+    {
+        $values = array_values(array_unique(array_filter(
+            [$rawGrade, $grade, self::GRADE_ALL],
+            fn ($value) => is_string($value) && $value !== ''
+        )));
+
+        $query->whereIn('grade', $values);
     }
 
     private function applyListFilters($query, Request $request, bool $includeStatus): void
@@ -854,7 +1024,9 @@ class TeacherAssessmentController extends Controller
         if ($gradeFilter !== '' && $gradeFilter !== 'all') {
             $dbGrade = self::GRADE_FILTER_MAP[$gradeFilter] ?? null;
             if ($dbGrade) {
-                $query->where('grade', $dbGrade);
+                $query->where(function ($q) use ($dbGrade) {
+                    $q->where('grade', $dbGrade)->orWhere('grade', self::GRADE_ALL);
+                });
             } else {
                 $query->whereRaw('0 = 1');
             }
@@ -1091,6 +1263,7 @@ class TeacherAssessmentController extends Controller
 
         $trimmed = trim($grade);
 
-        return self::GRADE_ALIASES[$trimmed] ?? $trimmed;
+        return self::GRADE_ALIASES[$trimmed]
+            ?? \App\Models\ClassType::resolveAssessmentGrade($trimmed);
     }
 }

@@ -1,7 +1,8 @@
 import { type ReactNode } from "react";
 import { useNavigate } from "react-router";
-import { BookOpen, LogOut, PanelLeftClose, PanelLeft } from "lucide-react";
+import { LogOut, PanelLeftClose, PanelLeft } from "lucide-react";
 import { LangToggle } from "./LangToggle";
+import { BrandMark } from "./BrandMark";
 import { useLanguage } from "../i18n";
 import { teacherNavItems, type TeacherNavActive } from "../i18n/navHelpers";
 import { usePortalLogout } from "../hooks/usePortalLogout";
@@ -55,11 +56,8 @@ export function TeacherLayout({
         aria-hidden={collapsed}
       >
         <div className="flex items-center justify-between gap-2 mb-12 min-w-[208px]">
-          <div className="flex items-center gap-3 min-w-0">
-            <BookOpen className="w-8 h-8 shrink-0" style={{ color: "#004aad" }} />
-            <h1 className="text-xl truncate" style={{ color: "#004aad" }}>
-              {t("common.appName")}
-            </h1>
+          <div className="min-w-0 flex-1">
+            <BrandMark height={36} />
           </div>
           <button
             type="button"

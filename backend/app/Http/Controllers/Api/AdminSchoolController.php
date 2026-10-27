@@ -8,7 +8,9 @@ use App\Models\SchoolBoard;
 use App\Models\PlatformSetting;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\InstitutionalSubscriptionService;
 use App\Services\NotificationMailer;
+use App\Services\ResourceAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -44,6 +46,10 @@ class AdminSchoolController extends Controller
 
         $schools = $query->get();
         $studentCounts = $this->studentCountsForSchools($schools->pluck('id'));
+        ResourceAccessService::rememberEnabledMap(
+            ResourceAccessService::TYPE_SCHOOL,
+            $schools->pluck('id')->all(),
+        );
 
         return response()->json([
             'schools' => $schools->map(
@@ -56,51 +62,296 @@ class AdminSchoolController extends Controller
     {
         $data = $this->validateSchool($request, true);
         $data['school_board'] = $this->normalizeSchoolBoard($data['school_board'] ?? null);
+        $teacherInputs = $this->validateTeacherMembers($request);
 
-        $school = DB::transaction(function () use ($data) {
+        $result = DB::transaction(function () use ($data, $teacherInputs) {
             $school = School::create([
                 'name' => $data['name'],
-                'city' => $data['city'],
+                'city' => filled($data['city'] ?? null) ? $data['city'] : '—',
                 'school_board' => $data['school_board'],
+                'code' => filled($data['code'] ?? null)
+                    ? strtoupper((string) $data['code'])
+                    : $this->generateUniqueCode($data['name']),
+                'contact_person' => $data['contact_person'] ?? null,
                 'grades' => $data['grades'] ?? null,
                 'status' => 'active',
                 'portal_password_encrypted' => Crypt::encryptString($data['portal_password']),
             ]);
 
-            User::create([
+            $portalUser = User::create([
                 'name' => $school->name,
                 'email' => $data['portal_username'],
                 'password' => Hash::make($data['portal_password']),
                 'role' => 'school_admin',
                 'school_id' => $school->id,
                 'school_board' => $school->school_board,
-                'account_status' => 'inactive',
+                'account_status' => 'active',
                 'preferred_language' => PlatformSetting::defaultLanguage(),
-                'email_verified_at' => null,
+                'email_verified_at' => now(),
             ]);
 
-            return $school;
+            InstitutionalSubscriptionService::apply($portalUser, $data, required: true);
+            $portalUser->save();
+
+            $mailQueue = [[
+                'user' => $portalUser,
+                'password' => $data['portal_password'],
+                'mode' => 'welcome',
+            ]];
+
+            foreach ($teacherInputs as $input) {
+                $mailQueue = array_merge($mailQueue, $this->attachOrCreateTeacher($school, $input, $portalUser));
+            }
+
+            return [
+                'school' => $school,
+                'mail_queue' => $mailQueue,
+                'teacher_count' => count($teacherInputs),
+            ];
         });
 
-        $portalUser = User::query()
-            ->where('role', 'school_admin')
-            ->where('school_id', $school->id)
-            ->first();
+        /** @var School $school */
+        $school = $result['school'];
+        $emailsSent = $this->flushMailQueue($result['mail_queue'], $school);
+        $emailsSent += $this->notifyBoardOfNewSchool($school, $result['teacher_count']);
 
-        if ($portalUser) {
+        AuditLogger::log('Create', 'School', "{$school->name} created", 'info', $request, subject: $school);
+
+        return response()->json([
+            'school' => $this->format($school->fresh()),
+            'emails_sent' => $emailsSent,
+            'message' => "{$school->name} created. {$emailsSent} onboarding email(s) sent.",
+        ], 201);
+    }
+
+    /**
+     * @param  list<array{user: User, password: string, mode: string}>  $queue
+     */
+    private function flushMailQueue(array $queue, School $school): int
+    {
+        $sent = 0;
+
+        foreach ($queue as $mail) {
             try {
-                NotificationMailer::sendVerifyAccount($portalUser, $data['portal_password']);
+                if (($mail['mode'] ?? 'welcome') === 'verify') {
+                    NotificationMailer::sendVerifyAccount($mail['user'], $mail['password']);
+                } else {
+                    NotificationMailer::sendWelcome($mail['user'], $mail['password']);
+                }
+                $sent++;
             } catch (Throwable $e) {
-                Log::error('School portal verify email failed', [
+                Log::error('School onboarding email failed', [
                     'school_id' => $school->id,
+                    'user_id' => $mail['user']->id ?? null,
                     'error' => $e->getMessage(),
                 ]);
             }
         }
 
-        AuditLogger::log('Create', 'School', "{$school->name} created", 'info', $request, subject: $school);
+        return $sent;
+    }
 
-        return response()->json(['school' => $this->format($school)], 201);
+    private function notifyBoardOfNewSchool(School $school, int $teacherCount): int
+    {
+        if (! $school->school_board) {
+            return 0;
+        }
+
+        $board = SchoolBoard::query()->where('code', $school->school_board)->first();
+
+        $boardAdmins = User::query()
+            ->where('role', 'board_admin')
+            ->where('school_board', $school->school_board)
+            ->where('account_status', '!=', 'archived')
+            ->get();
+
+        $sent = 0;
+
+        foreach ($boardAdmins as $boardAdmin) {
+            try {
+                NotificationMailer::sendSchoolAdded(
+                    $boardAdmin,
+                    $school->name,
+                    $board->name ?? $school->school_board,
+                    $teacherCount,
+                );
+                $sent++;
+            } catch (Throwable $e) {
+                Log::error('School board notification email failed', [
+                    'school_id' => $school->id,
+                    'board_admin_id' => $boardAdmin->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $sent;
+    }
+
+    /**
+     * Attach an existing teacher (or create a new one) to a freshly created school.
+     * Teachers inherit the school portal subscription window and are auto-activated.
+     *
+     * @return list<array{user: User, password: string, mode: string}>
+     */
+    private function attachOrCreateTeacher(School $school, array $input, User $sponsor): array
+    {
+        if (! empty($input['existing_id'])) {
+            $teacher = User::query()->where('role', 'teacher')->findOrFail($input['existing_id']);
+            $password = filled($input['password'] ?? null) ? (string) $input['password'] : Str::password(16);
+
+            $teacher->fill([
+                'school_id' => $school->id,
+                'school_board' => $school->school_board ?: $teacher->school_board,
+                'affiliation_type' => 'institutional',
+            ]);
+
+            if (filled($input['name'] ?? null)) {
+                [$first, $last] = $this->splitName((string) $input['name']);
+                $teacher->first_name = $first;
+                $teacher->last_name = $last;
+                $teacher->name = trim("{$first} {$last}");
+            }
+
+            if (filled($input['email'] ?? null)) {
+                $teacher->email = $input['email'];
+            }
+
+            $teacher->password = Hash::make($password);
+            $teacher->portal_password_encrypted = Crypt::encryptString($password);
+            InstitutionalSubscriptionService::applyInstitutionalCoverageFromSponsor(
+                $teacher,
+                $sponsor,
+                'school_registration',
+            );
+            $teacher->save();
+
+            return [['user' => $teacher, 'password' => $password, 'mode' => 'welcome']];
+        }
+
+        [$first, $last] = $this->splitName((string) $input['name']);
+        $password = (string) $input['password'];
+
+        $teacher = User::create([
+            'name' => trim("{$first} {$last}"),
+            'first_name' => $first,
+            'last_name' => $last,
+            'email' => $input['email'],
+            'password' => Hash::make($password),
+            'role' => 'teacher',
+            'school_id' => $school->id,
+            'school_board' => $school->school_board ?: null,
+            'affiliation_type' => 'institutional',
+            'registration_source' => 'school_registration',
+            'account_status' => 'active',
+            'preferred_language' => PlatformSetting::defaultLanguage(),
+            'portal_password_encrypted' => Crypt::encryptString($password),
+            'email_verified_at' => now(),
+        ]);
+
+        InstitutionalSubscriptionService::applyInstitutionalCoverageFromSponsor(
+            $teacher,
+            $sponsor,
+            'school_registration',
+        );
+        $teacher->save();
+
+        return [['user' => $teacher, 'password' => $password, 'mode' => 'welcome']];
+    }
+
+    /**
+     * Teachers attached from the create-school wizard (step 2). All entries are optional.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function validateTeacherMembers(Request $request): array
+    {
+        $data = $request->validate([
+            'teachers' => ['nullable', 'array'],
+            'teachers.*.existing_id' => ['nullable', 'integer', 'exists:users,id'],
+            'teachers.*.name' => ['nullable', 'string', 'max:255'],
+            'teachers.*.email' => ['nullable', 'email', 'max:255'],
+            'teachers.*.password' => ['nullable', 'string', 'min:8', 'max:255'],
+        ]);
+
+        $teachers = [];
+
+        foreach ($data['teachers'] ?? [] as $index => $teacher) {
+            $existingId = $teacher['existing_id'] ?? null;
+
+            if ($existingId) {
+                if (! User::query()->where('id', $existingId)->where('role', 'teacher')->exists()) {
+                    abort(response()->json(['message' => 'Selected teacher was not found.'], 422));
+                }
+
+                $teachers[] = [
+                    'existing_id' => (int) $existingId,
+                    'name' => $teacher['name'] ?? null,
+                    'email' => $teacher['email'] ?? null,
+                    'password' => $teacher['password'] ?? null,
+                ];
+
+                continue;
+            }
+
+            if (! filled($teacher['name'] ?? null) || ! filled($teacher['email'] ?? null) || ! filled($teacher['password'] ?? null)) {
+                abort(response()->json([
+                    'message' => 'Each new teacher needs a name, email, and temporary password.',
+                    'errors' => ["teachers.{$index}" => ['Incomplete teacher entry.']],
+                ], 422));
+            }
+
+            if (User::query()->where('email', $teacher['email'])->exists()) {
+                abort(response()->json([
+                    'message' => "Teacher email {$teacher['email']} is already in use.",
+                ], 422));
+            }
+
+            $teachers[] = [
+                'existing_id' => null,
+                'name' => trim((string) $teacher['name']),
+                'email' => trim((string) $teacher['email']),
+                'password' => (string) $teacher['password'],
+            ];
+        }
+
+        return $teachers;
+    }
+
+    /** @return array{0: string, 1: string} */
+    private function splitName(string $name): array
+    {
+        $parts = preg_split('/\s+/', trim($name), 2) ?: [];
+
+        return [$parts[0] ?? 'Teacher', $parts[1] ?? 'Account'];
+    }
+
+    private function generateUniqueCode(string $name): string
+    {
+        $words = preg_split('/\s+/', trim($name)) ?: [];
+        $code = '';
+
+        foreach ($words as $word) {
+            $clean = preg_replace('/[^A-Za-z0-9]/', '', $word) ?: '';
+            if ($clean !== '') {
+                $code .= strtoupper($clean[0]);
+            }
+        }
+
+        if (strlen($code) < 3) {
+            $code = strtoupper(Str::of($name)->replaceMatches('/[^A-Za-z0-9]/', '')->substr(0, 4)->toString());
+        }
+
+        $code = $code !== '' ? $code : 'SCH';
+        $candidate = $code;
+        $counter = 1;
+
+        while (School::query()->where('code', $candidate)->exists()) {
+            $candidate = $code.$counter;
+            $counter++;
+        }
+
+        return $candidate;
     }
 
     public function show(School $school): JsonResponse
@@ -123,6 +374,14 @@ class AdminSchoolController extends Controller
                 'grades' => $data['grades'] ?? null,
             ];
 
+            if (array_key_exists('code', $data)) {
+                $schoolUpdates['code'] = filled($data['code']) ? strtoupper((string) $data['code']) : null;
+            }
+
+            if (array_key_exists('contact_person', $data)) {
+                $schoolUpdates['contact_person'] = $data['contact_person'];
+            }
+
             if (! empty($data['portal_password'])) {
                 $schoolUpdates['portal_password_encrypted'] = Crypt::encryptString($data['portal_password']);
             }
@@ -142,6 +401,7 @@ class AdminSchoolController extends Controller
                     $portalUser->password = Hash::make($data['portal_password']);
                 }
 
+                InstitutionalSubscriptionService::apply($portalUser, $data);
                 $portalUser->save();
             }
         });
@@ -149,6 +409,175 @@ class AdminSchoolController extends Controller
         AuditLogger::log('Edit', 'School', "{$school->name} updated", 'info', $request, subject: $school);
 
         return response()->json(['school' => $this->format($school->fresh())]);
+    }
+
+    public function sendBillingNotice(Request $request, School $school): JsonResponse
+    {
+        $portalUser = $this->portalUser($school);
+
+        if (! $portalUser) {
+            return response()->json(['message' => 'School portal account not found.'], 404);
+        }
+
+        if ($portalUser->account_status === 'archived') {
+            return response()->json(['message' => 'Archived school portals cannot receive billing notices.'], 422);
+        }
+
+        $data = $request->validate([
+            'type' => ['required', 'in:'.implode(',', InstitutionalSubscriptionService::NOTICE_TYPES)],
+        ]);
+
+        InstitutionalSubscriptionService::sendBillingNotice($portalUser, $data['type']);
+
+        $label = InstitutionalSubscriptionService::noticeLabel($data['type']);
+
+        AuditLogger::log(
+            'Email',
+            'School',
+            "Admin sent {$label} notification to {$school->name}",
+            'info',
+            $request,
+            subject: $school,
+            metadata: ['notice_type' => $data['type']],
+        );
+
+        return response()->json([
+            'school' => $this->format($school->fresh()),
+            'message' => ucfirst($label).' email sent.',
+        ]);
+    }
+
+    public function extendTrial(Request $request, School $school): JsonResponse
+    {
+        $portalUser = $this->portalUser($school);
+
+        if (! $portalUser) {
+            return response()->json(['message' => 'School portal account not found.'], 404);
+        }
+
+        if ($portalUser->account_status === 'archived') {
+            return response()->json(['message' => 'Archived school portals cannot have their trial extended.'], 422);
+        }
+
+        $data = $request->validate([
+            'days' => ['required', 'integer', 'min:1', 'max:30'],
+        ]);
+
+        $result = InstitutionalSubscriptionService::extendTrialAndNotify($portalUser, $data['days']);
+        $ends = $result['trial_ends_at']?->format('Y-m-d') ?? '';
+
+        User::query()
+            ->where('role', 'teacher')
+            ->where('school_id', $school->id)
+            ->where(function ($query) {
+                $query->where('affiliation_type', 'institutional')
+                    ->orWhere('subscription_plan', 'institutional')
+                    ->orWhereIn('registration_source', [
+                        'school_registration',
+                        'school_assigned',
+                        'board_registration',
+                        'board_assigned',
+                    ]);
+            })
+            ->each(function (User $teacher) use ($portalUser) {
+                InstitutionalSubscriptionService::syncRegistrationCoverage($teacher, $portalUser);
+            });
+
+        AuditLogger::log(
+            'Edit',
+            'School',
+            "Admin extended trial for {$school->name} by {$result['days']} day(s) until {$ends}",
+            'info',
+            $request,
+            subject: $school,
+            metadata: ['days' => $result['days'], 'trial_ends_at' => $ends],
+        );
+
+        return response()->json([
+            'school' => $this->format($school->fresh()),
+            'message' => "Trial extended by {$result['days']} day(s). Email sent.",
+        ]);
+    }
+
+    public function resendActivation(Request $request, School $school): JsonResponse
+    {
+        $portalUser = $this->portalUser($school);
+
+        if (! $portalUser) {
+            return response()->json(['message' => 'School portal account not found.'], 404);
+        }
+
+        if ($portalUser->account_status === 'archived') {
+            return response()->json(['message' => 'Archived school portals cannot receive activation emails.'], 422);
+        }
+
+        if ($portalUser->email_verified_at !== null || $portalUser->account_status === 'active') {
+            return response()->json(['message' => 'This school portal is already activated.'], 422);
+        }
+
+        $plainPassword = $this->portalPasswordFor($school);
+        if (! $plainPassword) {
+            return response()->json([
+                'message' => 'The temporary password is unavailable. Set a new password before resending activation.',
+            ], 422);
+        }
+
+        try {
+            NotificationMailer::sendVerifyAccount($portalUser, $plainPassword);
+        } catch (Throwable $e) {
+            Log::error('School activation email resend failed', [
+                'school_id' => $school->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json(['message' => 'The activation email could not be sent.'], 500);
+        }
+
+        AuditLogger::log(
+            'Email',
+            'School',
+            "Activation email resent for {$school->name}",
+            'info',
+            $request,
+            subject: $school,
+        );
+
+        return response()->json([
+            'school' => $this->format($school->fresh()),
+            'message' => 'Activation email resent successfully.',
+        ]);
+    }
+
+    public function activateAccount(Request $request, School $school): JsonResponse
+    {
+        $portalUser = $this->portalUser($school);
+
+        if (! $portalUser) {
+            return response()->json(['message' => 'School portal account not found.'], 404);
+        }
+
+        if ($portalUser->account_status === 'archived' || $school->status === 'archived') {
+            return response()->json(['message' => 'Restore the archived school before activating the portal.'], 422);
+        }
+
+        $portalUser->forceFill([
+            'account_status' => 'active',
+            'email_verified_at' => $portalUser->email_verified_at ?? now(),
+        ])->save();
+
+        AuditLogger::log(
+            'Activate',
+            'School',
+            "{$school->name} portal activated manually by administrator",
+            'warning',
+            $request,
+            subject: $school,
+        );
+
+        return response()->json([
+            'school' => $this->format($school->fresh()),
+            'message' => 'School portal activated. Sign-in is now allowed.',
+        ]);
     }
 
     public function archive(Request $request, School $school): JsonResponse
@@ -176,11 +605,43 @@ class AdminSchoolController extends Controller
         return response()->json(['school' => $this->format($school->fresh())]);
     }
 
+    public function destroy(Request $request, School $school): JsonResponse
+    {
+        if ($school->status !== 'archived') {
+            return response()->json([
+                'message' => 'Only archived schools can be permanently deleted.',
+            ], 422);
+        }
+
+        $name = $school->name;
+
+        DB::transaction(function () use ($school) {
+            $portalUser = $this->portalUser($school);
+
+            if ($portalUser) {
+                $portalUser->delete();
+            }
+
+            $school->delete();
+        });
+
+        AuditLogger::log(
+            'Delete',
+            'School',
+            "{$name} permanently deleted",
+            'critical',
+            $request,
+        );
+
+        return response()->json(['message' => 'School permanently deleted.']);
+    }
+
     public function suggestCredentials(Request $request): JsonResponse
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'school_board' => ['nullable', 'string', Rule::in($this->allowedBoardCodes())],
+            'code' => ['nullable', 'string', 'max:40'],
         ]);
 
         $defaultBoard = $this->activeBoardCodes()[0] ?? 'CSDM';
@@ -188,10 +649,14 @@ class AdminSchoolController extends Controller
             ? $this->normalizeSchoolBoard($data['school_board'])
             : $defaultBoard;
 
-        return response()->json($this->suggestCredentialsFor(
-            $data['name'],
-            $board
-        ));
+        $code = filled($data['code'] ?? null)
+            ? strtoupper((string) $data['code'])
+            : $this->generateUniqueCode($data['name']);
+
+        return response()->json([
+            ...$this->suggestCredentialsFor($data['name'], $board),
+            'code' => $code,
+        ]);
     }
 
     private function validateSchool(Request $request, bool $creating, ?School $school = null): array
@@ -200,8 +665,16 @@ class AdminSchoolController extends Controller
 
         $rules = [
             'name' => ['required', 'string', 'max:255'],
-            'city' => ['required', 'string', 'max:255'],
+            'city' => [$creating ? 'nullable' : 'required', 'string', 'max:255'],
             'school_board' => ['nullable', 'string', Rule::in($this->allowedBoardCodes($school))],
+            'code' => [
+                'nullable',
+                'string',
+                'alpha_dash',
+                'max:40',
+                Rule::unique('schools', 'code')->ignore($school?->id),
+            ],
+            'contact_person' => ['nullable', 'string', 'max:255'],
             'grades' => ['nullable', 'string', 'max:50'],
             'portal_username' => [
                 'required',
@@ -210,6 +683,11 @@ class AdminSchoolController extends Controller
                 Rule::unique('users', 'email')->ignore($portalUserId),
             ],
             'portal_password' => [$creating ? 'required' : 'nullable', 'string', 'min:8', 'max:255'],
+            'access_mode' => [$creating ? 'required' : 'sometimes', 'in:trial,subscription'],
+            'trial_started_at' => ['nullable', 'date'],
+            'trial_ends_at' => ['nullable', 'date', 'after_or_equal:trial_started_at'],
+            'subscription_started_at' => ['nullable', 'date'],
+            'subscription_ends_at' => ['nullable', 'date', 'after_or_equal:subscription_started_at'],
         ];
 
         return $request->validate($rules);
@@ -255,6 +733,8 @@ class AdminSchoolController extends Controller
             'id' => $school->id,
             'name' => $school->name,
             'board' => $school->school_board ?: '',
+            'code' => $school->code ?: '',
+            'contact_person' => $school->contact_person ?: '',
             'city' => $school->city,
             'grades' => $school->grades ?? '—',
             'teachers' => $teacherCount,
@@ -262,6 +742,14 @@ class AdminSchoolController extends Controller
             'status' => ucfirst($school->status),
             'portal_username' => $portalUser?->email,
             'portal_password' => $this->portalPasswordFor($school),
+            'portal_account_status' => $portalUser?->account_status,
+            'portal_email_verified_at' => $portalUser?->email_verified_at?->toIso8601String(),
+            'activation_pending' => (bool) ($portalUser && $portalUser->account_status === 'inactive' && $portalUser->email_verified_at === null),
+            'resource_access_enabled' => ResourceAccessService::isEnabled(
+                ResourceAccessService::TYPE_SCHOOL,
+                $school->id,
+            ),
+            ...InstitutionalSubscriptionService::format($portalUser),
         ];
     }
 

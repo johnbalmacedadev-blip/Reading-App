@@ -17,7 +17,12 @@ export function UserAvatar({ size = "sm", className = "", onClick }: UserAvatarP
   const navigate = useNavigate();
   const { user, avatarVersion } = useAuth();
 
-  const profilePath = user?.role === "board_admin" ? "/board/profile" : "/profile";
+  const profilePath =
+    user?.role === "board_admin"
+      ? "/board/profile"
+      : user?.role === "school_admin"
+        ? "/school/profile"
+        : "/profile";
   const handleClick = onClick ?? (() => navigate(profilePath));
   const initials = user?.initials ?? "??";
   const hasAvatar = user?.has_avatar ?? false;

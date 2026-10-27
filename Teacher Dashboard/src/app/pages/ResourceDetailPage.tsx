@@ -7,11 +7,15 @@ import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
 import { formatAtelierLabel } from "../i18n/atelierHelpers";
 import { teacherUnitsApi, type PedagogicalUnitItem } from "../api/client";
+import { useAuth } from "../context/AuthContext";
+import { userMayAccessResource } from "../utils/teacherAccess";
+import { toast } from "sonner";
 
 export function ResourceDetailPage() {
   const navigate = useNavigate();
   const { resourceId } = useParams();
   const { t, tp, auto: a } = useLanguage();
+  const { user } = useAuth();
   const [unit, setUnit] = useState<PedagogicalUnitItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -91,11 +95,12 @@ export function ResourceDetailPage() {
         </div>
 
         <div className="p-12 pt-8">
-          <div className="grid grid-cols-4 gap-4 max-w-5xl">
+          <div className="grid grid-cols-4 gap-4 max-w-5xl items-start">
             {lessons.map((lesson) => (
               <details
                 key={lesson.lesson_number}
-                className="rounded-xl overflow-hidden transition-all"
+                open
+                className="rounded-xl overflow-hidden transition-all self-start w-full"
                 style={{
                   background: "#ffffff",
                   border: `2px solid ${unitColor}30`,
@@ -138,12 +143,15 @@ export function ResourceDetailPage() {
                   </button>
                   <button
                     onClick={() => {
-                      if (lesson.has_activity_sheet) {
-                        window.open(
-                          teacherUnitsApi.activitySheetDownloadUrl(unit.id, lesson.lesson_number),
-                          "_blank"
-                        );
+                      if (!lesson.has_activity_sheet) return;
+                      if (!userMayAccessResource(user, "export", "pedagogical_sheets")) {
+                        toast.error(t("resource.upgradeToDownload"));
+                        return;
                       }
+                      window.open(
+                        teacherUnitsApi.activitySheetDownloadUrl(unit.id, lesson.lesson_number),
+                        "_blank"
+                      );
                     }}
                     disabled={!lesson.has_activity_sheet}
                     className="w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-all text-left text-sm disabled:opacity-40 disabled:cursor-not-allowed"

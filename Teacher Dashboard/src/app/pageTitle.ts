@@ -30,6 +30,8 @@ const matchers: Array<{ test: (path: string) => boolean; parts: PageTitleParts }
 
   // School
   { test: (p) => p === "/school/settings", parts: { portalKey: "login.schoolPortal", pageKey: "nav.settings" } },
+  { test: (p) => p === "/school/profile", parts: { portalKey: "login.schoolPortal", pageKey: "common.profile" } },
+  { test: (p) => p === "/school/subscription", parts: { portalKey: "login.schoolPortal", pageKey: "nav.subscription" } },
   { test: (p) => p === "/school/assessments", parts: { portalKey: "login.schoolPortal", pageKey: "nav.assessments" } },
   { test: (p) => p === "/school/academics", parts: { portalKey: "login.schoolPortal", pageKey: "pageTitle.academics" } },
   { test: (p) => p === "/school/reports" || p === "/school", parts: { portalKey: "login.schoolPortal", pageKey: "nav.reports" } },

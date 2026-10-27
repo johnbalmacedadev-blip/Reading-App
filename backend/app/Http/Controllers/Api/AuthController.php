@@ -3,9 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\PlatformSetting;
 use App\Models\SchoolBoard;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\InstitutionalSubscriptionService;
+use App\Services\ResourceAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -232,12 +235,35 @@ class AuthController extends Controller
 
     private function formatUser(User $user): array
     {
-        if ($user->role === 'teacher' && $user->account_status === 'active') {
-            $user->startTrialIfNeeded();
-            $user->refresh();
+        if ($user->role === 'teacher') {
+            // Sync licence whenever the teacher is linked to a school/board institution.
+            $shouldSyncLicence = $user->isInstitutionalTeacher()
+                || (
+                    $user->affiliation_type !== 'individual'
+                    && (
+                        $user->isRegistrationLicensedTeacher()
+                        || $user->subscription_plan === 'institutional'
+                        || $user->affiliation_type === 'institutional'
+                        || $user->school_id
+                        || trim((string) ($user->school_board ?? '')) !== ''
+                    )
+                );
+
+            if ($shouldSyncLicence) {
+                $sponsor = $user->institutionalSponsor();
+                if ($sponsor) {
+                    InstitutionalSubscriptionService::syncRegistrationCoverage($user, $sponsor);
+                    $user->refresh();
+                }
+            } elseif ($user->account_status === 'active' && $user->affiliation_type === 'individual') {
+                $user->startTrialIfNeeded();
+                $user->refresh();
+            }
         }
 
         $user->loadMissing('school');
+
+        $isRegistrationLicensed = $user->role === 'teacher' && $user->isRegistrationLicensedTeacher();
 
         return [
             'id' => $user->id,
@@ -249,31 +275,51 @@ class AuthController extends Controller
             'role' => $user->role,
             'account_status' => $user->account_status,
             'affiliation_type' => $user->affiliation_type,
+            'registration_source' => $user->registration_source,
+            'registration_source_label' => InstitutionalSubscriptionService::registrationSourceLabel($user->registration_source),
             'preferred_language' => $user->preferred_language,
             'initials' => $user->initials(),
             'has_avatar' => (bool) $user->avatar_path,
             'avatar_url' => $user->avatar_path ? $this->avatarUrlFor($user) : null,
             'school' => $user->school?->only(['id', 'name', 'city']),
             'school_board' => $user->school_board,
-            'subscription' => $user->role === 'teacher' ? [
+            'permissions' => PlatformSetting::permissions(),
+            'resource_access' => ResourceAccessService::payloadForUser($user),
+            'is_trial_only' => $user->isTrialOnlyAccount(),
+            'account_activated_at' => ($user->email_verified_at ?? $user->created_at)?->toIso8601String(),
+            'subscription' => in_array($user->role, ['teacher', 'school_admin', 'board_admin'], true) ? [
                 'status' => $user->subscription_status,
                 'plan' => $user->subscription_plan,
                 'billing' => $user->subscription_billing,
+                'access_mode' => $user->isInstitutionalAdmin()
+                    ? InstitutionalSubscriptionService::accessMode($user)
+                    : null,
+                'trial_started_at' => $user->trial_started_at?->toIso8601String(),
                 'trial_ends_at' => $user->trial_ends_at?->toIso8601String(),
                 'trial_days_remaining' => $user->trialDaysRemaining(),
                 'is_trial_active' => $user->hasActiveTrial(),
-                'is_active' => $user->hasActiveSubscription(),
-                'can_access_classroom' => $user->canAccessClassroomFeatures(),
-                'can_access_reports' => $user->canAccessReports(),
+                'is_active' => $user->hasActiveSubscription() && $user->subscription_plan !== 'institutional',
+                'is_registration_licensed' => $isRegistrationLicensed,
+                'is_institutional' => $user->role === 'teacher' && $user->isInstitutionalTeacher(),
+                'subscription_started_at' => $user->subscription_started_at?->toIso8601String(),
+                'subscription_ends_at' => $user->subscription_ends_at?->toIso8601String(),
+                'auto_renew' => (bool) ($user->subscription_auto_renew ?? true),
+                'can_access_classroom' => $user->role === 'teacher' ? $user->canAccessClassroomFeatures() : false,
+                'can_access_reports' => $user->role === 'teacher' ? $user->canAccessReports() : false,
+                'can_access_portal' => $user->isInstitutionalAdmin()
+                    ? $user->canAccessInstitutionalPortal()
+                    : ($user->hasInstitutionalCoverage() || $user->hasActiveTrial() || $user->hasActiveSubscription()),
             ] : null,
         ];
     }
 
     private function avatarUrlFor(User $user): string
     {
-        return $user->role === 'board_admin'
-            ? '/api/board/profile/avatar'
-            : '/api/teacher/profile/avatar';
+        return match ($user->role) {
+            'board_admin' => '/api/board/profile/avatar',
+            'school_admin' => '/api/school/profile/avatar',
+            default => '/api/teacher/profile/avatar',
+        };
     }
 }
 

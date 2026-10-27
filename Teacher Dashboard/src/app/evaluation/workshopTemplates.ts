@@ -8,7 +8,12 @@ export type WorkshopTemplateId =
   | "format_7"
   | "format_8"
   | "format_9"
-  | "format_11";
+  | "format_10"
+  | "format_11"
+  | "format_12"
+  | "format_13"
+  | "format_14"
+  | "format_15";
 
 export type LetterGridColumn = "name" | "sound";
 
@@ -18,14 +23,9 @@ export type LetterGridSection = {
   columns: LetterGridColumn[];
 };
 
-export type CheckboxTableRow = Record<string, string | number>;
-
-export type CheckboxTableSection = {
+export type LetterWriteListSection = {
   titleFr: string;
-  promptFr: string;
-  columns: { key: string; labelFr: string; align?: "left" | "center" }[];
-  rows: CheckboxTableRow[];
-  showPassedColumn?: boolean;
+  items: string[];
 };
 
 export type WordSoundItem = {
@@ -38,11 +38,23 @@ export type WordSoundListSection = {
   items: WordSoundItem[];
 };
 
+export type CheckboxTableRow = Record<string, string | number>;
+
+export type CheckboxTableSection = {
+  titleFr: string;
+  promptFr: string;
+  columns: { key: string; labelFr: string; align?: "left" | "center" }[];
+  rows: CheckboxTableRow[];
+  showPassedColumn?: boolean;
+  promptShowsInstructionsLabel?: boolean;
+};
+
 export type ItemGridSection = {
   titleFr: string;
   promptFr: string;
   items: string[];
   variant?: "default" | "highlight";
+  promptShowsInstructionsLabel?: boolean;
 };
 
 export type WordFamilySection = {
@@ -75,8 +87,9 @@ export type ComprehensionQuestion = {
 
 export type PassageSection = {
   titleFr: string;
-  promptFr: string;
+  promptFr?: string;
   passageFr: string;
+  fluencyCriterionFr?: string;
   variant?: "default" | "highlight";
 };
 
@@ -108,90 +121,101 @@ export function isItemGridSection(section: MixedSection): section is ItemGridSec
 }
 
 export type LetterGridTemplate = {
-  id: "format_1";
-  name: "Template Format 1";
+  id: "format_1" | "format_2";
+  name: "Template Format 1" | "Template Format 2";
   description: string;
-  sourceWorkshop: 1;
+  sourceWorkshop: 1 | 2;
   format: "letter_grid";
   instructionsFr: string;
   bulkActions: ("all_passed" | "all_failed" | "clear_all" | "support_pdf")[];
   sections: LetterGridSection[];
 };
 
+export type LetterWriteListTemplate = {
+  id: "format_3" | "format_4";
+  name: "Template Format 3" | "Template Format 4";
+  description: string;
+  sourceWorkshop: 3 | 4;
+  format: "letter_write_list";
+  instructionsFr: string;
+  bulkActions: ("all_passed" | "all_failed" | "clear_all" | "support_pdf")[];
+  sections: LetterWriteListSection[];
+};
+
 export type CheckboxSectionsTemplate = {
-  id: "format_2";
-  name: "Template Format 2";
+  id: "format_5";
+  name: "Template Format 5";
   description: string;
   sourceWorkshop: 5;
   format: "checkbox_sections";
   instructionsFr: string;
-  bulkActions: ("all_passed")[];
+  bulkActions: ("all_passed" | "all_failed" | "clear_all" | "support_pdf")[];
   sections: CheckboxTableSection[];
 };
 
 export type WordSoundListTemplate = {
-  id: "format_3";
-  name: "Template Format 3";
+  id: "format_6";
+  name: "Template Format 6";
   description: string;
   sourceWorkshop: 6;
   format: "word_sound_list";
   instructionsFr: string;
-  bulkActions: ("all_passed" | "support_pdf")[];
+  bulkActions: ("all_passed" | "all_failed" | "clear_all" | "support_pdf")[];
   sections: WordSoundListSection[];
 };
 
 export type MixedSectionsTemplate = {
-  id: "format_4";
-  name: "Template Format 4";
+  id: "format_7";
+  name: "Template Format 7";
   description: string;
   sourceWorkshop: 7;
   format: "mixed_sections";
   instructionsFr: string;
-  bulkActions: ("all_passed" | "support_pdf")[];
+  bulkActions: ("all_passed" | "all_failed" | "clear_all" | "support_pdf")[];
   sections: MixedSection[];
 };
 
 export type ItemGridSectionsTemplate = {
-  id: "format_5" | "format_6";
-  name: "Template Format 5" | "Template Format 6";
+  id: "format_8" | "format_9" | "format_10" | "format_13";
+  name: "Template Format 8" | "Template Format 9" | "Template Format 10" | "Template Format 13";
   description: string;
-  sourceWorkshop: 8 | 9;
+  sourceWorkshop: 8 | 9 | 10 | 13;
   format: "item_grid_sections";
   instructionsFr: string;
-  bulkActions: ("all_passed" | "support_pdf")[];
+  bulkActions: ("all_passed" | "all_failed" | "clear_all" | "support_pdf")[];
   sections: ItemGridSection[];
 };
 
 export type MixedReadingSectionsTemplate = {
-  id: "format_7";
-  name: "Template Format 7";
+  id: "format_11";
+  name: "Template Format 11";
   description: string;
   sourceWorkshop: 11;
   format: "mixed_reading_sections";
   instructionsFr: string;
-  bulkActions: ("all_passed" | "support_pdf")[];
+  bulkActions: ("all_passed" | "all_failed" | "clear_all" | "support_pdf")[];
   sections: ReadingMixedSection[];
 };
 
 export type FluencySectionsTemplate = {
-  id: "format_8";
-  name: "Template Format 8";
+  id: "format_12";
+  name: "Template Format 12";
   description: string;
   sourceWorkshop: 12;
   format: "fluency_sections";
   instructionsFr: string;
-  bulkActions: ("all_passed" | "support_pdf")[];
+  bulkActions: ("all_passed" | "all_failed" | "clear_all" | "support_pdf")[];
   sections: FluencyMixedSection[];
 };
 
 export type ComprehensionSectionsTemplate = {
-  id: "format_9";
-  name: "Template Format 9";
+  id: "format_14" | "format_15";
+  name: "Template Format 14" | "Template Format 15";
   description: string;
-  sourceWorkshop: 14;
+  sourceWorkshop: 14 | 15;
   format: "comprehension_sections";
   instructionsFr: string;
-  bulkActions: ("all_passed")[];
+  bulkActions: ("all_passed" | "all_failed" | "clear_all" | "support_pdf")[];
   sections: ComprehensionMixedSection[];
 };
 
@@ -201,32 +225,23 @@ export type MultipleChoiceQuestion = {
   correct: number;
 };
 
-export type MultipleChoiceTemplate = {
-  id: "format_11";
-  name: "Template Format 11";
-  description: string;
-  format: "multiple_choice";
-  instructionsFr: string;
-  bulkActions: [];
-  questions: MultipleChoiceQuestion[];
-};
-
 export type WorkshopTemplate =
   | LetterGridTemplate
+  | LetterWriteListTemplate
   | CheckboxSectionsTemplate
   | WordSoundListTemplate
   | MixedSectionsTemplate
   | ItemGridSectionsTemplate
   | MixedReadingSectionsTemplate
   | FluencySectionsTemplate
-  | ComprehensionSectionsTemplate
-  | MultipleChoiceTemplate;
+  | ComprehensionSectionsTemplate;
 
 export type TemplateDraft = {
   name: string;
   instructionsFr: string;
   sections?:
     | LetterGridSection[]
+    | LetterWriteListSection[]
     | CheckboxTableSection[]
     | WordSoundListSection[]
     | MixedSection[]
@@ -261,6 +276,157 @@ export function normalizeMultipleChoiceQuestion(
 }
 
 const ALPHABET_UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+const ALPHABET_LOWER = "abcdefghijklmnopqrstuvwxyz".split("");
+
+function isLetterGridSections(sections: unknown): sections is LetterGridSection[] {
+  return (
+    Array.isArray(sections) &&
+    sections.length > 0 &&
+    sections.every(
+      (section) =>
+        section != null &&
+        typeof section === "object" &&
+        Array.isArray((section as LetterGridSection).letters) &&
+        Array.isArray((section as LetterGridSection).columns)
+    )
+  );
+}
+
+function isLetterWriteListSections(sections: unknown): sections is LetterWriteListSection[] {
+  return (
+    Array.isArray(sections) &&
+    sections.length > 0 &&
+    sections.every(
+      (section) =>
+        section != null &&
+        typeof section === "object" &&
+        typeof (section as LetterWriteListSection).titleFr === "string" &&
+        Array.isArray((section as LetterWriteListSection).items) &&
+        (section as LetterWriteListSection).items.every((item) => typeof item === "string")
+    )
+  );
+}
+
+function isCheckboxTableSections(sections: unknown): sections is CheckboxTableSection[] {
+  return (
+    Array.isArray(sections) &&
+    sections.length > 0 &&
+    sections.every(
+      (section) =>
+        section != null &&
+        typeof section === "object" &&
+        typeof (section as CheckboxTableSection).titleFr === "string" &&
+        Array.isArray((section as CheckboxTableSection).columns) &&
+        Array.isArray((section as CheckboxTableSection).rows)
+    )
+  );
+}
+
+function isWordSoundListSections(sections: unknown): sections is WordSoundListSection[] {
+  return (
+    Array.isArray(sections) &&
+    sections.length > 0 &&
+    sections.every(
+      (section) =>
+        section != null &&
+        typeof section === "object" &&
+        typeof (section as WordSoundListSection).titleFr === "string" &&
+        Array.isArray((section as WordSoundListSection).items) &&
+        (section as WordSoundListSection).items.every(
+          (item) =>
+            item != null &&
+            typeof item === "object" &&
+            typeof (item as WordSoundItem).word === "string" &&
+            typeof (item as WordSoundItem).sound === "string"
+        )
+    )
+  );
+}
+
+function isMixedSections(sections: unknown): sections is MixedSection[] {
+  return (
+    Array.isArray(sections) &&
+    sections.length > 0 &&
+    sections.every((section) => {
+      if (section == null || typeof section !== "object") return false;
+      if (Array.isArray((section as ItemGridSection).items) && !("rows" in section)) return true;
+      return (
+        Array.isArray((section as CheckboxTableSection).rows) &&
+        Array.isArray((section as CheckboxTableSection).columns)
+      );
+    })
+  );
+}
+
+function isItemGridSections(sections: unknown): sections is ItemGridSection[] {
+  return (
+    Array.isArray(sections) &&
+    sections.length > 0 &&
+    sections.every(
+      (section) =>
+        section != null &&
+        typeof section === "object" &&
+        typeof (section as ItemGridSection).titleFr === "string" &&
+        typeof (section as ItemGridSection).promptFr === "string" &&
+        Array.isArray((section as ItemGridSection).items) &&
+        (section as ItemGridSection).items.every((item) => typeof item === "string")
+    )
+  );
+}
+
+function isMixedReadingSections(sections: unknown): sections is ReadingMixedSection[] {
+  return (
+    Array.isArray(sections) &&
+    sections.length > 0 &&
+    sections.every((section) => {
+      if (section == null || typeof section !== "object") return false;
+      if (Array.isArray((section as WordFamilySection).families)) {
+        return (section as WordFamilySection).families.every(
+          (family) => Array.isArray(family) && family.every((word) => typeof word === "string")
+        );
+      }
+      return (
+        typeof (section as ItemGridSection).promptFr === "string" &&
+        Array.isArray((section as ItemGridSection).items) &&
+        (section as ItemGridSection).items.every((item) => typeof item === "string")
+      );
+    })
+  );
+}
+
+function isFluencySections(sections: unknown): sections is FluencyMixedSection[] {
+  return (
+    Array.isArray(sections) &&
+    sections.length > 0 &&
+    sections.every((section) => {
+      if (section == null || typeof section !== "object") return false;
+      if (Array.isArray((section as SentenceReadingSection).sentences)) {
+        const sentenceSection = section as SentenceReadingSection;
+        return (
+          sentenceSection.sentences.every((sentence) => typeof sentence === "string") &&
+          Array.isArray(sentenceSection.criteria)
+        );
+      }
+      return (
+        typeof (section as ItemGridSection).promptFr === "string" &&
+        Array.isArray((section as ItemGridSection).items) &&
+        (section as ItemGridSection).items.every((item) => typeof item === "string")
+      );
+    })
+  );
+}
+
+function isComprehensionSections(sections: unknown): sections is ComprehensionMixedSection[] {
+  return (
+    Array.isArray(sections) &&
+    sections.length > 0 &&
+    sections.every((section) => {
+      if (section == null || typeof section !== "object") return false;
+      if (typeof (section as PassageSection).passageFr === "string") return true;
+      return Array.isArray((section as ComprehensionQuestionsSection).questions);
+    })
+  );
+}
 
 export const WORKSHOP_TEMPLATES: WorkshopTemplate[] = [
   {
@@ -283,6 +449,55 @@ export const WORKSHOP_TEMPLATES: WorkshopTemplate[] = [
   {
     id: "format_2",
     name: "Template Format 2",
+    description: "Lowercase letter recognition grid with pass/fail toggles for letter name and sound.",
+    sourceWorkshop: 2,
+    format: "letter_grid",
+    instructionsFr:
+      "Présenter chaque lettre minuscule à l'élève et demander : « Quel est le nom de cette lettre ? » puis « Quel son fait cette lettre ? »",
+    bulkActions: ["all_passed", "all_failed", "clear_all", "support_pdf"],
+    sections: [
+      {
+        titleFr: "Lettres minuscules",
+        letters: ALPHABET_LOWER,
+        columns: ["name", "sound"],
+      },
+    ],
+  },
+  {
+    id: "format_3",
+    name: "Template Format 3",
+    description: "Uppercase letter formation checklist with pass/fail toggles for written letters.",
+    sourceWorkshop: 3,
+    format: "letter_write_list",
+    instructionsFr:
+      "Dire le nom de chaque lettre majuscule à l'élève et lui demander de l'écrire.",
+    bulkActions: ["all_passed", "all_failed", "clear_all", "support_pdf"],
+    sections: [
+      {
+        titleFr: "Écrire les lettres majuscules",
+        items: ALPHABET_UPPER,
+      },
+    ],
+  },
+  {
+    id: "format_4",
+    name: "Template Format 4",
+    description: "Lowercase letter formation checklist with pass/fail toggles for written letters.",
+    sourceWorkshop: 4,
+    format: "letter_write_list",
+    instructionsFr:
+      "Dire le nom de chaque lettre minuscule à l'élève et lui demander de l'écrire.",
+    bulkActions: ["all_passed", "all_failed", "clear_all", "support_pdf"],
+    sections: [
+      {
+        titleFr: "Écrire les lettres minuscules",
+        items: ALPHABET_LOWER,
+      },
+    ],
+  },
+  {
+    id: "format_5",
+    name: "Template Format 5",
     description: "Multi-section checklist for rhymes, syllable blending, and syllable counting.",
     sourceWorkshop: 5,
     format: "checkbox_sections",
@@ -328,6 +543,7 @@ export const WORKSHOP_TEMPLATES: WorkshopTemplate[] = [
         titleFr: "Compter les syllabes dans un mot",
         promptFr:
           "Dire le mot à l'élève. Demander : « Combien de syllabes entends-tu dans ce mot? » L'élève doit vous dire le nombre.",
+        promptShowsInstructionsLabel: true,
         columns: [
           { key: "word", labelFr: "Mot", align: "left" },
           { key: "count", labelFr: "Nombre de syllabes", align: "center" },
@@ -345,8 +561,8 @@ export const WORKSHOP_TEMPLATES: WorkshopTemplate[] = [
     ],
   },
   {
-    id: "format_3",
-    name: "Template Format 3",
+    id: "format_6",
+    name: "Template Format 6",
     description: "Initial and final sound identification with word prompts and phoneme hints.",
     sourceWorkshop: 6,
     format: "word_sound_list",
@@ -377,8 +593,8 @@ export const WORKSHOP_TEMPLATES: WorkshopTemplate[] = [
     ],
   },
   {
-    id: "format_4",
-    name: "Template Format 4",
+    id: "format_7",
+    name: "Template Format 7",
     description: "Syllable reading grid plus grapheme-to-sound correspondence table.",
     sourceWorkshop: 7,
     format: "mixed_sections",
@@ -395,6 +611,7 @@ export const WORKSHOP_TEMPLATES: WorkshopTemplate[] = [
         titleFr: "Associer les sons aux graphèmes correspondants",
         promptFr:
           "Montrer 3 lettres à l'élève. Dire : « Pointe la lettre qui fait le son /___/. » Par exemple, montrer « b – f – l » et demander : « Pointe la lettre qui fait le son /f/. »",
+        promptShowsInstructionsLabel: true,
         columns: [
           { key: "letters", labelFr: "Lettres montrées", align: "left" },
           { key: "sound", labelFr: "Son demandé", align: "center" },
@@ -413,8 +630,8 @@ export const WORKSHOP_TEMPLATES: WorkshopTemplate[] = [
     ],
   },
   {
-    id: "format_5",
-    name: "Template Format 5",
+    id: "format_8",
+    name: "Template Format 8",
     description: "Syllable reading grids for open/closed, complex syllables, and sight words.",
     sourceWorkshop: 8,
     format: "item_grid_sections",
@@ -441,8 +658,8 @@ export const WORKSHOP_TEMPLATES: WorkshopTemplate[] = [
     ],
   },
   {
-    id: "format_6",
-    name: "Template Format 6",
+    id: "format_9",
+    name: "Template Format 9",
     description: "Sight word reading grid with 15 high-frequency words.",
     sourceWorkshop: 9,
     format: "item_grid_sections",
@@ -474,8 +691,36 @@ export const WORKSHOP_TEMPLATES: WorkshopTemplate[] = [
     ],
   },
   {
-    id: "format_7",
-    name: "Template Format 7",
+    id: "format_10",
+    name: "Template Format 10",
+    description: "Complex grapheme word reading grid for ch, gn, ou, oi, ai, au, eau.",
+    sourceWorkshop: 10,
+    format: "item_grid_sections",
+    instructionsFr:
+      "Évaluer la lecture de mots contenant des graphèmes complexes. Demander à l'élève de lire chaque mot à voix haute.",
+    bulkActions: ["all_passed", "all_failed", "clear_all", "support_pdf"],
+    sections: [
+      {
+        titleFr: "Lire 10 mots contenant: ch, gn, ou, oi, ai, au, eau",
+        promptFr: "Chaque graphème cible doit être représenté au moins une fois.",
+        items: [
+          "chat",
+          "agneau",
+          "montagne",
+          "oiseau",
+          "maison",
+          "bateau",
+          "soupe",
+          "lait",
+          "auto",
+          "poire",
+        ],
+      },
+    ],
+  },
+  {
+    id: "format_11",
+    name: "Template Format 11",
     description: "Word families, ending patterns, and sight word reading sections.",
     sourceWorkshop: 11,
     format: "mixed_reading_sections",
@@ -520,8 +765,8 @@ export const WORKSHOP_TEMPLATES: WorkshopTemplate[] = [
     ],
   },
   {
-    id: "format_8",
-    name: "Template Format 8",
+    id: "format_12",
+    name: "Template Format 12",
     description: "Repeated sentence fluency criteria and pseudoword decoding grid.",
     sourceWorkshop: 12,
     format: "fluency_sections",
@@ -548,14 +793,43 @@ export const WORKSHOP_TEMPLATES: WorkshopTemplate[] = [
         titleFr: "Amélioration du débit et de l'exactitude",
         promptFr:
           "Demander à l'élève de lire ces pseudo-mots (mots inventés) pour évaluer ses compétences en décodage.",
+        promptShowsInstructionsLabel: true,
         items: ["choui", "groin", "drasse", "ploi", "trouche"],
         variant: "highlight",
       },
     ],
   },
   {
-    id: "format_9",
-    name: "Template Format 9",
+    id: "format_13",
+    name: "Template Format 13",
+    description: "Advanced grapheme word reading grid for ail, eil, euil, ouil.",
+    sourceWorkshop: 13,
+    format: "item_grid_sections",
+    instructionsFr:
+      "Évaluer la lecture de mots contenant des graphèmes avancés (ail, eil, euil, ouil). Demander à l'élève de lire chaque mot à voix haute en identifiant le son cible.",
+    bulkActions: ["all_passed", "all_failed", "clear_all", "support_pdf"],
+    sections: [
+      {
+        titleFr: "Lire 10 mots contenant: ail, eil, euil, ouil",
+        promptFr: "Chaque graphème doit être lu correctement dans le contexte du mot.",
+        items: [
+          "travail",
+          "soleil",
+          "réveil",
+          "fauteuil",
+          "écureuil",
+          "grenouille",
+          "chandail",
+          "appareil",
+          "seuil",
+          "citrouille",
+        ],
+      },
+    ],
+  },
+  {
+    id: "format_14",
+    name: "Template Format 14",
     description: "Teacher-read passage with visualization and comprehension questions.",
     sourceWorkshop: 14,
     format: "comprehension_sections",
@@ -583,22 +857,34 @@ export const WORKSHOP_TEMPLATES: WorkshopTemplate[] = [
     ],
   },
   {
-    id: "format_11",
-    name: "Template Format 11",
-    description: "Multiple choice questionnaire with four options per question.",
-    format: "multiple_choice",
-    instructionsFr: "Répondre à toutes les questions en sélectionnant la bonne réponse.",
-    bulkActions: [],
-    questions: [
+    id: "format_15",
+    name: "Template Format 15",
+    description: "Student autonomous reading passage with fluency mark and comprehension questions.",
+    sourceWorkshop: 15,
+    format: "comprehension_sections",
+    instructionsFr:
+      "Demander à l'élève de lire un court texte de 4-5 phrases de façon autonome, puis poser 5 questions de compréhension.",
+    bulkActions: ["all_passed", "all_failed", "clear_all", "support_pdf"],
+    sections: [
       {
-        text: "Test Q 11",
-        options: ["A222", "B", "C33", "D"],
-        correct: 2,
+        titleFr: "Texte lu par l'élève (lecture autonome)",
+        passageFr:
+          "Mon chat s'appelle Minou. Il est noir et blanc avec de grands yeux verts. Minou aime dormir sur mon lit et jouer avec une balle rouge. Tous les matins, il boit du lait dans son bol bleu. C'est mon meilleur ami!",
+        fluencyCriterionFr: "Fluidité de lecture",
       },
       {
-        text: "this is a sample first question pogi b ako",
-        options: ["oo", "hindi", "pwede", "ewan ko"],
-        correct: 1,
+        titleFr: "Répondre à 5 questions de compréhension",
+        questions: [
+          { questionFr: "Comment s'appelle le chat?", answerFr: "Minou" },
+          { questionFr: "De quelle couleur est le chat?", answerFr: "Noir et blanc" },
+          {
+            questionFr: "Qu'est-ce que Minou aime faire?",
+            answerFr: "Dormir sur le lit et jouer avec une balle rouge",
+          },
+          { questionFr: "De quelle couleur est son bol?", answerFr: "Bleu" },
+          { questionFr: "Quand est-ce que Minou boit du lait?", answerFr: "Tous les matins" },
+        ],
+        variant: "highlight",
       },
     ],
   },
@@ -622,14 +908,6 @@ export function resolveTemplateName(id: WorkshopTemplateId, draft?: TemplateDraf
 
 export function defaultTemplateDraft(id: WorkshopTemplateId): TemplateDraft {
   const template = getWorkshopTemplate(id);
-  if (template.format === "multiple_choice") {
-    return {
-      name: template.name,
-      instructionsFr: template.instructionsFr,
-      sections: [],
-      questions: JSON.parse(JSON.stringify(template.questions)) as MultipleChoiceQuestion[],
-    };
-  }
   return {
     name: template.name,
     instructionsFr: template.instructionsFr,
@@ -651,25 +929,52 @@ export function mergeStoredTemplateDraft(
   const defaults = defaultTemplateDraft(id);
   const template = getWorkshopTemplate(id);
 
-  if (template.format === "multiple_choice") {
-    return {
-      name: stored?.name?.trim() || defaults.name,
-      instructionsFr: stored?.instructionsFr ?? legacyInstructions ?? defaults.instructionsFr,
-      sections: [],
-      questions:
-        Array.isArray(stored?.questions) && stored.questions.length > 0
-          ? stored.questions.map(normalizeMultipleChoiceQuestion)
-          : defaults.questions,
-    };
-  }
+  const storedSections = stored?.sections;
+  const sections =
+    template.format === "letter_grid"
+      ? isLetterGridSections(storedSections)
+        ? storedSections
+        : defaults.sections
+      : template.format === "letter_write_list"
+        ? isLetterWriteListSections(storedSections)
+          ? storedSections
+          : defaults.sections
+        : template.format === "checkbox_sections"
+          ? isCheckboxTableSections(storedSections)
+            ? storedSections
+            : defaults.sections
+          : template.format === "word_sound_list"
+            ? isWordSoundListSections(storedSections)
+              ? storedSections
+              : defaults.sections
+            : template.format === "mixed_sections"
+              ? isMixedSections(storedSections)
+                ? storedSections
+                : defaults.sections
+              : template.format === "item_grid_sections"
+                ? isItemGridSections(storedSections)
+                  ? storedSections
+                  : defaults.sections
+                : template.format === "mixed_reading_sections"
+                  ? isMixedReadingSections(storedSections)
+                    ? storedSections
+                    : defaults.sections
+                  : template.format === "fluency_sections"
+                    ? isFluencySections(storedSections)
+                      ? storedSections
+                      : defaults.sections
+                    : template.format === "comprehension_sections"
+                      ? isComprehensionSections(storedSections)
+                        ? storedSections
+                        : defaults.sections
+                      : Array.isArray(storedSections) && storedSections.length > 0
+                        ? storedSections
+                        : defaults.sections;
 
   return {
     name: stored?.name?.trim() || defaults.name,
     instructionsFr: stored?.instructionsFr ?? legacyInstructions ?? defaults.instructionsFr,
-    sections:
-      Array.isArray(stored?.sections) && stored.sections.length > 0
-        ? stored.sections
-        : defaults.sections,
+    sections,
   };
 }
 

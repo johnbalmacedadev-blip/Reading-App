@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\PlatformSetting;
 use App\Models\User;
 use App\Services\AuditLogger;
 use Illuminate\Http\JsonResponse;
@@ -30,6 +31,8 @@ class SchoolTeacherRequestController extends Controller
 
     public function accept(Request $request, User $teacher): JsonResponse
     {
+        PlatformSetting::assertPermission('school_can_manage_teachers', true);
+
         $admin = $this->schoolAdmin($request);
         $this->ensurePendingSchoolRequest($teacher, (int) $admin->school_id);
 
@@ -57,6 +60,8 @@ class SchoolTeacherRequestController extends Controller
 
     public function reject(Request $request, User $teacher): JsonResponse
     {
+        PlatformSetting::assertPermission('school_can_manage_teachers', true);
+
         $admin = $this->schoolAdmin($request);
         $this->ensurePendingSchoolRequest($teacher, (int) $admin->school_id);
 

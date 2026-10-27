@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ClassType;
 use App\Models\School;
 use App\Models\SchoolBoard;
 use App\Models\SchoolClass;
@@ -19,19 +20,13 @@ class BoardDashboardController extends Controller
 {
     private const MONTH_LABELS = ['Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar'];
 
-    /** Reference provincial benchmarks (external data, not stored per board). */
+    /** Reference provincial benchmarks by assessment-grade band. */
     private const PROVINCIAL_BENCHMARKS = [
         'Kindergarten' => 85,
         'Grade 1' => 68,
         'Grade 2' => 71,
         'Grade 3' => 69,
-    ];
-
-    private const GRADE_KEYS = [
-        'Kindergarten' => 'grade.kindergarten',
-        'Grade 1' => 'grade.grade1',
-        'Grade 2' => 'grade.grade2',
-        'Grade 3' => 'grade.grade3',
+        'Grade 3+' => 69,
     ];
 
     public function index(Request $request): JsonResponse
@@ -54,8 +49,8 @@ class BoardDashboardController extends Controller
 
         $schoolIds = $schools->pluck('id');
 
-        $availableYears = SchoolClass::query()
-            ->whereIn('school_id', $schoolIds)
+        $boardClasses = $this->classesForBoard($boardCode, $schoolIds);
+        $availableYears = $boardClasses
             ->pluck('school_year')
             ->filter()
             ->unique()
@@ -65,13 +60,18 @@ class BoardDashboardController extends Controller
 
         $schoolYear = $request->string('school_year')->toString();
         if ($schoolYear === '') {
-            $schoolYear = $availableYears[array_key_last($availableYears)] ?? $this->currentSchoolYear();
+            $configured = $board?->mergedSettings()['active_school_year'] ?? null;
+            if (is_string($configured) && $configured !== '') {
+                $schoolYear = $configured;
+            } else {
+                $schoolYear = $availableYears[array_key_last($availableYears)] ?? $this->currentSchoolYear();
+            }
         }
 
         [$yearStart, $yearEnd] = $this->schoolYearRange($schoolYear);
 
-        $studentCounts = $this->studentCountsForSchools($schoolIds);
-        $statusBySchool = $this->statusBreakdownBySchool($schoolIds);
+        $studentCounts = $this->studentCountsForSchools($boardCode, $schoolIds, $schoolYear);
+        $statusBySchool = $this->statusBreakdownBySchool($boardCode, $schoolIds, $schoolYear);
         $teacherCounts = User::query()
             ->where('role', 'teacher')
             ->where('account_status', 'active')
@@ -84,23 +84,24 @@ class BoardDashboardController extends Controller
             ->pluck('total', 'school_id');
 
         $schoolRows = $schools->map(function (School $school) use ($studentCounts, $statusBySchool, $teacherCounts) {
-            $status = $statusBySchool[$school->id] ?? ['on_track' => 0, 'monitor' => 0, 'at_risk' => 0, 'total' => 0];
-            $total = max(1, $status['total']);
+            $schoolKey = (int) $school->id;
+            $status = $statusBySchool[$schoolKey] ?? ['on_track' => 0, 'monitor' => 0, 'at_risk' => 0, 'total' => 0];
+            $total = max(1, (int) ($status['total'] ?? 0));
 
             return [
-                'id' => $school->id,
+                'id' => $schoolKey,
                 'name' => $school->name,
                 'city' => $school->city ?? '',
-                'students' => $studentCounts[$school->id] ?? 0,
-                'teachers' => (int) ($teacherCounts[$school->id] ?? 0),
-                'on_track' => $this->percent($status['on_track'], $total),
-                'monitor' => $this->percent($status['monitor'], $total),
-                'at_risk' => $this->percent($status['at_risk'], $total),
+                'students' => (int) ($studentCounts[$schoolKey] ?? 0),
+                'teachers' => (int) ($teacherCounts[$schoolKey] ?? 0),
+                'on_track' => $this->percent((int) ($status['on_track'] ?? 0), $total),
+                'monitor' => $this->percent((int) ($status['monitor'] ?? 0), $total),
+                'at_risk' => $this->percent((int) ($status['at_risk'] ?? 0), $total),
                 'trend' => '+0%',
             ];
         })->values()->all();
 
-        $totalStudents = array_sum($studentCounts);
+        $totalStudents = $this->uniqueStudentCountForBoard($boardCode, $schoolIds, $schoolYear);
         $totalTeachers = User::query()
             ->where('role', 'teacher')
             ->where('account_status', 'active')
@@ -119,7 +120,7 @@ class BoardDashboardController extends Controller
         }
         unset($row);
 
-        $successRateByMonth = $this->successRateByMonth($schoolIds, $yearStart, $yearEnd, $schoolYear);
+        $successRateByMonth = $this->successRateByMonth($boardCode, $schoolIds, $yearStart, $yearEnd, $schoolYear);
 
         return response()->json([
             'board' => [
@@ -136,83 +137,156 @@ class BoardDashboardController extends Controller
                 'latest_trend' => collect($successRateByMonth)->last()['rate'] ?? $avgOnTrack,
             ],
             'success_rate_by_month' => $successRateByMonth,
-            'results_by_grade' => $this->resultsByGrade($schoolIds),
+            'results_by_grade' => $this->resultsByGrade($boardCode, $schoolIds, $schoolYear),
             'schools' => $schoolRows,
         ]);
     }
 
     /** @param Collection<int, int> $schoolIds */
-    private function studentCountsForSchools(Collection $schoolIds): array
+    private function boardTeacherIds(string $boardCode, Collection $schoolIds): Collection
     {
-        if ($schoolIds->isEmpty()) {
-            return [];
+        return User::query()
+            ->where('role', 'teacher')
+            ->where(function ($query) use ($boardCode, $schoolIds) {
+                $query->where('school_board', $boardCode)
+                    ->orWhere('requested_board_code', $boardCode);
+
+                if ($schoolIds->isNotEmpty()) {
+                    $query->orWhereIn('school_id', $schoolIds);
+                }
+            })
+            ->pluck('id');
+    }
+
+    /** @param Collection<int, int> $schoolIds */
+    private function classesForBoard(string $boardCode, Collection $schoolIds, string $schoolYear = ''): Collection
+    {
+        $teacherIds = $this->boardTeacherIds($boardCode, $schoolIds);
+
+        $query = SchoolClass::query()
+            ->with(['teacher', 'students'])
+            ->where(function ($q) use ($schoolIds, $teacherIds) {
+                if ($schoolIds->isNotEmpty()) {
+                    $q->whereIn('school_id', $schoolIds);
+                }
+
+                if ($teacherIds->isNotEmpty()) {
+                    $method = $schoolIds->isNotEmpty() ? 'orWhereIn' : 'whereIn';
+                    $q->{$method}('teacher_id', $teacherIds);
+                }
+
+                if ($schoolIds->isEmpty() && $teacherIds->isEmpty()) {
+                    $q->whereRaw('1 = 0');
+                }
+            });
+
+        if ($schoolYear !== '') {
+            $query->where('school_year', $schoolYear);
         }
 
-        $directStudentIds = DB::table('students')
-            ->whereIn('school_id', $schoolIds)
-            ->select('school_id', 'id')
-            ->get()
-            ->groupBy('school_id');
+        return $query->get();
+    }
 
-        $enrolledStudentIds = DB::table('class_student')
-            ->join('classes', 'classes.id', '=', 'class_student.class_id')
-            ->whereIn('classes.school_id', $schoolIds)
-            ->select('classes.school_id', 'class_student.student_id')
-            ->get()
-            ->groupBy('school_id');
+    /** @param Collection<int, int>|null $allowedSchoolIds */
+    private function resolveClassSchoolId(SchoolClass $class, ?Collection $allowedSchoolIds = null): ?int
+    {
+        $classSchoolId = $class->school_id ? (int) $class->school_id : null;
+        $teacherSchoolId = $class->teacher?->school_id ? (int) $class->teacher->school_id : null;
 
+        if ($allowedSchoolIds !== null && $allowedSchoolIds->isNotEmpty()) {
+            $allowed = $allowedSchoolIds->map(fn ($id) => (int) $id)->all();
+
+            if ($teacherSchoolId && in_array($teacherSchoolId, $allowed, true)) {
+                return $teacherSchoolId;
+            }
+
+            if ($classSchoolId && in_array($classSchoolId, $allowed, true)) {
+                return $classSchoolId;
+            }
+
+            return null;
+        }
+
+        return $teacherSchoolId ?: $classSchoolId;
+    }
+
+    /** @param Collection<int, int> $schoolIds */
+    private function uniqueStudentCountForBoard(string $boardCode, Collection $schoolIds, string $schoolYear = ''): int
+    {
+        return $this->classesForBoard($boardCode, $schoolIds, $schoolYear)
+            ->flatMap(fn (SchoolClass $class) => $class->students->pluck('id'))
+            ->unique()
+            ->count();
+    }
+
+    /** @param Collection<int, int> $schoolIds */
+    private function studentCountsForSchools(string $boardCode, Collection $schoolIds, string $schoolYear = ''): array
+    {
         $counts = [];
-
         foreach ($schoolIds as $schoolId) {
-            $counts[$schoolId] = collect($directStudentIds->get($schoolId, []))
-                ->pluck('id')
-                ->merge(collect($enrolledStudentIds->get($schoolId, []))->pluck('student_id'))
-                ->unique()
-                ->count();
+            $counts[(int) $schoolId] = 0;
+        }
+
+        $seenBySchool = [];
+
+        foreach ($this->classesForBoard($boardCode, $schoolIds, $schoolYear) as $class) {
+            $schoolId = $this->resolveClassSchoolId($class, $schoolIds);
+            if (! $schoolId || ! array_key_exists($schoolId, $counts)) {
+                continue;
+            }
+
+            foreach ($class->students as $student) {
+                $seenBySchool[$schoolId][(int) $student->id] = true;
+            }
+        }
+
+        foreach ($seenBySchool as $schoolId => $studentMap) {
+            $counts[$schoolId] = count($studentMap);
         }
 
         return $counts;
     }
 
     /** @param Collection<int, int> $schoolIds */
-    private function statusBreakdownBySchool(Collection $schoolIds): array
+    private function statusBreakdownBySchool(string $boardCode, Collection $schoolIds, string $schoolYear = ''): array
     {
-        if ($schoolIds->isEmpty()) {
-            return [];
-        }
-
-        $rows = Student::query()
-            ->whereIn('school_id', $schoolIds)
-            ->selectRaw('school_id, status, count(*) as total')
-            ->groupBy('school_id', 'status')
-            ->get();
-
         $breakdown = [];
-
         foreach ($schoolIds as $schoolId) {
-            $breakdown[$schoolId] = ['on_track' => 0, 'monitor' => 0, 'at_risk' => 0, 'total' => 0];
+            $breakdown[(int) $schoolId] = ['on_track' => 0, 'monitor' => 0, 'at_risk' => 0, 'total' => 0];
         }
 
-        foreach ($rows as $row) {
-            $key = match ($row->status) {
-                'monitor' => 'monitor',
-                'at_risk' => 'at_risk',
-                default => 'on_track',
-            };
-            $breakdown[$row->school_id][$key] += (int) $row->total;
-            $breakdown[$row->school_id]['total'] += (int) $row->total;
+        $seen = [];
+
+        foreach ($this->classesForBoard($boardCode, $schoolIds, $schoolYear) as $class) {
+            $schoolId = $this->resolveClassSchoolId($class, $schoolIds);
+            if (! $schoolId || ! isset($breakdown[$schoolId])) {
+                continue;
+            }
+
+            foreach ($class->students as $student) {
+                $studentId = (int) $student->id;
+                if (isset($seen[$schoolId][$studentId])) {
+                    continue;
+                }
+                $seen[$schoolId][$studentId] = true;
+
+                $key = match ($student->status) {
+                    'monitor' => 'monitor',
+                    'at_risk' => 'at_risk',
+                    default => 'on_track',
+                };
+                $breakdown[$schoolId][$key]++;
+                $breakdown[$schoolId]['total']++;
+            }
         }
 
         return $breakdown;
     }
 
     /** @param Collection<int, int> $schoolIds */
-    private function successRateByMonth(Collection $schoolIds, Carbon $yearStart, Carbon $yearEnd, string $schoolYear): array
+    private function successRateByMonth(string $boardCode, Collection $schoolIds, Carbon $yearStart, Carbon $yearEnd, string $schoolYear): array
     {
-        $classIds = SchoolClass::query()
-            ->whereIn('school_id', $schoolIds)
-            ->when($schoolYear !== '', fn ($q) => $q->where('school_year', $schoolYear))
-            ->pluck('id');
+        $classIds = $this->classesForBoard($boardCode, $schoolIds, $schoolYear)->pluck('id');
 
         $evaluations = $classIds->isEmpty()
             ? collect()
@@ -224,6 +298,7 @@ class BoardDashboardController extends Controller
 
         $series = [];
         $cursor = $yearStart->copy();
+        $fallback = $this->boardOnTrackPercent($boardCode, $schoolIds, $schoolYear);
 
         foreach (self::MONTH_LABELS as $label) {
             if ($cursor->gt($yearEnd)) {
@@ -243,8 +318,8 @@ class BoardDashboardController extends Controller
             if ($monthEvals->isNotEmpty()) {
                 $successCount = $monthEvals->where('status', 'success')->count();
                 $rate = (int) round(($successCount / $monthEvals->count()) * 100);
-            } elseif ($schoolIds->isNotEmpty()) {
-                $rate = $this->boardOnTrackPercent($schoolIds);
+            } else {
+                $rate = $fallback;
             }
 
             $series[] = ['month' => $label, 'rate' => $rate];
@@ -252,56 +327,144 @@ class BoardDashboardController extends Controller
         }
 
         if ($series === []) {
-            $series[] = ['month' => 'Sep', 'rate' => $this->boardOnTrackPercent($schoolIds)];
+            $series[] = ['month' => 'Sep', 'rate' => $fallback];
         }
 
         return $series;
     }
 
     /** @param Collection<int, int> $schoolIds */
-    private function boardOnTrackPercent(Collection $schoolIds): int
+    private function boardOnTrackPercent(string $boardCode, Collection $schoolIds, string $schoolYear = ''): int
     {
-        if ($schoolIds->isEmpty()) {
+        $total = $this->uniqueStudentCountForBoard($boardCode, $schoolIds, $schoolYear);
+        if ($total <= 0) {
             return 0;
         }
 
-        $totals = Student::query()
-            ->whereIn('school_id', $schoolIds)
-            ->selectRaw("sum(case when status = 'on_track' or status is null then 1 else 0 end) as on_track")
-            ->selectRaw('count(*) as total')
-            ->first();
+        $onTrack = 0;
+        $seen = [];
+        foreach ($this->classesForBoard($boardCode, $schoolIds, $schoolYear) as $class) {
+            foreach ($class->students as $student) {
+                $id = (int) $student->id;
+                if (isset($seen[$id])) {
+                    continue;
+                }
+                $seen[$id] = true;
+                if ($student->status === 'on_track' || $student->status === null || $student->status === '') {
+                    $onTrack++;
+                }
+            }
+        }
 
-        return $this->percent((int) ($totals->on_track ?? 0), (int) ($totals->total ?? 0));
+        return $this->percent($onTrack, $total);
     }
 
     /** @param Collection<int, int> $schoolIds */
-    private function resultsByGrade(Collection $schoolIds): array
+    private function resultsByGrade(string $boardCode, Collection $schoolIds, string $schoolYear = ''): array
     {
-        if ($schoolIds->isEmpty()) {
+        $classTypes = ClassType::activeOrdered()->get();
+
+        if ($classTypes->isEmpty()) {
             return [];
         }
 
-        $rows = Student::query()
-            ->whereIn('school_id', $schoolIds)
-            ->selectRaw('grade')
-            ->selectRaw("sum(case when status = 'on_track' or status is null then 1 else 0 end) as on_track")
-            ->selectRaw('count(*) as total')
-            ->groupBy('grade')
-            ->get();
+        $lookup = $this->classTypeLookup($classTypes);
+        $totalsByType = [];
 
-        $order = ['Kindergarten', 'Grade 1', 'Grade 2', 'Grade 3'];
+        foreach ($classTypes as $type) {
+            $totalsByType[$type->name] = ['on_track' => 0, 'total' => 0, 'type' => $type];
+        }
 
-        return collect($order)->map(function (string $grade) use ($rows) {
-            $row = $rows->firstWhere('grade', $grade);
-            $total = (int) ($row->total ?? 0);
-            $onTrack = (int) ($row->on_track ?? 0);
+        $seen = [];
+        foreach ($this->classesForBoard($boardCode, $schoolIds, $schoolYear) as $class) {
+            foreach ($class->students as $student) {
+                $studentId = (int) $student->id;
+                if (isset($seen[$studentId])) {
+                    continue;
+                }
+                $seen[$studentId] = true;
+
+                $resolved = $this->resolveClassTypeName((string) ($student->grade ?? $class->grade ?? ''), $lookup);
+                if ($resolved === null || ! isset($totalsByType[$resolved])) {
+                    continue;
+                }
+
+                $totalsByType[$resolved]['total']++;
+                if ($student->status === 'on_track' || $student->status === null || $student->status === '') {
+                    $totalsByType[$resolved]['on_track']++;
+                }
+            }
+        }
+
+        return $classTypes->map(function (ClassType $type) use ($totalsByType) {
+            $stats = $totalsByType[$type->name];
+            $total = (int) $stats['total'];
+            $onTrack = (int) $stats['on_track'];
+            $assessmentGrade = $type->assessment_grade ?: $type->name;
 
             return [
-                'grade_key' => self::GRADE_KEYS[$grade] ?? $grade,
+                'grade' => $type->name,
+                'grade_label' => $type->name,
+                'grade_label_fr' => $type->name_fr ?: $type->name,
+                // Keep grade_key for older clients; prefer grade_label* for display.
+                'grade_key' => $type->name,
                 'board' => $total > 0 ? $this->percent($onTrack, $total) : 0,
-                'provincial' => self::PROVINCIAL_BENCHMARKS[$grade] ?? 70,
+                'provincial' => self::PROVINCIAL_BENCHMARKS[$assessmentGrade]
+                    ?? self::PROVINCIAL_BENCHMARKS[ClassType::resolveAssessmentGrade($assessmentGrade)]
+                    ?? 70,
             ];
         })->values()->all();
+    }
+
+    /**
+     * @param  Collection<int, ClassType>  $classTypes
+     * @return array{by_alias: array<string, string>}
+     */
+    private function classTypeLookup(Collection $classTypes): array
+    {
+        $byAlias = [];
+
+        foreach ($classTypes as $type) {
+            foreach (array_filter([$type->name, $type->name_fr, $type->code]) as $alias) {
+                $byAlias[mb_strtolower(trim((string) $alias))] = $type->name;
+            }
+        }
+
+        // Legacy student/class grade labels → configured class types.
+        $legacy = [
+            'kindergarten' => 'Junior Kindergarten (JK)',
+            'maternelle' => 'Junior Kindergarten (JK)',
+            'jardin' => 'Senior Kindergarten (SK)',
+            '1re année' => 'Grade 1',
+            '1re annee' => 'Grade 1',
+            '2e année' => 'Grade 2',
+            '2e annee' => 'Grade 2',
+            '3e année' => 'Grade 3+',
+            '3e annee' => 'Grade 3+',
+            '3e année+' => 'Grade 3+',
+            'grade 3' => 'Grade 3+',
+        ];
+
+        foreach ($legacy as $alias => $preferred) {
+            if (isset($byAlias[mb_strtolower($preferred)])) {
+                $byAlias[$alias] = $preferred;
+            }
+        }
+
+        return ['by_alias' => $byAlias];
+    }
+
+    /** @param  array{by_alias: array<string, string>}  $lookup */
+    private function resolveClassTypeName(string $grade, array $lookup): ?string
+    {
+        $trimmed = trim($grade);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        $key = mb_strtolower($trimmed);
+
+        return $lookup['by_alias'][$key] ?? null;
     }
 
     private function percent(int $part, int $total): int
@@ -331,7 +494,8 @@ class BoardDashboardController extends Controller
     /** @return array{0: Carbon, 1: Carbon} */
     private function schoolYearRange(string $schoolYear): array
     {
-        if (preg_match('/^(\d{4})-(\d{4})$/', $schoolYear, $matches)) {
+        $normalized = \App\Models\SchoolYear::normalizeLabel($schoolYear);
+        if (preg_match('/^(\d{4})-(\d{4})$/', $normalized, $matches)) {
             $start = Carbon::create((int) $matches[1], 9, 1)->startOfDay();
             $end = Carbon::create((int) $matches[2], 8, 31)->endOfDay();
 

@@ -20,6 +20,13 @@ if (existsSync(assetsDir)) {
 
 cpSync(path.join(spaDir, "assets"), assetsDir, { recursive: true });
 
+for (const file of ["favicon.png", "favicon.ico", "apple-touch-icon.png"]) {
+  const from = path.join(spaDir, file);
+  if (existsSync(from)) {
+    cpSync(from, path.join(publicDir, file));
+  }
+}
+
 let html = readFileSync(spaIndex, "utf8");
 html = html.replace(/\/spa\/assets\//g, "/assets/");
 writeFileSync(appHtml, html);

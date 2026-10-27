@@ -19,7 +19,16 @@ class TeacherSubscriptionController extends Controller
     public function show(Request $request): JsonResponse
     {
         $teacher = $this->teacher($request);
-        $teacher->startTrialIfNeeded();
+
+        if ($teacher->isInstitutionalTeacher()) {
+            $sponsor = $teacher->institutionalSponsor();
+            if ($sponsor) {
+                \App\Services\InstitutionalSubscriptionService::syncRegistrationCoverage($teacher, $sponsor);
+                $teacher->refresh();
+            }
+        } else {
+            $teacher->startTrialIfNeeded();
+        }
 
         if ($teacher->stripe_subscription_id) {
             try {
@@ -42,6 +51,12 @@ class TeacherSubscriptionController extends Controller
             'plan' => ['required', 'in:essentials,insights'],
             'billing' => ['required', 'in:monthly,annual'],
         ]);
+
+        if ($teacher->isInstitutionalTeacher()) {
+            return response()->json([
+                'message' => 'Your access is covered by your school or school board. Personal subscription is not required.',
+            ], 422);
+        }
 
         if ($teacher->hasActiveSubscription()) {
             return response()->json(['message' => 'Your subscription is already active.'], 422);
@@ -94,6 +109,7 @@ class TeacherSubscriptionController extends Controller
                 'billing' => $billing,
             ],
             'subscription_data' => [
+                'cancel_at_period_end' => false,
                 'metadata' => [
                     'user_id' => (string) $teacher->id,
                     'plan' => $data['plan'],
@@ -137,6 +153,8 @@ class TeacherSubscriptionController extends Controller
         }
 
         $subscription = $session->subscription;
+        $periodEnd = $this->resolvePeriodEndTimestamp($subscription);
+        $autoRenew = ! (bool) ($subscription->cancel_at_period_end ?? false);
         $teacher->forceFill([
             'subscription_status' => in_array($subscription->status, ['active', 'trialing'], true)
                 ? 'active'
@@ -146,9 +164,10 @@ class TeacherSubscriptionController extends Controller
             'stripe_customer_id' => (string) $session->customer,
             'stripe_subscription_id' => $subscription->id,
             'subscription_started_at' => now(),
-            'subscription_ends_at' => $subscription->current_period_end
-                ? date('Y-m-d H:i:s', $subscription->current_period_end)
-                : null,
+            'subscription_ends_at' => $periodEnd
+                ? date('Y-m-d H:i:s', $periodEnd)
+                : $teacher->subscription_ends_at,
+            'subscription_auto_renew' => $autoRenew,
         ])->save();
         TeacherNotificationService::subscriptionActivated($teacher);
 
@@ -206,14 +225,30 @@ class TeacherSubscriptionController extends Controller
         if ($event->type === 'checkout.session.completed') {
             $teacher = User::query()->find((int) ($object->metadata->user_id ?? 0));
             if ($teacher && $object->subscription) {
-                $teacher->forceFill([
+                $subscriptionId = is_string($object->subscription)
+                    ? $object->subscription
+                    : (string) ($object->subscription->id ?? '');
+                $fill = [
                     'subscription_status' => 'active',
                     'subscription_plan' => (string) ($object->metadata->plan ?? 'essentials'),
                     'subscription_billing' => (string) ($object->metadata->billing ?? 'monthly'),
                     'stripe_customer_id' => (string) $object->customer,
-                    'stripe_subscription_id' => (string) $object->subscription,
-                    'subscription_started_at' => now(),
-                ])->save();
+                    'stripe_subscription_id' => $subscriptionId,
+                    'subscription_started_at' => $teacher->subscription_started_at ?? now(),
+                    'subscription_auto_renew' => true,
+                ];
+
+                if (! is_string($object->subscription)) {
+                    $periodEnd = $this->resolvePeriodEndTimestamp($object->subscription);
+                    if ($periodEnd) {
+                        $fill['subscription_ends_at'] = date('Y-m-d H:i:s', $periodEnd);
+                    }
+                    if (isset($object->subscription->cancel_at_period_end)) {
+                        $fill['subscription_auto_renew'] = ! (bool) $object->subscription->cancel_at_period_end;
+                    }
+                }
+
+                $teacher->forceFill($fill)->save();
                 TeacherNotificationService::subscriptionActivated($teacher);
             }
         }
@@ -270,13 +305,15 @@ class TeacherSubscriptionController extends Controller
             $teacher->forceFill([
                 'subscription_ends_at' => $periodEnd->toDateTimeString(),
                 'subscription_status' => 'active',
+                'subscription_auto_renew' => true,
             ])->save();
         }
 
         // First payment after checkout is covered by subscriptionActivated.
+        // Cycle renewals (auto-renew paid) get the renewed email for the new period.
         if (in_array($billingReason, ['subscription_cycle', 'subscription_update'], true)) {
             TeacherNotificationService::subscriptionRenewed(
-                $teacher,
+                $teacher->fresh(),
                 (string) ($invoice->id ?? null),
                 $periodEnd,
             );
@@ -285,6 +322,7 @@ class TeacherSubscriptionController extends Controller
                 $teacher->forceFill([
                     'stripe_subscription_id' => (string) $invoice->subscription,
                     'subscription_status' => 'active',
+                    'subscription_auto_renew' => true,
                 ])->save();
             }
             TeacherNotificationService::subscriptionActivated($teacher->fresh());
@@ -336,12 +374,44 @@ class TeacherSubscriptionController extends Controller
             ? 'active'
             : (string) $subscription->status;
 
-        $teacher->forceFill([
+        $periodEnd = $this->resolvePeriodEndTimestamp($subscription);
+        $autoRenew = ! (bool) ($subscription->cancel_at_period_end ?? false);
+
+        $fill = [
             'subscription_status' => $status,
-            'subscription_ends_at' => $subscription->current_period_end
-                ? date('Y-m-d H:i:s', $subscription->current_period_end)
-                : null,
-        ])->save();
+            'subscription_auto_renew' => $autoRenew,
+        ];
+
+        // Never wipe a known renewal date if Stripe omits period end on this payload.
+        if ($periodEnd) {
+            $fill['subscription_ends_at'] = date('Y-m-d H:i:s', $periodEnd);
+        }
+
+        if (empty($teacher->subscription_started_at) && ! empty($subscription->start_date)) {
+            $fill['subscription_started_at'] = date('Y-m-d H:i:s', (int) $subscription->start_date);
+        } elseif (empty($teacher->subscription_started_at) && ! empty($subscription->created)) {
+            $fill['subscription_started_at'] = date('Y-m-d H:i:s', (int) $subscription->created);
+        }
+
+        $teacher->forceFill($fill)->save();
+    }
+
+    /** Resolve current period end across Stripe API shapes (subscription or item level). */
+    private function resolvePeriodEndTimestamp(object $subscription): ?int
+    {
+        $candidates = [
+            $subscription->current_period_end ?? null,
+            $subscription->items->data[0]->current_period_end ?? null,
+            $subscription->items['data'][0]['current_period_end'] ?? null,
+        ];
+
+        foreach ($candidates as $value) {
+            if (is_numeric($value) && (int) $value > 0) {
+                return (int) $value;
+            }
+        }
+
+        return null;
     }
 
     private function teacher(Request $request): User
@@ -363,6 +433,11 @@ class TeacherSubscriptionController extends Controller
 
     private function format(User $teacher): array
     {
+        $autoRenew = $teacher->subscription_auto_renew;
+        if ($autoRenew === null) {
+            $autoRenew = true;
+        }
+
         return [
             'status' => $teacher->subscription_status,
             'plan' => $teacher->subscription_plan,
@@ -371,12 +446,15 @@ class TeacherSubscriptionController extends Controller
             'trial_ends_at' => $teacher->trial_ends_at?->toIso8601String(),
             'trial_days_remaining' => $teacher->trialDaysRemaining(),
             'is_trial_active' => $teacher->hasActiveTrial(),
-            'is_active' => $teacher->hasActiveSubscription(),
+            'is_active' => $teacher->hasActiveSubscription() && $teacher->subscription_plan !== 'institutional',
+            'is_institutional' => $teacher->isInstitutionalTeacher(),
+            'is_registration_licensed' => $teacher->isRegistrationLicensedTeacher(),
             'can_access_reports' => $teacher->canAccessReports(),
             'can_access_classroom' => $teacher->canAccessClassroomFeatures(),
             'tax_rate_percent' => 13,
             'subscription_started_at' => $teacher->subscription_started_at?->toIso8601String(),
             'subscription_ends_at' => $teacher->subscription_ends_at?->toIso8601String(),
+            'auto_renew' => (bool) $autoRenew,
             'has_billing_account' => (bool) $teacher->stripe_customer_id,
         ];
     }

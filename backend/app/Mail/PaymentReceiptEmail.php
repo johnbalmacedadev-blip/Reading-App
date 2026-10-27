@@ -2,6 +2,7 @@
 
 namespace App\Mail;
 
+use App\Mail\Concerns\EmbedsEmailLogo;
 use App\Models\User;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
@@ -11,7 +12,7 @@ use Illuminate\Queue\SerializesModels;
 
 class PaymentReceiptEmail extends Mailable
 {
-    use Queueable, SerializesModels;
+    use EmbedsEmailLogo, Queueable, SerializesModels;
 
     public function __construct(
         public User $user,
@@ -21,6 +22,7 @@ class PaymentReceiptEmail extends Mailable
         public string $dueToday,
         public ?string $nextBillingDate = null,
     ) {
+        $this->embedEmailLogo();
     }
 
     public function envelope(): Envelope

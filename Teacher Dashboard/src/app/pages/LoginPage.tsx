@@ -1,7 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router";
 import {
-  BookOpen,
   GraduationCap,
   School,
   Building2,
@@ -11,6 +10,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import classroomPhoto from "../../imports/image-1.png";
+import { BrandMark } from "../components/BrandMark";
 import { useLanguage } from "../i18n";
 import { LangToggle } from "../components/LangToggle";
 import { useAuth } from "../context/AuthContext";
@@ -153,11 +153,8 @@ export function LoginPage() {
           }}
         />
         <div className="relative h-full flex flex-col justify-between p-12">
-          <div className="flex items-center gap-3">
-            <BookOpen className="w-9 h-9 text-white" />
-            <h1 className="text-2xl font-semibold text-white">
-              {t("common.appName")}
-            </h1>
+          <div className="self-start">
+            <BrandMark height={48} onDark />
           </div>
           <div>
             <p className="text-white/80 text-sm mb-3 uppercase tracking-widest font-medium">

@@ -2,17 +2,22 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AdminLayout } from "./AdminLayout";
 import {
-  Plus, Search, Edit2, Archive, X, ChevronDown, User, Mail, Phone, Loader2, Eye, EyeOff, Send, UserCheck, Trash2, Bell,
+  Plus, Search, Edit2, Archive, X, ChevronDown, User, Mail, Phone, Loader2, Eye, EyeOff, Send, UserCheck, Trash2, Bell, RefreshCw,
 } from "lucide-react";
 import {
   adminTeachersApi,
   adminSchoolBoardsApi,
+  adminClassTypesApi,
+  resourceAccessApi,
+  type AdminClassTypeRecord,
   type AdminSchool,
   type AdminTeacherPayload,
   type AdminTeacherRecord,
 } from "../../api/client";
+import { ResourceAccessModal, ResourceAccessToggle } from "../../components/admin/ResourceAccessModal";
+import { ExtendTrialDaysModal } from "../../components/admin/ExtendTrialDaysModal";
 
-const TITLES = ["Mr.", "Mrs.", "Mme", "M."];
+const TITLES = ["Mr.", "Mrs.", "Ms.", "Mme", "M.", "None"];
 const STATUSES = ["Active", "Pending activation", "Inactive", "Archived"];
 const ACTIVE_STATUS_FILTERS = ["Active", "Pending activation", "Inactive"];
 const ACCESS_FILTERS = ["All access", "Trial", "Trial ending soon", "Trial expired", "Subscribed", "Institutional"];
@@ -44,6 +49,18 @@ const accessColors: Record<string, { bg: string; color: string }> = {
 function formatTrialEnd(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" });
+}
+
+function planLabel(plan: string | null): string {
+  if (plan === "insights") return "Insights";
+  if (plan === "essentials") return "Essentials";
+  return plan ? plan.charAt(0).toUpperCase() + plan.slice(1) : "Subscribed";
+}
+
+function billingLabel(billing: string | null): string {
+  if (billing === "annual") return "Annual";
+  if (billing === "monthly") return "Monthly";
+  return "";
 }
 
 function formatLastLogin(teacher: AdminTeacherRecord): { label: string; detail: string; warn: boolean } {
@@ -83,49 +100,6 @@ function matchesAccessFilter(teacher: AdminTeacherRecord, filter: string): boole
   return true;
 }
 
-function TeacherAvatar({ teacher, initials }: { teacher: AdminTeacherRecord; initials: string }) {
-  const [failed, setFailed] = useState(false);
-  const showPhoto = teacher.has_avatar && !failed;
-
-  return (
-    <div
-      style={{
-        width: 32,
-        height: 32,
-        borderRadius: "50%",
-        background: showPhoto ? "transparent" : "linear-gradient(135deg, #dff3ff, #004aad22)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        flexShrink: 0,
-        overflow: "hidden",
-      }}
-    >
-      {showPhoto ? (
-        <img
-          src={adminTeachersApi.avatarUrl(teacher.id)}
-          alt=""
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <span style={{ fontSize: 13, fontWeight: 700, color: "#004aad" }}>{initials}</span>
-      )}
-    </div>
-  );
-}
-
-const schoolBoardMap: Record<string, string> = {
-  "École Saint-Laurent": "CSDM",
-  "École des Érables": "CSDM",
-  "École Saint-Joseph": "CSDM",
-  "École Bois-de-Coulonge": "CSDN",
-  "École des Sommets": "CSDN",
-  "École Marguerite-d'Youville": "CSMB",
-  "École du Ruisseau": "CSMB",
-  "École des Pionniers": "CSPO",
-};
-
 type BoardOption = { code: string; name: string };
 
 type FormState = {
@@ -143,10 +117,13 @@ type FormState = {
   access: string;
   is_trial_active: boolean;
   trial_days_remaining: number;
+  is_subscription_active: boolean;
+  subscription_days_remaining: number;
   portal_username: string;
   portal_password: string;
   activation_pending: boolean;
   affiliation_type: string | null;
+  class_types: string[];
 };
 
 function toDateInput(value: string | null | undefined): string {
@@ -154,7 +131,7 @@ function toDateInput(value: string | null | undefined): string {
   return value.slice(0, 10);
 }
 
-const emptyForm = (schoolId = 0, defaultBoard = "CSDM"): FormState => ({
+const emptyForm = (schoolId = 0, defaultBoard = ""): FormState => ({
   title: "Mrs.",
   first_name: "",
   last_name: "",
@@ -168,23 +145,27 @@ const emptyForm = (schoolId = 0, defaultBoard = "CSDM"): FormState => ({
   access: "None",
   is_trial_active: false,
   trial_days_remaining: 0,
+  is_subscription_active: false,
+  subscription_days_remaining: 0,
   portal_username: "",
   portal_password: "",
   activation_pending: false,
   affiliation_type: null,
+  class_types: [],
 });
 
 function toPayload(form: FormState, isCreate: boolean): AdminTeacherPayload {
   const payload: AdminTeacherPayload = {
-    title: form.title || undefined,
+    title: form.title && form.title !== "None" ? form.title : null,
     first_name: form.first_name.trim(),
     last_name: form.last_name.trim(),
     phone: form.phone.trim() || undefined,
     school_id: form.school_id > 0 ? form.school_id : null,
-    school_board: form.board || null,
+    school_board: form.board.trim() || null,
     account_status: form.status,
     started_at: form.since || undefined,
     portal_username: form.portal_username.trim(),
+    class_types: form.class_types,
   };
   if (!isCreate) {
     payload.trial_ends_at = form.trial_ends_at.trim() || null;
@@ -199,7 +180,7 @@ function fromRecord(teacher: AdminTeacherRecord): FormState {
   const username = teacher.portal_username ?? teacher.email;
   return {
     id: teacher.id,
-    title: teacher.title || "Mrs.",
+    title: teacher.title && teacher.title !== "None" ? teacher.title : "None",
     first_name: teacher.first_name,
     last_name: teacher.last_name,
     email: username,
@@ -212,10 +193,13 @@ function fromRecord(teacher: AdminTeacherRecord): FormState {
     access: teacher.access,
     is_trial_active: teacher.is_trial_active,
     trial_days_remaining: teacher.trial_days_remaining,
+    is_subscription_active: teacher.is_subscription_active,
+    subscription_days_remaining: teacher.subscription_days_remaining,
     portal_username: username,
     portal_password: teacher.portal_password ?? "",
     activation_pending: teacher.activation_pending,
     affiliation_type: teacher.affiliation_type ?? null,
+    class_types: teacher.class_types ?? [],
   };
 }
 
@@ -224,36 +208,43 @@ function TeacherModal({
   initialForm,
   schools,
   boardOptions,
+  classTypeOptions,
   saving,
   error,
   message,
   activationAction,
   billingNoticeAction,
+  extendTrialAction,
   onClose,
   onSave,
   onResendActivation,
   onActivateAccount,
   onSendBillingNotice,
+  onExtendTrial,
 }: {
   mode: "create" | "edit";
   initialForm: FormState;
   schools: AdminSchool[];
   boardOptions: BoardOption[];
+  classTypeOptions: AdminClassTypeRecord[];
   saving: boolean;
   error: string;
   message: string;
   activationAction: "resend" | "activate" | null;
   billingNoticeAction: "trial_ending" | "trial_expired" | null;
+  extendTrialAction: boolean;
   onClose: () => void;
   onSave: (form: FormState) => void;
   onResendActivation: () => void;
   onActivateAccount: () => void;
   onSendBillingNotice: (type: "trial_ending" | "trial_expired") => void;
+  onExtendTrial: (days: number) => Promise<boolean>;
 }) {
   const [form, setForm] = useState(initialForm);
   const [suggesting, setSuggesting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loadingPassword, setLoadingPassword] = useState(false);
+  const [extendDaysOpen, setExtendDaysOpen] = useState(false);
   const isCreate = mode === "create";
 
   useEffect(() => {
@@ -392,7 +383,7 @@ function TeacherModal({
               value={form.school_id || ""}
               onChange={(e) => {
                 if (!e.target.value) {
-                  setForm((prev) => ({ ...prev, school_id: 0 }));
+                  setForm((prev) => ({ ...prev, school_id: 0, board: "" }));
                   return;
                 }
                 const schoolId = Number(e.target.value);
@@ -400,7 +391,7 @@ function TeacherModal({
                 setForm((prev) => ({
                   ...prev,
                   school_id: schoolId,
-                  board: school ? schoolBoardMap[school.name] ?? prev.board : prev.board,
+                  board: school?.board_code ?? "",
                 }));
               }}
               style={plainInputStyle}
@@ -437,13 +428,59 @@ function TeacherModal({
             </div>
           </div>
 
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 8 }}>
+              Type of classes currently teaching
+            </label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {classTypeOptions.map((type) => {
+                const selected = form.class_types.includes(type.name);
+                return (
+                  <button
+                    key={type.id}
+                    type="button"
+                    onClick={() =>
+                      setForm((prev) => ({
+                        ...prev,
+                        class_types: selected
+                          ? prev.class_types.filter((c) => c !== type.name)
+                          : [...prev.class_types, type.name],
+                      }))
+                    }
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: 8,
+                      border: `1.5px solid ${selected ? "#004aad" : "#e2e8f0"}`,
+                      background: selected ? "#dff3ff" : "white",
+                      color: selected ? "#004aad" : "#475569",
+                      fontSize: 12,
+                      fontWeight: selected ? 650 : 500,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {type.name}
+                  </button>
+                );
+              })}
+              {classTypeOptions.length === 0 && (
+                <span style={{ fontSize: 12, color: "#94a3b8" }}>No class types configured.</span>
+              )}
+            </div>
+          </div>
+
           {!isCreate && (
             <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: 14 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
                 <p style={{ fontSize: 13, fontWeight: 700, color: "#0a1628", margin: 0 }}>Trial &amp; subscription follow-up</p>
                 <span style={{ fontSize: 11, fontWeight: 600, color: "#475569", background: "#e2e8f0", borderRadius: 999, padding: "3px 8px" }}>
                   {form.access || "None"}
-                  {form.is_trial_active ? ` · ${form.trial_days_remaining}d left` : ""}
+                  {form.is_subscription_active
+                    ? form.subscription_days_remaining > 0
+                      ? ` · ${form.subscription_days_remaining}d left`
+                      : " · subscribed"
+                    : form.is_trial_active
+                      ? ` · ${form.trial_days_remaining}d left`
+                      : ""}
                 </span>
               </div>
               <div style={{ marginBottom: 12 }}>
@@ -461,11 +498,35 @@ function TeacherModal({
                   Soft-lock applies to individual (non-institutional) teachers only.
                 </p>
               </div>
+              {form.access === "Trial expired" && (
+                <div
+                  style={{
+                    background: "#ecfdf5",
+                    border: "1px solid #a7f3d0",
+                    borderRadius: 8,
+                    padding: 10,
+                    marginBottom: 12,
+                  }}
+                >
+                  <p style={{ fontSize: 11, color: "#065f46", margin: "0 0 8px", lineHeight: 1.45 }}>
+                    Choose how many days to extend (max 30), then send. The email uses this teacher’s saved language.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setExtendDaysOpen(true)}
+                    disabled={saving || extendTrialAction || billingNoticeAction !== null}
+                    style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 11px", borderRadius: 7, border: "1px solid #6ee7b7", background: "#d1fae5", color: "#047857", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+                  >
+                    {extendTrialAction ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                    Extend / reactivate trial
+                  </button>
+                </div>
+              )}
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button
                   type="button"
                   onClick={() => onSendBillingNotice("trial_ending")}
-                  disabled={saving || billingNoticeAction !== null}
+                  disabled={saving || billingNoticeAction !== null || extendTrialAction}
                   style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 11px", borderRadius: 7, border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
                 >
                   {billingNoticeAction === "trial_ending" ? <Loader2 size={13} className="animate-spin" /> : <Bell size={13} />}
@@ -474,7 +535,7 @@ function TeacherModal({
                 <button
                   type="button"
                   onClick={() => onSendBillingNotice("trial_expired")}
-                  disabled={saving || billingNoticeAction !== null}
+                  disabled={saving || billingNoticeAction !== null || extendTrialAction}
                   style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 11px", borderRadius: 7, border: "1px solid #fecdd3", background: "#fff1f2", color: "#be123c", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
                 >
                   {billingNoticeAction === "trial_expired" ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
@@ -621,6 +682,20 @@ function TeacherModal({
           </button>
         </div>
       </div>
+      <ExtendTrialDaysModal
+        open={extendDaysOpen}
+        subjectName={`${form.first_name} ${form.last_name}`.trim()}
+        submitting={extendTrialAction}
+        onClose={() => {
+          if (!extendTrialAction) setExtendDaysOpen(false);
+        }}
+        onConfirm={(days) => {
+          void (async () => {
+            const ok = await onExtendTrial(days);
+            if (ok) setExtendDaysOpen(false);
+          })();
+        }}
+      />
     </div>
   );
 }
@@ -629,6 +704,7 @@ export function AdminTeachersPage() {
   const [teachers, setTeachers] = useState<AdminTeacherRecord[]>([]);
   const [schools, setSchools] = useState<AdminSchool[]>([]);
   const [boardOptions, setBoardOptions] = useState<BoardOption[]>([]);
+  const [classTypeOptions, setClassTypeOptions] = useState<AdminClassTypeRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -645,6 +721,7 @@ export function AdminTeachersPage() {
   const [modalNotice, setModalNotice] = useState("");
   const [activationAction, setActivationAction] = useState<"resend" | "activate" | null>(null);
   const [billingNoticeAction, setBillingNoticeAction] = useState<"trial_ending" | "trial_expired" | null>(null);
+  const [extendTrialAction, setExtendTrialAction] = useState(false);
   const [notice, setNotice] = useState("");
   const [archivingId, setArchivingId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -652,21 +729,25 @@ export function AdminTeachersPage() {
     id: number;
     type: "inactive_reminder" | "suspension_reminder";
   } | null>(null);
+  const [accessModal, setAccessModal] = useState<AdminTeacherRecord | null>(null);
+  const [accessSavingId, setAccessSavingId] = useState<number | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const [teachersRes, schoolsRes, boardsRes] = await Promise.all([
+      const [teachersRes, schoolsRes, boardsRes, classTypesRes] = await Promise.all([
         adminTeachersApi.list(),
         adminTeachersApi.schools(),
         adminSchoolBoardsApi.list({ status: "Active" }),
+        adminClassTypesApi.list(),
       ]);
       setTeachers(teachersRes.teachers);
       setSchools(schoolsRes.schools);
       setBoardOptions(
         boardsRes.boards.map((b) => ({ code: b.code, name: b.name })).sort((a, b) => a.name.localeCompare(b.name))
       );
+      setClassTypeOptions(classTypesRes.class_types.filter((t) => t.is_active));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load teachers.");
       setTeachers([]);
@@ -722,7 +803,7 @@ export function AdminTeachersPage() {
   const inactiveCount = inactiveTeachers.length;
 
   const openCreate = () => {
-    setForm(emptyForm(schools[0]?.id ?? 0, boardOptions[0]?.code ?? "CSDM"));
+    setForm(emptyForm(0, ""));
     setModalError("");
     setModalNotice("");
     setModalMode("create");
@@ -745,7 +826,7 @@ export function AdminTeachersPage() {
   };
 
   const closeModal = () => {
-    if (!saving && activationAction === null && billingNoticeAction === null) setModalMode(null);
+    if (!saving && activationAction === null && billingNoticeAction === null && !extendTrialAction) setModalMode(null);
   };
 
   const handleResendActivation = async () => {
@@ -797,6 +878,26 @@ export function AdminTeachersPage() {
       setModalError(err instanceof Error ? err.message : "Unable to send the billing notice.");
     } finally {
       setBillingNoticeAction(null);
+    }
+  };
+
+  const handleExtendTrial = async (days: number): Promise<boolean> => {
+    if (!form.id) return false;
+    setExtendTrialAction(true);
+    setModalError("");
+    setModalNotice("");
+    try {
+      const result = await adminTeachersApi.extendTrial(form.id, days);
+      setTeachers((prev) => prev.map((teacher) => teacher.id === result.teacher.id ? result.teacher : teacher));
+      setForm(fromRecord(result.teacher));
+      setModalNotice(result.message);
+      toast.success(result.message);
+      return true;
+    } catch (err) {
+      setModalError(err instanceof Error ? err.message : "Unable to extend the trial.");
+      return false;
+    } finally {
+      setExtendTrialAction(false);
     }
   };
 
@@ -896,12 +997,9 @@ export function AdminTeachersPage() {
     }
   };
 
-  const initials = (name: string) =>
-    name.split(" ").filter((w) => /^[A-ZÀ-Ü]/.test(w)).slice(-1)[0]?.charAt(0) || "T";
-
   return (
     <AdminLayout>
-      <div style={{ padding: "32px 36px" }}>
+      <div style={{ padding: "32px 36px", minWidth: 0, maxWidth: "100%", boxSizing: "border-box" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 28 }}>
           <div>
             <h1 style={{ fontSize: 24, fontWeight: 700, color: "#0a1628", margin: 0 }}>Teachers</h1>
@@ -1067,17 +1165,40 @@ export function AdminTeachersPage() {
           ))}
         </div>
 
-        <div style={{ background: "white", borderRadius: 14, border: "1px solid #f1f5f9", overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
+        <div style={{ background: "white", borderRadius: 14, border: "1px solid #f1f5f9", overflowX: "auto", overflowY: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.05)", maxWidth: "100%" }}>
           {loading ? (
             <div style={{ padding: "48px 0", textAlign: "center", color: "#94a3b8", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
               <Loader2 size={18} className="animate-spin" /> Loading teachers…
             </div>
           ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <table style={{ width: "100%", minWidth: 1120, tableLayout: "fixed", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: "#f8fafc" }}>
-                  {["Teacher", "Email", "School", "Board", "Access", "Trial", "Last login", "Status", "Actions"].map((h) => (
-                    <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, color: "#64748b", letterSpacing: 0.3, whiteSpace: "nowrap" }}>
+                  {["Teacher", "School", "Board", "Class types", "Access", "Trial / Subscription", "Last login", "Status", "Downloads", "Actions"].map((h) => (
+                    <th
+                      key={h}
+                      style={{
+                        padding: h === "Class types" || h === "Downloads" ? "12px 10px" : "12px 16px",
+                        textAlign: "left",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: "#64748b",
+                        letterSpacing: 0.3,
+                        whiteSpace: "nowrap",
+                        ...(h === "Class types" ? { width: 118, maxWidth: 118 } : null),
+                        ...(h === "Downloads" ? { width: 96, minWidth: 96 } : null),
+                        ...(h === "Actions"
+                          ? {
+                              width: 168,
+                              position: "sticky",
+                              right: 0,
+                              background: "#f8fafc",
+                              zIndex: 2,
+                              boxShadow: "-6px 0 8px -6px rgba(15,23,42,0.12)",
+                            }
+                          : null),
+                      }}
+                    >
                       {h}
                     </th>
                   ))}
@@ -1095,13 +1216,9 @@ export function AdminTeachersPage() {
                   const lastLogin = formatLastLogin(t);
                   return (
                     <tr key={t.id} style={{ borderTop: "1px solid #f1f5f9", background: i % 2 === 0 ? "white" : "#fafbfc" }}>
-                      <td style={{ padding: "13px 16px" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <TeacherAvatar teacher={t} initials={initials(t.name)} />
-                          <span style={{ fontSize: 13, fontWeight: 500, color: "#1e293b" }}>{t.name}</span>
-                        </div>
+                      <td style={{ padding: "13px 16px", fontSize: 13, fontWeight: 500, color: "#1e293b" }}>
+                        {t.name}
                       </td>
-                      <td style={{ padding: "13px 16px", fontSize: 12, color: "#64748b" }}>{t.email}</td>
                       <td style={{ padding: "13px 16px", fontSize: 13, color: t.school ? "#374151" : "#94a3b8" }}>
                         {t.school || "None"}
                       </td>
@@ -1119,13 +1236,48 @@ export function AdminTeachersPage() {
                           {t.board || "None"}
                         </span>
                       </td>
+                      <td style={{ padding: "13px 10px", width: 118, maxWidth: 118 }}>
+                        {(t.class_types ?? []).length > 0 ? (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                            {(t.class_types ?? []).map((grade) => (
+                              <span
+                                key={grade}
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 600,
+                                  padding: "2px 6px",
+                                  borderRadius: 8,
+                                  background: "#f0f9ff",
+                                  color: "#0369a1",
+                                  lineHeight: 1.25,
+                                  wordBreak: "break-word",
+                                }}
+                              >
+                                {grade}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: 12, color: "#94a3b8" }}>—</span>
+                        )}
+                      </td>
                       <td style={{ padding: "13px 16px" }}>
                         <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 12, background: ac.bg, color: ac.color, whiteSpace: "nowrap" }}>
                           {t.access}
                         </span>
                       </td>
                       <td style={{ padding: "13px 16px", fontSize: 12, color: "#374151", whiteSpace: "nowrap" }}>
-                        {t.access === "Trial" ? (
+                        {t.is_subscription_active ? (
+                          <span style={{ fontWeight: 700, color: "#047857" }}>
+                            {planLabel(t.subscription_plan)}
+                            {billingLabel(t.subscription_billing) ? ` · ${billingLabel(t.subscription_billing)}` : ""}
+                            <span style={{ display: "block", fontWeight: 500, color: "#94a3b8", fontSize: 11 }}>
+                              {t.subscription_ends_at
+                                ? `${t.subscription_days_remaining}d left · renews ${formatTrialEnd(t.subscription_ends_at)}`
+                                : "Active subscription"}
+                            </span>
+                          </span>
+                        ) : t.access === "Trial" ? (
                           <span style={{ fontWeight: 700, color: t.trial_days_remaining <= 7 ? "#b45309" : "#1d4ed8" }}>
                             {t.trial_days_remaining}d left
                             <span style={{ display: "block", fontWeight: 500, color: "#94a3b8", fontSize: 11 }}>
@@ -1149,8 +1301,42 @@ export function AdminTeachersPage() {
                       <td style={{ padding: "13px 16px" }}>
                         <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 12, background: sc.bg, color: sc.color, whiteSpace: "nowrap" }}>{displayStatus}</span>
                       </td>
-                      <td style={{ padding: "13px 16px" }}>
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <td style={{ padding: "13px 10px", width: 96, minWidth: 96 }}>
+                        <ResourceAccessToggle
+                          enabled={Boolean(t.resource_access_enabled)}
+                          disabled={accessSavingId === t.id}
+                          onConfigure={() => setAccessModal(t)}
+                          onDisable={async () => {
+                            setAccessSavingId(t.id);
+                            try {
+                              const current = await resourceAccessApi.teacher(t.id);
+                              const result = await resourceAccessApi.saveTeacher(t.id, {
+                                enabled: false,
+                                items: current.items ?? [],
+                              });
+                              setTeachers((prev) => prev.map((row) => (
+                                row.id === t.id ? { ...row, resource_access_enabled: result.enabled } : row
+                              )));
+                              toast.success(result.message || "Download permissions turned off.");
+                            } catch (err) {
+                              toast.error(err instanceof Error ? err.message : "Failed to update download permissions.");
+                            } finally {
+                              setAccessSavingId(null);
+                            }
+                          }}
+                        />
+                      </td>
+                      <td
+                        style={{
+                          padding: "13px 16px",
+                          position: "sticky",
+                          right: 0,
+                          background: i % 2 === 0 ? "white" : "#fafbfc",
+                          zIndex: 1,
+                          boxShadow: "-6px 0 8px -6px rgba(15,23,42,0.12)",
+                        }}
+                      >
+                        <div style={{ display: "flex", gap: 6, flexWrap: "nowrap" }}>
                           {listTab === "active" ? (
                             <>
                               <button
@@ -1318,18 +1504,39 @@ export function AdminTeachersPage() {
           initialForm={form}
           schools={schools}
           boardOptions={boardOptions}
+          classTypeOptions={classTypeOptions}
           saving={saving || loadingTeacher}
           error={modalError}
           message={modalNotice}
           activationAction={activationAction}
           billingNoticeAction={billingNoticeAction}
+          extendTrialAction={extendTrialAction}
           onClose={closeModal}
           onSave={handleSave}
           onResendActivation={handleResendActivation}
           onActivateAccount={handleActivateAccount}
           onSendBillingNotice={handleSendBillingNotice}
+          onExtendTrial={handleExtendTrial}
         />
       )}
+      <ResourceAccessModal
+        open={Boolean(accessModal)}
+        title="Download & export permissions"
+        subjectName={accessModal?.name ?? ""}
+        subjectId={accessModal?.id ?? null}
+        load={() => resourceAccessApi.teacher(accessModal!.id)}
+        save={(payload) => resourceAccessApi.saveTeacher(accessModal!.id, payload)}
+        onClose={() => setAccessModal(null)}
+        onSaved={(enabled, message) => {
+          if (accessModal) {
+            setTeachers((prev) => prev.map((row) => (
+              row.id === accessModal.id ? { ...row, resource_access_enabled: enabled } : row
+            )));
+          }
+          toast.success(message || "Download permissions saved.");
+          setAccessModal(null);
+        }}
+      />
     </AdminLayout>
   );
 }

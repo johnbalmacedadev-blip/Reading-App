@@ -11,6 +11,12 @@ import {
   type SystemAnnouncementCategory,
   type SystemAnnouncementRecord,
 } from "../../api/client";
+import { BrandMark } from "../../components/BrandMark";
+import { applyFavicon } from "../../utils/applyFavicon";
+import { useBranding } from "../../context/BrandingContext";
+import brandLogo from "../../../assets/brand-logo.png";
+
+const API_BASE = import.meta.env.VITE_API_URL ?? "";
 
 type SettingSection = "general" | "language" | "permissions" | "notifications" | "emails" | "backup" | "appearance";
 
@@ -21,13 +27,30 @@ const sections: { key: SettingSection; label: string; icon: typeof Save; desc: s
   { key: "notifications", label: "Notifications", icon: Bell, desc: "System alerts, reminders and automated emails" },
   { key: "emails", label: "Email templates", icon: Mail, desc: "Subject, body, and logo for outbound emails" },
   { key: "backup", label: "Backup & Data", icon: Database, desc: "Automatic backup, retention, export" },
-  { key: "appearance", label: "Appearance", icon: Palette, desc: "Theme, platform colors, logo" },
+  { key: "appearance", label: "Appearance", icon: Palette, desc: "Theme, platform colors, logo, and favicon" },
 ];
 
 const PLACEHOLDER_HINT =
   "Use placeholders where needed: :name, :email, :days, :date, :plan, :portal, :password, :url, :minutes, :title, :message";
 
 const MULTILINE_FIELDS = new Set(["body", "ready", "help", "thanks", "activate_help", "created", "ignore", "after"]);
+
+function reminderDaysList(start: number, trialPeriodDays = 30): number[] {
+  const cap = Math.max(1, Math.min(trialPeriodDays, 365));
+  const n = Math.max(1, Math.min(cap, Math.round(start) || 3));
+  return Array.from({ length: n }, (_, i) => n - i);
+}
+
+function clampReminderDays(value: number, trialPeriodDays: number): number {
+  const cap = Math.max(1, Math.min(trialPeriodDays, 365));
+  if (!Number.isFinite(value)) return Math.min(3, cap);
+  return Math.max(1, Math.min(cap, Math.round(value)));
+}
+
+function mergeReminderEnabledDays(start: number, previousStart: number, previousEnabled: number[]): number[] {
+  const prev = new Set(previousEnabled);
+  return reminderDaysList(start).filter((day) => day > previousStart || prev.has(day));
+}
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -70,6 +93,7 @@ const emptyTemplates = (): EmailTemplatesPayload["templates"] => ({ en: {}, fr: 
 
 export function AdminSettingsPage() {
   const { defaultLabel, years } = useAdminSchoolYear();
+  const { applyLogoPayload } = useBranding();
   const [activeSection, setActiveSection] = useState<SettingSection>("general");
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -100,11 +124,25 @@ export function AdminSettingsPage() {
   const [hasCustomEmailLogo, setHasCustomEmailLogo] = useState(false);
   const [emailLoading, setEmailLoading] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
+  const [faviconUri, setFaviconUri] = useState<string | null>(null);
+  const [hasCustomFavicon, setHasCustomFavicon] = useState(false);
+  const [faviconUploading, setFaviconUploading] = useState(false);
+  const [platformLogoUri, setPlatformLogoUri] = useState<string | null>(null);
+  const [hasCustomPlatformLogo, setHasCustomPlatformLogo] = useState(false);
+  const [loginLogoUri, setLoginLogoUri] = useState<string | null>(null);
+  const [hasCustomLoginLogo, setHasCustomLoginLogo] = useState(false);
+  const [platformLogoUploading, setPlatformLogoUploading] = useState(false);
+  const [loginLogoUploading, setLoginLogoUploading] = useState(false);
 
   const [perms, setPerms] = useState({
     teacherCanExport: true, teacherCanEditStudent: false,
     schoolCanManageTeachers: true, schoolCanViewBoard: false,
     boardCanEditSchools: false,
+    trialCanDownloadExport: false,
+    trialPeriodDays: 7,
+    trialReminderDays: 3,
+    trialReminderDaysEnabled: [3, 2, 1],
+    trialExpiredEmail: true,
   });
 
   const [backupFreq, setBackupFreq] = useState("Daily");
@@ -115,7 +153,7 @@ export function AdminSettingsPage() {
     [emailCatalog, selectedEmailKey],
   );
 
-  const canSaveTop = activeSection === "general" || activeSection === "language" || activeSection === "emails";
+  const canSaveTop = activeSection === "general" || activeSection === "language" || activeSection === "emails" || activeSection === "permissions";
 
   const applySettings = useCallback((settings: PlatformSettings) => {
     setPlatformName(settings.platform_name);
@@ -124,7 +162,39 @@ export function AdminSettingsPage() {
     setDateFormat(settings.date_format);
     setNumberFormat(settings.number_format);
     setTimezone(settings.timezone);
-  }, []);
+    setFaviconUri(settings.favicon_data_uri ?? null);
+    setHasCustomFavicon(Boolean(settings.has_custom_favicon));
+    setPlatformLogoUri(settings.platform_logo_data_uri ?? null);
+    setHasCustomPlatformLogo(Boolean(settings.has_custom_platform_logo));
+    setLoginLogoUri(settings.login_logo_data_uri ?? null);
+    setHasCustomLoginLogo(Boolean(settings.has_custom_login_logo));
+    setPerms({
+      teacherCanExport: settings.teacher_can_export ?? true,
+      teacherCanEditStudent: settings.teacher_can_edit_student ?? true,
+      schoolCanManageTeachers: settings.school_can_manage_teachers ?? true,
+      schoolCanViewBoard: settings.school_can_view_board ?? false,
+      boardCanEditSchools: settings.board_can_edit_schools ?? false,
+      trialCanDownloadExport: settings.trial_can_download_export ?? false,
+      trialPeriodDays: settings.trial_period_days ?? 7,
+      trialReminderDays: clampReminderDays(settings.trial_reminder_days ?? 3, settings.trial_period_days ?? 7),
+      trialReminderDaysEnabled: Array.isArray(settings.trial_reminder_days_enabled)
+        ? settings.trial_reminder_days_enabled
+        : reminderDaysList(settings.trial_reminder_days ?? 3, settings.trial_period_days ?? 7),
+      trialExpiredEmail: settings.trial_expired_email !== false,
+    });
+    if (settings.favicon_url) {
+      applyFavicon(`${API_BASE}${settings.favicon_url}`);
+    }
+    if (settings.platform_logo_url && settings.login_logo_url) {
+      applyLogoPayload({
+        platform_logo_url: settings.platform_logo_url,
+        login_logo_url: settings.login_logo_url,
+        has_custom_platform_logo: Boolean(settings.has_custom_platform_logo),
+        has_custom_login_logo: Boolean(settings.has_custom_login_logo),
+        favicon_url: settings.favicon_url,
+      });
+    }
+  }, [applyLogoPayload]);
 
   const applyEmailPayload = useCallback((payload: EmailTemplatesPayload) => {
     setEmailCatalog(payload.catalog);
@@ -260,6 +330,117 @@ export function AdminSettingsPage() {
     }
   };
 
+  const handleUploadFavicon = async (file: File | undefined) => {
+    if (!file) return;
+    setFaviconUploading(true);
+    setError("");
+    try {
+      const result = await adminSettingsApi.uploadFavicon(file);
+      setFaviconUri(result.favicon_data_uri);
+      setHasCustomFavicon(result.has_custom_favicon);
+      applyFavicon(`${API_BASE}${result.favicon_url}`);
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to upload favicon.");
+    } finally {
+      setFaviconUploading(false);
+    }
+  };
+
+  const handleResetFavicon = async () => {
+    setFaviconUploading(true);
+    setError("");
+    try {
+      const result = await adminSettingsApi.resetFavicon();
+      setFaviconUri(result.favicon_data_uri);
+      setHasCustomFavicon(result.has_custom_favicon);
+      applyFavicon(`${API_BASE}${result.favicon_url}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reset favicon.");
+    } finally {
+      setFaviconUploading(false);
+    }
+  };
+
+  const applyLogoUploadResult = (result: {
+    platform_logo_url: string;
+    platform_logo_data_uri: string | null;
+    has_custom_platform_logo: boolean;
+    login_logo_url: string;
+    login_logo_data_uri: string | null;
+    has_custom_login_logo: boolean;
+  }) => {
+    setPlatformLogoUri(result.platform_logo_data_uri);
+    setHasCustomPlatformLogo(result.has_custom_platform_logo);
+    setLoginLogoUri(result.login_logo_data_uri);
+    setHasCustomLoginLogo(result.has_custom_login_logo);
+    applyLogoPayload({
+      platform_logo_url: result.platform_logo_url,
+      login_logo_url: result.login_logo_url,
+      has_custom_platform_logo: result.has_custom_platform_logo,
+      has_custom_login_logo: result.has_custom_login_logo,
+    });
+  };
+
+  const handleUploadPlatformLogo = async (file: File | undefined) => {
+    if (!file) return;
+    setPlatformLogoUploading(true);
+    setError("");
+    try {
+      const result = await adminSettingsApi.uploadPlatformLogo(file);
+      applyLogoUploadResult(result);
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to upload platform logo.");
+    } finally {
+      setPlatformLogoUploading(false);
+    }
+  };
+
+  const handleResetPlatformLogo = async () => {
+    setPlatformLogoUploading(true);
+    setError("");
+    try {
+      const result = await adminSettingsApi.resetPlatformLogo();
+      applyLogoUploadResult(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reset platform logo.");
+    } finally {
+      setPlatformLogoUploading(false);
+    }
+  };
+
+  const handleUploadLoginLogo = async (file: File | undefined) => {
+    if (!file) return;
+    setLoginLogoUploading(true);
+    setError("");
+    try {
+      const result = await adminSettingsApi.uploadLoginLogo(file);
+      applyLogoUploadResult(result);
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to upload login logo.");
+    } finally {
+      setLoginLogoUploading(false);
+    }
+  };
+
+  const handleResetLoginLogo = async () => {
+    setLoginLogoUploading(true);
+    setError("");
+    try {
+      const result = await adminSettingsApi.resetLoginLogo();
+      applyLogoUploadResult(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reset login logo.");
+    } finally {
+      setLoginLogoUploading(false);
+    }
+  };
+
   const handleSaveEmailTemplates = async () => {
     setSaving(true);
     setError("");
@@ -280,19 +461,38 @@ export function AdminSettingsPage() {
       await handleSaveEmailTemplates();
       return;
     }
-    if (activeSection !== "general" && activeSection !== "language") return;
+    if (activeSection !== "general" && activeSection !== "language" && activeSection !== "permissions") return;
+
+    if (activeSection === "permissions" && perms.trialReminderDays > perms.trialPeriodDays) {
+      setError(`Trial-ends reminder cannot be greater than the trial period (${perms.trialPeriodDays} days).`);
+      return;
+    }
 
     setSaving(true);
     setError("");
     try {
-      const { settings } = await adminSettingsApi.update({
-        platform_name: platformName.trim() || "Lecture Scientifique",
-        support_email: supportEmail.trim(),
-        default_language: defaultLang,
-        date_format: dateFormat,
-        number_format: numberFormat,
-        timezone,
-      });
+      const payload = activeSection === "permissions"
+        ? {
+            teacher_can_export: perms.teacherCanExport,
+            teacher_can_edit_student: perms.teacherCanEditStudent,
+            school_can_manage_teachers: perms.schoolCanManageTeachers,
+            school_can_view_board: perms.schoolCanViewBoard,
+            board_can_edit_schools: perms.boardCanEditSchools,
+            trial_can_download_export: perms.trialCanDownloadExport,
+            trial_period_days: perms.trialPeriodDays,
+            trial_reminder_days: perms.trialReminderDays,
+            trial_reminder_days_enabled: perms.trialReminderDaysEnabled,
+            trial_expired_email: perms.trialExpiredEmail,
+          }
+        : {
+            platform_name: platformName.trim() || "Lecture Scientifique",
+            support_email: supportEmail.trim(),
+            default_language: defaultLang,
+            date_format: dateFormat,
+            number_format: numberFormat,
+            timezone,
+          };
+      const { settings } = await adminSettingsApi.update(payload);
       applySettings(settings);
       setSaved(true);
       window.setTimeout(() => setSaved(false), 2500);
@@ -405,6 +605,88 @@ export function AdminSettingsPage() {
             <div style={{ fontSize: 12, fontWeight: 700, color: "#94a3b8", letterSpacing: 0.8, marginBottom: 8, marginTop: 16, textTransform: "uppercase" }}>School Board Portal</div>
             <SettingRow label="School Editing" desc="Board admins can modify member schools">
               <Toggle checked={perms.boardCanEditSchools} onChange={(v) => setPerms((p) => ({ ...p, boardCanEditSchools: v }))} />
+            </SettingRow>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#94a3b8", letterSpacing: 0.8, marginBottom: 8, marginTop: 16, textTransform: "uppercase" }}>Trial accounts</div>
+            <SettingRow label="Trial downloads & exports" desc="Allow trial-only accounts (not subscribed to any plan) to download resources or export reports. When off, they see an upgrade prompt.">
+              <Toggle checked={perms.trialCanDownloadExport} onChange={(v) => setPerms((p) => ({ ...p, trialCanDownloadExport: v }))} />
+            </SettingRow>
+            <SettingRow label="Trial period (days)" desc="Default free-trial length for new teacher signups and new school/board trial accounts (minimum 7 days). Also shown on subscription signup pages.">
+              <input
+                type="number"
+                min={7}
+                max={365}
+                value={perms.trialPeriodDays}
+                onChange={(e) => {
+                  const next = Number(e.target.value);
+                  const period = Number.isFinite(next) ? Math.max(7, Math.min(365, Math.round(next))) : 7;
+                  setPerms((p) => {
+                    const days = clampReminderDays(p.trialReminderDays, period);
+                    return {
+                      ...p,
+                      trialPeriodDays: period,
+                      trialReminderDays: days,
+                      trialReminderDaysEnabled: mergeReminderEnabledDays(days, p.trialReminderDays, p.trialReminderDaysEnabled),
+                    };
+                  });
+                }}
+                style={{ width: 90, padding: "8px 10px", borderRadius: 7, border: "1px solid #e2e8f0", fontSize: 13, outline: "none" }}
+              />
+            </SettingRow>
+            <SettingRow
+              label="Trial-ends reminder (days before)"
+              desc={`How far before expiry to offer day-by-day email switches. Must be between 1 and the trial period (${perms.trialPeriodDays} days).`}
+            >
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                <input
+                  type="number"
+                  min={1}
+                  max={perms.trialPeriodDays}
+                  value={perms.trialReminderDays}
+                  onChange={(e) => {
+                    const next = Number(e.target.value);
+                    const days = clampReminderDays(next, perms.trialPeriodDays);
+                    setPerms((p) => ({
+                      ...p,
+                      trialReminderDays: days,
+                      trialReminderDaysEnabled: mergeReminderEnabledDays(days, p.trialReminderDays, p.trialReminderDaysEnabled),
+                    }));
+                  }}
+                  style={{
+                    width: 90,
+                    padding: "8px 10px",
+                    borderRadius: 7,
+                    border: perms.trialReminderDays > perms.trialPeriodDays ? "1px solid #e11d48" : "1px solid #e2e8f0",
+                    fontSize: 13,
+                    outline: "none",
+                  }}
+                />
+                {perms.trialReminderDays > perms.trialPeriodDays && (
+                  <span style={{ fontSize: 11, color: "#e11d48" }}>Cannot exceed trial period ({perms.trialPeriodDays} days)</span>
+                )}
+              </div>
+            </SettingRow>
+            {reminderDaysList(perms.trialReminderDays, perms.trialPeriodDays).map((day) => (
+              <SettingRow
+                key={day}
+                label={day === 1 ? "1 day left" : `${day} days left`}
+                desc={`Send the trial-ending email when the user has (${day}) ${day === 1 ? "day" : "days"} remaining.`}
+              >
+                <Toggle
+                  checked={perms.trialReminderDaysEnabled.includes(day)}
+                  onChange={(on) => setPerms((p) => {
+                    const next = new Set(p.trialReminderDaysEnabled);
+                    if (on) next.add(day);
+                    else next.delete(day);
+                    return {
+                      ...p,
+                      trialReminderDaysEnabled: reminderDaysList(p.trialReminderDays).filter((d) => next.has(d)),
+                    };
+                  })}
+                />
+              </SettingRow>
+            ))}
+            <SettingRow label="Trial expired" desc="Send the trial-expired email after the free trial has ended.">
+              <Toggle checked={perms.trialExpiredEmail} onChange={(v) => setPerms((p) => ({ ...p, trialExpiredEmail: v }))} />
             </SettingRow>
           </div>
         );
@@ -552,8 +834,8 @@ export function AdminSettingsPage() {
               background: "#f8fafc",
             }}>
               <div style={{
-                width: 160,
-                height: 56,
+                width: 200,
+                height: 72,
                 borderRadius: 8,
                 background: "white",
                 border: "1px solid #e2e8f0",
@@ -561,19 +843,23 @@ export function AdminSettingsPage() {
                 alignItems: "center",
                 justifyContent: "center",
                 overflow: "hidden",
+                padding: 10,
+                boxSizing: "border-box",
               }}>
-                {emailLogoUri ? (
-                  <img src={emailLogoUri} alt="Email logo" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
-                ) : (
-                  <span style={{ fontSize: 11, color: "#94a3b8" }}>No logo</span>
-                )}
+                <img
+                  src={hasCustomEmailLogo && emailLogoUri ? emailLogoUri : brandLogo}
+                  alt="Email logo"
+                  style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
+                />
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", marginBottom: 4 }}>
                   Shared logo for all emails
                 </div>
                 <div style={{ fontSize: 12, color: "#64748b", marginBottom: 10 }}>
-                  PNG, JPG, or WebP up to 2 MB. Used in the header of every outbound email.
+                  {hasCustomEmailLogo
+                    ? "Custom logo is active. PNG, JPG, or WebP up to 2 MB."
+                    : "Official Lecture Scientifique logo (default). Used in the header of every outbound email."}
                 </div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <label style={{
@@ -778,10 +1064,236 @@ export function AdminSettingsPage() {
                 <span style={{ fontSize: 12, color: "#64748b", fontFamily: "monospace" }}>#38b6ff</span>
               </div>
             </SettingRow>
-            <SettingRow label="Platform Logo" desc="Displayed in sidebar navigation">
-              <button type="button" style={{ padding: "7px 14px", borderRadius: 7, border: "1px solid #e2e8f0", background: "white", fontSize: 12, cursor: "pointer", color: "#374151" }}>
-                Change Logo
-              </button>
+            <SettingRow
+              label="Platform logo"
+              desc={
+                hasCustomPlatformLogo
+                  ? "Custom color logo is active in portal sidebars and headers. PNG, JPG, WebP, GIF, or SVG up to 4 MB."
+                  : "Color logo used inside the platform (sidebars, headers). Defaults to the Lecture Scientifique logo."
+              }
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <div style={{
+                  minWidth: 160,
+                  height: 56,
+                  borderRadius: 10,
+                  border: "1px solid #e2e8f0",
+                  background: "white",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "8px 12px",
+                }}>
+                  {platformLogoUri ? (
+                    <img src={platformLogoUri} alt="Platform logo preview" style={{ height: 36, width: "auto", objectFit: "contain" }} />
+                  ) : (
+                    <BrandMark height={28} />
+                  )}
+                </div>
+                <label style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #004aad",
+                  background: "white",
+                  color: "#004aad",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: platformLogoUploading ? "wait" : "pointer",
+                  opacity: platformLogoUploading ? 0.7 : 1,
+                }}>
+                  {platformLogoUploading ? <Loader2 size={12} className="animate-spin" /> : null}
+                  Change logo
+                  <input
+                    type="file"
+                    accept=".png,.jpg,.jpeg,.webp,.gif,.svg,image/*"
+                    style={{ display: "none" }}
+                    disabled={platformLogoUploading}
+                    onChange={(e) => {
+                      void handleUploadPlatformLogo(e.target.files?.[0]);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+                {hasCustomPlatformLogo && (
+                  <button
+                    type="button"
+                    disabled={platformLogoUploading}
+                    onClick={() => void handleResetPlatformLogo()}
+                    style={{
+                      padding: "8px 12px",
+                      borderRadius: 8,
+                      border: "1px solid #e2e8f0",
+                      background: "white",
+                      color: "#64748b",
+                      fontSize: 12,
+                      fontWeight: 500,
+                      cursor: platformLogoUploading ? "wait" : "pointer",
+                    }}
+                  >
+                    Reset to default
+                  </button>
+                )}
+              </div>
+            </SettingRow>
+            <SettingRow
+              label="Login logo (white)"
+              desc={
+                hasCustomLoginLogo
+                  ? "Custom white logo is active on login pages and dark backgrounds. Upload a white/transparent PNG for best results."
+                  : "White logo for login pages and dark sidebars. Until uploaded, the platform logo is shown in white automatically."
+              }
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <div style={{
+                  minWidth: 160,
+                  height: 56,
+                  borderRadius: 10,
+                  border: "1px solid #1e3a5f",
+                  background: "#004aad",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "8px 12px",
+                }}>
+                  {loginLogoUri ? (
+                    <img
+                      src={loginLogoUri}
+                      alt="Login logo preview"
+                      style={{
+                        height: 36,
+                        width: "auto",
+                        objectFit: "contain",
+                        ...(hasCustomLoginLogo ? null : { filter: "brightness(0) invert(1)" }),
+                      }}
+                    />
+                  ) : (
+                    <BrandMark height={28} onDark />
+                  )}
+                </div>
+                <label style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #004aad",
+                  background: "white",
+                  color: "#004aad",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: loginLogoUploading ? "wait" : "pointer",
+                  opacity: loginLogoUploading ? 0.7 : 1,
+                }}>
+                  {loginLogoUploading ? <Loader2 size={12} className="animate-spin" /> : null}
+                  Change white logo
+                  <input
+                    type="file"
+                    accept=".png,.jpg,.jpeg,.webp,.gif,.svg,image/*"
+                    style={{ display: "none" }}
+                    disabled={loginLogoUploading}
+                    onChange={(e) => {
+                      void handleUploadLoginLogo(e.target.files?.[0]);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+                {hasCustomLoginLogo && (
+                  <button
+                    type="button"
+                    disabled={loginLogoUploading}
+                    onClick={() => void handleResetLoginLogo()}
+                    style={{
+                      padding: "8px 12px",
+                      borderRadius: 8,
+                      border: "1px solid #e2e8f0",
+                      background: "white",
+                      color: "#64748b",
+                      fontSize: 12,
+                      fontWeight: 500,
+                      cursor: loginLogoUploading ? "wait" : "pointer",
+                    }}
+                  >
+                    Reset to default
+                  </button>
+                )}
+              </div>
+            </SettingRow>
+            <SettingRow
+              label="Favicon"
+              desc={
+                hasCustomFavicon
+                  ? "Custom browser tab icon is active. PNG, ICO, JPG, WebP, GIF, or SVG up to 2 MB."
+                  : "Icon shown in the browser tab. Defaults to the Lecture Scientifique favicon."
+              }
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <div style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 10,
+                  border: "1px solid #e2e8f0",
+                  background: "#f8fafc",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  overflow: "hidden",
+                }}>
+                  {faviconUri ? (
+                    <img src={faviconUri} alt="Favicon preview" style={{ width: 32, height: 32, objectFit: "contain" }} />
+                  ) : (
+                    <img src="/favicon.png" alt="Default favicon" style={{ width: 32, height: 32, objectFit: "contain" }} />
+                  )}
+                </div>
+                <label style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #004aad",
+                  background: "white",
+                  color: "#004aad",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: faviconUploading ? "wait" : "pointer",
+                  opacity: faviconUploading ? 0.7 : 1,
+                }}>
+                  {faviconUploading ? <Loader2 size={12} className="animate-spin" /> : null}
+                  Change favicon
+                  <input
+                    type="file"
+                    accept=".png,.ico,.jpg,.jpeg,.webp,.gif,.svg,image/*"
+                    style={{ display: "none" }}
+                    disabled={faviconUploading}
+                    onChange={(e) => {
+                      void handleUploadFavicon(e.target.files?.[0]);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+                {hasCustomFavicon && (
+                  <button
+                    type="button"
+                    disabled={faviconUploading}
+                    onClick={() => void handleResetFavicon()}
+                    style={{
+                      padding: "8px 12px",
+                      borderRadius: 8,
+                      border: "1px solid #e2e8f0",
+                      background: "white",
+                      color: "#64748b",
+                      fontSize: 12,
+                      fontWeight: 500,
+                      cursor: faviconUploading ? "wait" : "pointer",
+                    }}
+                  >
+                    Reset to default
+                  </button>
+                )}
+              </div>
             </SettingRow>
             <SettingRow label="Dark Mode" desc="Enable dark theme for all portals">
               <Toggle checked={false} onChange={() => {}} />

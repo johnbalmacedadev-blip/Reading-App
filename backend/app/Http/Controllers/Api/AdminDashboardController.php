@@ -60,12 +60,46 @@ class AdminDashboardController extends Controller
             'adoption_by_board' => $this->adoptionByBoard(),
             'student_growth' => $growth,
             'growth_percent_year' => $growthPercent,
-            'recent_activity' => $this->recentActivity(),
+            'recent_activity' => $this->recentActivity(5),
             'alerts' => $this->systemAlerts(),
             'health' => $this->platformHealth($started),
         ];
 
         return response()->json($response);
+    }
+
+    public function activity(Request $request): JsonResponse
+    {
+        $perPage = max(5, min(50, (int) $request->integer('per_page', 15)));
+        $page = max(1, (int) $request->integer('page', 1));
+
+        $sorted = $this->collectActivityEvents()
+            ->filter(fn (array $event) => $event['at'] !== null)
+            ->sortByDesc('at')
+            ->values();
+
+        $total = $sorted->count();
+        $lastPage = max(1, (int) ceil($total / $perPage));
+        $page = min($page, $lastPage);
+
+        $items = $sorted
+            ->slice(($page - 1) * $perPage, $perPage)
+            ->values()
+            ->map(fn (array $event, int $index) => $this->formatActivityEvent(
+                $event,
+                (($page - 1) * $perPage) + $index + 1,
+            ))
+            ->all();
+
+        return response()->json([
+            'activity' => $items,
+            'pagination' => [
+                'page' => $page,
+                'per_page' => $perPage,
+                'total' => $total,
+                'last_page' => $lastPage,
+            ],
+        ]);
     }
 
     private function currentSchoolYear(): string
@@ -76,7 +110,8 @@ class AdminDashboardController extends Controller
     /** @return array{0: Carbon, 1: Carbon} */
     private function schoolYearRange(string $schoolYear): array
     {
-        if (preg_match('/^(\d{4})-(\d{4})$/', $schoolYear, $matches)) {
+        $normalized = SchoolYear::normalizeLabel($schoolYear);
+        if (preg_match('/^(\d{4})-(\d{4})$/', $normalized, $matches)) {
             $start = Carbon::create((int) $matches[1], 9, 1)->startOfDay();
             $end = Carbon::create((int) $matches[2], 8, 31)->endOfDay();
 
@@ -183,13 +218,28 @@ class AdminDashboardController extends Controller
     }
 
     /** @return list<array<string, mixed>> */
-    private function recentActivity(): array
+    private function recentActivity(int $limit = 5): array
+    {
+        return $this->collectActivityEvents()
+            ->filter(fn (array $event) => $event['at'] !== null)
+            ->sortByDesc('at')
+            ->take($limit)
+            ->values()
+            ->map(fn (array $event, int $index) => $this->formatActivityEvent($event, $index + 1))
+            ->all();
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, array{at: \Carbon\CarbonInterface|null, type: string, category: string, action: string, target: string}>
+     */
+    private function collectActivityEvents()
     {
         $events = collect();
+        $sourceLimit = 100;
 
         SchoolBoard::query()
             ->orderByDesc('created_at')
-            ->limit(15)
+            ->limit($sourceLimit)
             ->get(['name', 'code', 'created_at', 'updated_at'])
             ->each(function (SchoolBoard $board) use ($events) {
                 $events->push([
@@ -213,7 +263,7 @@ class AdminDashboardController extends Controller
 
         School::query()
             ->orderByDesc('created_at')
-            ->limit(15)
+            ->limit($sourceLimit)
             ->get(['name', 'created_at', 'updated_at', 'status'])
             ->each(function (School $school) use ($events) {
                 $events->push([
@@ -246,7 +296,7 @@ class AdminDashboardController extends Controller
         User::query()
             ->where('role', 'teacher')
             ->orderByDesc('created_at')
-            ->limit(15)
+            ->limit($sourceLimit)
             ->get(['first_name', 'last_name', 'name', 'created_at', 'updated_at'])
             ->each(function (User $teacher) use ($events) {
                 $displayName = trim("{$teacher->first_name} {$teacher->last_name}") ?: $teacher->name;
@@ -272,7 +322,7 @@ class AdminDashboardController extends Controller
 
         Student::query()
             ->orderByDesc('created_at')
-            ->limit(15)
+            ->limit($sourceLimit)
             ->with('school:id,name')
             ->get()
             ->each(function (Student $student) use ($events) {
@@ -287,7 +337,7 @@ class AdminDashboardController extends Controller
 
         LibraryContent::query()
             ->orderByDesc('created_at')
-            ->limit(10)
+            ->limit($sourceLimit)
             ->get(['title', 'created_at'])
             ->each(function (LibraryContent $content) use ($events) {
                 $events->push([
@@ -299,20 +349,24 @@ class AdminDashboardController extends Controller
                 ]);
             });
 
-        return $events
-            ->filter(fn (array $event) => $event['at'] !== null)
-            ->sortByDesc('at')
-            ->take(10)
-            ->values()
-            ->map(fn (array $event, int $index) => [
-                'id' => $index + 1,
-                'type' => $event['type'],
-                'category' => $event['category'],
-                'action' => $event['action'],
-                'target' => $event['target'],
-                'time' => $event['at']->diffForHumans(),
-            ])
-            ->all();
+        return $events;
+    }
+
+    /**
+     * @param  array{at: \Carbon\CarbonInterface, type: string, category: string, action: string, target: string}  $event
+     * @return array<string, mixed>
+     */
+    private function formatActivityEvent(array $event, int $id): array
+    {
+        return [
+            'id' => $id,
+            'type' => $event['type'],
+            'category' => $event['category'],
+            'action' => $event['action'],
+            'target' => $event['target'],
+            'time' => $event['at']->diffForHumans(),
+            'at' => $event['at']->toIso8601String(),
+        ];
     }
 
     /** @return list<array{type: string, message: string}> */

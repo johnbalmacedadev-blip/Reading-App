@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\DownloadableCategory;
 use App\Models\DownloadableResource;
+use App\Models\PlatformSetting;
 use App\Services\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -139,6 +140,12 @@ class DownloadableResourceController extends Controller
 
     public function download(Request $request, DownloadableResource $downloadableResource): StreamedResponse|JsonResponse
     {
+        PlatformSetting::assertTrialDownloadExportAllowed(
+            $request->user(),
+            \App\Services\ResourceAccessService::KIND_DOWNLOADABLE,
+            (string) $downloadableResource->id,
+        );
+
         if (! $downloadableResource->file_path || ! Storage::disk('public')->exists($downloadableResource->file_path)) {
             return response()->json(['message' => 'File not found.'], 404);
         }

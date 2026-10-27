@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import {
-  BookOpen, LogOut, TrendingUp, Download, AlertTriangle,
+  LogOut,
   ArrowUpRight, Users, Building2, GraduationCap,
-  User, Settings, ChevronDown, ClipboardList, Loader2, UserPlus,
+  Settings, ChevronDown, ClipboardList, Loader2, UserPlus, Download, AlertTriangle, TrendingUp,
 } from "lucide-react";
+import { BrandMark } from "../components/BrandMark";
 import { useLanguage } from "../i18n";
 import { LangToggle } from "../components/LangToggle";
 import { useAuth } from "../context/AuthContext";
 import { schoolReportsApi, type SchoolReportsData } from "../api/client";
+import { schoolNavItems } from "../i18n/navHelpers";
+import { InstitutionalTrialBanner } from "../components/InstitutionalTrialBanner";
 
 function initials(name: string) {
   return name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
@@ -61,14 +64,7 @@ export function SchoolReportsPage() {
     navigate("/");
   };
 
-  const navItems = [
-    { icon: TrendingUp, label: "Overview", path: "/school/reports", active: true },
-    { icon: GraduationCap, label: "Academics", path: "/school/academics", active: false },
-    { icon: ClipboardList, label: "Assessments", path: "/school/assessments", active: false },
-    { icon: UserPlus, label: t("nav.teacherRequests"), path: "/school/teachers", active: false },
-    { icon: User, label: "Profile", path: "/profile?portal=school", active: false },
-    { icon: Settings, label: "Settings", path: "/school/settings", active: false },
-  ];
+  const navItems = schoolNavItems("overview", t("nav.teacherRequests"));
 
   const classes = reports?.classes ?? [];
   const schoolOnTrack = reports?.summary.on_track_average ?? 0;
@@ -101,11 +97,8 @@ export function SchoolReportsPage() {
     <div style={{ display: "flex", minHeight: "100vh", background: "#dff3ff" }}>
       <aside style={{ width: 220, background: "#ffffff", borderRight: "1px solid #dff3ff", display: "flex", flexDirection: "column", padding: "28px 16px 20px", flexShrink: 0 }}>
         <div style={{ marginBottom: 28 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-            <BookOpen size={24} style={{ color: "#004aad" }} />
-            <span style={{ fontWeight: 700, fontSize: 15, color: "#004aad" }}>Lecture Scientifique</span>
-          </div>
-          <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10, background: "#dff3ff", color: "#004aad" }}>
+          <BrandMark height={32} />
+          <span style={{ display: "inline-block", marginTop: 8, fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10, background: "#dff3ff", color: "#004aad" }}>
             School Portal
           </span>
         </div>
@@ -127,6 +120,7 @@ export function SchoolReportsPage() {
         </nav>
 
         <div>
+          <InstitutionalTrialBanner subscriptionPath="/school/subscription" compact />
           <LangToggle />
           <button onClick={handleLogout}
             style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, border: "none", cursor: "pointer", background: "transparent", color: "#ff5757", fontSize: 14, width: "100%" }}>

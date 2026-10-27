@@ -2,6 +2,7 @@
 
 namespace App\Mail;
 
+use App\Mail\Concerns\EmbedsEmailLogo;
 use App\Models\User;
 use App\Services\EmailLocale;
 use App\Services\EmailTemplate;
@@ -13,20 +14,26 @@ use Illuminate\Queue\SerializesModels;
 
 class WelcomeEmail extends Mailable
 {
-    use Queueable, SerializesModels;
+    use EmbedsEmailLogo, Queueable, SerializesModels;
 
     public string $emailLocale;
 
-    public function __construct(public User $user)
-    {
+    public string $emailAudience;
+
+    public function __construct(
+        public User $user,
+        public ?string $temporaryPassword = null,
+    ) {
         $this->emailLocale = EmailLocale::resolve($user);
+        $this->emailAudience = EmailTemplate::audienceFromUser($user);
         $this->locale($this->emailLocale);
+        $this->embedEmailLogo();
     }
 
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: EmailTemplate::line('welcome', 'subject', [], $this->emailLocale),
+            subject: EmailTemplate::line('welcome', 'subject', [], $this->emailLocale, $this->emailAudience),
         );
     }
 
@@ -54,6 +61,8 @@ class WelcomeEmail extends Mailable
                 'email' => $this->user->email,
                 'portal' => $portal,
                 'loginUrl' => $loginUrl,
+                'temporaryPassword' => $this->temporaryPassword,
+                'emailAudience' => $this->emailAudience,
             ],
         );
     }

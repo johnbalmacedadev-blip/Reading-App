@@ -29,10 +29,24 @@ class EnsureTeacherEntitled
             return $next($request);
         }
 
-        $user->startTrialIfNeeded();
+        if (
+            $user->isInstitutionalTeacher()
+            || $user->isRegistrationLicensedTeacher()
+            || $user->subscription_plan === 'institutional'
+            || $user->affiliation_type === 'institutional'
+            || $user->school_id
+        ) {
+            $sponsor = $user->institutionalSponsor();
+            if ($sponsor) {
+                \App\Services\InstitutionalSubscriptionService::syncRegistrationCoverage($user, $sponsor);
+                $user->refresh();
+            }
+        } else {
+            $user->startTrialIfNeeded();
+        }
 
         if (
-            ! $user->isInstitutionalTeacher()
+            ! $user->hasInstitutionalCoverage()
             && ! $user->hasActiveTrial()
             && ! $user->hasActiveSubscription()
         ) {

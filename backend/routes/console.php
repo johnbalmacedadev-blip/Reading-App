@@ -10,8 +10,7 @@ Artisan::command('inspire', function () {
 
 Schedule::command('backups:run')
     ->everyMinute()
-    ->withoutOverlapping(120)
-    ->runInBackground();
+    ->withoutOverlapping(120);
 
 Schedule::command('notifications:billing-reminders')
     ->dailyAt('08:00')

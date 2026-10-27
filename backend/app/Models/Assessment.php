@@ -38,6 +38,11 @@ class Assessment extends Model
         return $this->hasMany(Assessment::class, 'source_assessment_id');
     }
 
+    public function atelierFiles(): HasMany
+    {
+        return $this->hasMany(AssessmentAtelierFile::class)->orderBy('sort_order')->orderBy('id');
+    }
+
     public function isPlatformOriginal(): bool
     {
         return $this->school_board === null

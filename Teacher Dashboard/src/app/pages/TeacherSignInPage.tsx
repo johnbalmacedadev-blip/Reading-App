@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { BookOpen, Eye, EyeOff, ArrowRight } from "lucide-react";
+import { BrandMark } from "../components/BrandMark";
 import classroomPhoto from "../../imports/image-1.png";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
@@ -62,9 +63,8 @@ export function TeacherSignInPage() {
         <img src={classroomPhoto} alt="Classe" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(0,74,173,0.72) 0%, rgba(0,74,173,0.45) 50%, rgba(0,74,173,0.80) 100%)" }} />
         <div style={{ position: "relative", height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between", padding: 48 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <BookOpen size={36} color="white" />
-            <span style={{ fontSize: 22, fontWeight: 700, color: "white" }}>{t("common.appName")}</span>
+          <div style={{ alignSelf: "flex-start" }}>
+            <BrandMark height={48} onDark />
           </div>
           <div>
             <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 12, letterSpacing: 2, textTransform: "uppercase", marginBottom: 12 }}>

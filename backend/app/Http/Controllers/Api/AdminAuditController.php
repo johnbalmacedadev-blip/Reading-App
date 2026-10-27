@@ -14,6 +14,9 @@ class AdminAuditController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
+        $perPage = max(5, min(50, (int) $request->integer('per_page', 15)));
+        $page = max(1, (int) $request->integer('page', 1));
+
         $query = AuditLog::query()->orderByDesc('created_at');
 
         if ($request->filled('search')) {
@@ -37,18 +40,33 @@ class AdminAuditController extends Controller
         $this->applyDateRange($query, $request->string('date_range')->toString());
 
         $summaryQuery = clone $query;
+        $total = (clone $summaryQuery)->count();
+        $critical = (clone $summaryQuery)->where('severity', 'critical')->count();
+        $warning = (clone $summaryQuery)->where('severity', 'warning')->count();
+        $info = (clone $summaryQuery)->where('severity', 'info')->count();
 
-        $entries = $query->limit(500)->get()->map(fn (AuditLog $log) => $this->formatEntry($log));
+        $lastPage = max(1, (int) ceil($total / $perPage));
+        $page = min($page, $lastPage);
 
-        $allForSummary = $summaryQuery->get(['severity']);
+        $entries = $query
+            ->forPage($page, $perPage)
+            ->get()
+            ->map(fn (AuditLog $log) => $this->formatEntry($log))
+            ->values();
 
         return response()->json([
             'entries' => $entries,
             'summary' => [
-                'total' => $allForSummary->count(),
-                'critical' => $allForSummary->where('severity', 'critical')->count(),
-                'warning' => $allForSummary->where('severity', 'warning')->count(),
-                'info' => $allForSummary->where('severity', 'info')->count(),
+                'total' => $total,
+                'critical' => $critical,
+                'warning' => $warning,
+                'info' => $info,
+            ],
+            'pagination' => [
+                'page' => $page,
+                'per_page' => $perPage,
+                'total' => $total,
+                'last_page' => $lastPage,
             ],
         ]);
     }

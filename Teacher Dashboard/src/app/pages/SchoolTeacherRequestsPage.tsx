@@ -1,6 +1,5 @@
 import { useNavigate } from "react-router";
 import {
-  BookOpen,
   ClipboardList,
   GraduationCap,
   LogOut,
@@ -9,9 +8,11 @@ import {
   User,
   UserPlus,
 } from "lucide-react";
+import { BrandMark } from "../components/BrandMark";
 import { LangToggle } from "../components/LangToggle";
 import { TeacherRequestsPanel } from "../components/TeacherRequestsPanel";
 import { useLanguage } from "../i18n";
+import { schoolNavItems } from "../i18n/navHelpers";
 import { usePortalLogout } from "../hooks/usePortalLogout";
 
 export function SchoolTeacherRequestsPage() {
@@ -19,26 +20,16 @@ export function SchoolTeacherRequestsPage() {
   const { t } = useLanguage();
   const handleLogout = usePortalLogout();
 
-  const navItems = [
-    { icon: TrendingUp, label: "Overview", path: "/school/reports", active: false },
-    { icon: GraduationCap, label: "Academics", path: "/school/academics", active: false },
-    { icon: ClipboardList, label: "Assessments", path: "/school/assessments", active: false },
-    { icon: UserPlus, label: t("nav.teacherRequests"), path: "/school/teachers", active: true },
-    { icon: User, label: "Profile", path: "/profile?portal=school", active: false },
-    { icon: Settings, label: "Settings", path: "/school/settings", active: false },
-  ];
+  const navItems = schoolNavItems("teachers", t("nav.teacherRequests"));
 
   return (
     <div className="h-screen flex overflow-hidden" style={{ background: "#dff3ff" }}>
       <aside className="w-64 p-6 flex flex-col" style={{ background: "#ffffff", borderRight: "1px solid #dff3ff" }}>
-        <div className="flex items-center gap-3 mb-10">
-          <BookOpen className="w-8 h-8" style={{ color: "#004aad" }} />
-          <div>
-            <h1 className="text-lg font-bold" style={{ color: "#004aad" }}>{t("common.appName")}</h1>
-            <p className="text-xs px-2 py-0.5 rounded-full inline-block" style={{ background: "#dff3ff", color: "#004aad" }}>
-              School Portal
-            </p>
-          </div>
+        <div className="mb-10 min-w-0">
+          <BrandMark height={34} />
+          <p className="text-xs mt-1.5 px-2 py-0.5 rounded-full inline-block" style={{ background: "#dff3ff", color: "#004aad" }}>
+            School Portal
+          </p>
         </div>
         <nav className="flex-1 space-y-1">
           {navItems.map(({ icon: Icon, label, path, active }) => (

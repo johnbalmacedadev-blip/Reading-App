@@ -19,6 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'teacher.entitled' => \App\Http\Middleware\EnsureTeacherEntitled::class,
             'teacher.classroom' => \App\Http\Middleware\EnsureTeacherClassroomAccess::class,
+            'institutional.entitled' => \App\Http\Middleware\EnsureInstitutionalEntitled::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

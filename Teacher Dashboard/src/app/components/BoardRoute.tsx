@@ -1,6 +1,7 @@
 import { Navigate, useLocation } from "react-router";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../i18n";
+import { InstitutionalExpiredLock } from "./InstitutionalExpiredLock";
 
 export function BoardRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -17,6 +18,10 @@ export function BoardRoute({ children }: { children: React.ReactNode }) {
 
   if (!user || user.role !== "board_admin") {
     return <Navigate to="/" replace state={{ portal: "conseil", from: location.pathname }} />;
+  }
+
+  if (user.subscription && user.subscription.can_access_portal === false) {
+    return <InstitutionalExpiredLock portalLabel="school board portal" />;
   }
 
   return <>{children}</>;

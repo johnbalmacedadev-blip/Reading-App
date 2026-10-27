@@ -1,27 +1,39 @@
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { AdminLayout } from "./AdminLayout";
 import { Plus, Search, Edit2, Archive, X, ChevronDown, Building2, Loader2, Eye, EyeOff } from "lucide-react";
 import {
   adminSchoolBoardsApi,
   type AdminSchoolBoardPayload,
   type AdminSchoolBoardRecord,
+  type InstitutionalAccessMode,
+  type InstitutionalBillingNoticeType,
 } from "../../api/client";
+import {
+  emptyInstitutionalAccess,
+  InstitutionalAccessFields,
+  type InstitutionalAccessForm,
+} from "../../components/admin/InstitutionalAccessFields";
+import { CreateBoardWizard } from "../../components/admin/CreateBoardWizard";
 
 type BoardForm = {
   id?: number;
   name: string;
   code: string;
+  contact_person: string;
   status: string;
   portal_username: string;
   portal_password: string;
-};
+} & InstitutionalAccessForm;
 
 const emptyForm = (): BoardForm => ({
   name: "",
   code: "",
+  contact_person: "",
   status: "Active",
   portal_username: "",
   portal_password: "",
+  ...emptyInstitutionalAccess(),
 });
 
 function fromRecord(board: AdminSchoolBoardRecord): BoardForm {
@@ -29,9 +41,19 @@ function fromRecord(board: AdminSchoolBoardRecord): BoardForm {
     id: board.id,
     name: board.name,
     code: board.code,
+    contact_person: board.contact_person ?? "",
     status: board.status,
     portal_username: board.portal_username ?? "",
     portal_password: board.portal_password ?? "",
+    access_mode: (board.access_mode as InstitutionalAccessMode) || "trial",
+    trial_started_at: board.trial_started_at ?? "",
+    trial_ends_at: board.trial_ends_at ?? "",
+    subscription_started_at: board.subscription_started_at ?? "",
+    subscription_ends_at: board.subscription_ends_at ?? "",
+    access: board.access,
+    is_trial_active: board.is_trial_active,
+    trial_days_remaining: board.trial_days_remaining,
+    activation_pending: board.activation_pending,
   };
 }
 
@@ -39,8 +61,16 @@ function toPayload(form: BoardForm, isCreate: boolean): AdminSchoolBoardPayload 
   const payload: AdminSchoolBoardPayload = {
     name: form.name.trim(),
     code: form.code.trim().toUpperCase(),
+    contact_person: form.contact_person.trim() || null,
     status: form.status,
     portal_username: form.portal_username.trim(),
+    access_mode: form.access_mode,
+    trial_started_at: form.access_mode === "trial" ? (form.trial_started_at.trim() || null) : null,
+    trial_ends_at: form.access_mode === "trial" ? (form.trial_ends_at.trim() || null) : null,
+    subscription_started_at:
+      form.access_mode === "subscription" ? (form.subscription_started_at.trim() || null) : null,
+    subscription_ends_at:
+      form.access_mode === "subscription" ? (form.subscription_ends_at.trim() || null) : null,
   };
   if (isCreate || form.portal_password.trim()) {
     payload.portal_password = form.portal_password.trim();
@@ -55,6 +85,11 @@ function Modal({
   error,
   onClose,
   onSave,
+  onSendBillingNotice,
+  billingNoticeAction,
+  onResendActivation,
+  onActivateAccount,
+  activationAction,
 }: {
   mode: "create" | "edit";
   initialForm: BoardForm;
@@ -62,6 +97,11 @@ function Modal({
   error: string;
   onClose: () => void;
   onSave: (form: BoardForm) => void;
+  onSendBillingNotice?: (type: InstitutionalBillingNoticeType) => void;
+  billingNoticeAction: InstitutionalBillingNoticeType | null;
+  onResendActivation?: () => void;
+  onActivateAccount?: () => void;
+  activationAction: "resend" | "activate" | null;
 }) {
   const [form, setForm] = useState(initialForm);
   const [suggesting, setSuggesting] = useState(false);
@@ -167,6 +207,15 @@ function Modal({
             />
           </div>
           <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 6 }}>Contact Person</label>
+            <input
+              value={form.contact_person}
+              onChange={(e) => setForm((f) => ({ ...f, contact_person: e.target.value }))}
+              placeholder="e.g., Marie Tremblay"
+              style={inputStyle}
+            />
+          </div>
+          <div>
             <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 6 }}>Code</label>
             <input
               value={form.code}
@@ -250,6 +299,18 @@ function Modal({
             </div>
           </div>
 
+          <InstitutionalAccessFields
+            form={form}
+            isCreate={isCreate}
+            saving={saving}
+            noticeAction={billingNoticeAction}
+            onChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
+            onSendNotice={onSendBillingNotice}
+            onResendActivation={onResendActivation}
+            onActivateAccount={onActivateAccount}
+            activationAction={activationAction}
+          />
+
           {error && <p style={{ fontSize: 12, color: "#ef4444", margin: 0 }}>{error}</p>}
         </div>
         <div style={{ padding: "16px 24px", borderTop: "1px solid #f1f5f9", display: "flex", justifyContent: "flex-end", gap: 10 }}>
@@ -283,6 +344,8 @@ export function AdminSchoolBoardsPage() {
   const [saving, setSaving] = useState(false);
   const [modalError, setModalError] = useState("");
   const [archivingId, setArchivingId] = useState<number | null>(null);
+  const [billingNoticeAction, setBillingNoticeAction] = useState<InstitutionalBillingNoticeType | null>(null);
+  const [activationAction, setActivationAction] = useState<"resend" | "activate" | null>(null);
 
   const loadBoards = useCallback(async () => {
     setLoading(true);
@@ -368,6 +431,67 @@ export function AdminSchoolBoardsPage() {
       setModalError(err instanceof Error ? err.message : "Save failed.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleCreateWizard = async (payload: AdminSchoolBoardPayload) => {
+    setSaving(true);
+    setModalError("");
+    try {
+      const { board, message } = await adminSchoolBoardsApi.create(payload);
+      setBoards((prev) => [...prev, board].sort((a, b) => a.name.localeCompare(b.name)));
+      setModalMode(null);
+      toast.success(message || "School board created. Activation emails sent.");
+      loadBoards();
+    } catch (err) {
+      setModalError(err instanceof Error ? err.message : "Create failed.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSendBillingNotice = async (type: InstitutionalBillingNoticeType) => {
+    if (!form.id) return;
+    setBillingNoticeAction(type);
+    try {
+      const { board, message } = await adminSchoolBoardsApi.sendBillingNotice(form.id, type);
+      setBoards((prev) => prev.map((b) => (b.id === board.id ? board : b)));
+      setForm(fromRecord(board));
+      toast.success(message);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to send notice.");
+    } finally {
+      setBillingNoticeAction(null);
+    }
+  };
+
+  const handleResendActivation = async () => {
+    if (!form.id) return;
+    setActivationAction("resend");
+    try {
+      const { board, message } = await adminSchoolBoardsApi.resendActivation(form.id);
+      setBoards((prev) => prev.map((b) => (b.id === board.id ? board : b)));
+      setForm(fromRecord(board));
+      toast.success(message);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to resend activation.");
+    } finally {
+      setActivationAction(null);
+    }
+  };
+
+  const handleActivateAccount = async () => {
+    if (!form.id) return;
+    setActivationAction("activate");
+    try {
+      const { board, message } = await adminSchoolBoardsApi.activateAccount(form.id);
+      setBoards((prev) => prev.map((b) => (b.id === board.id ? board : b)));
+      setForm(fromRecord(board));
+      toast.success(message);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to activate account.");
+    } finally {
+      setActivationAction(null);
     }
   };
 
@@ -509,14 +633,28 @@ export function AdminSchoolBoardsPage() {
         </div>
       </div>
 
-      {modalMode && (
+      {modalMode === "create" && (
+        <CreateBoardWizard
+          saving={saving}
+          error={modalError}
+          onClose={closeModal}
+          onSubmit={handleCreateWizard}
+        />
+      )}
+
+      {modalMode === "edit" && (
         <Modal
-          mode={modalMode}
+          mode="edit"
           initialForm={form}
           saving={saving || loadingBoard}
           error={modalError}
           onClose={closeModal}
           onSave={handleSave}
+          onSendBillingNotice={handleSendBillingNotice}
+          billingNoticeAction={billingNoticeAction}
+          onResendActivation={handleResendActivation}
+          onActivateAccount={handleActivateAccount}
+          activationAction={activationAction}
         />
       )}
     </AdminLayout>

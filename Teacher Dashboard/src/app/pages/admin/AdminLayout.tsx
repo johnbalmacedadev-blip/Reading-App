@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router";
 import {
   LayoutDashboard, Building2, School, Users, GraduationCap,
-  Library, ClipboardList, History, Settings, LogOut, BookOpen, ShieldCheck,
+  Library, ClipboardList, History, Settings, LogOut, ShieldCheck,
   FileDown, ChevronDown, ChevronRight, PanelLeftClose, PanelLeft, Database,
 } from "lucide-react";
 import { LangToggle } from "../../components/LangToggle";
+import { BrandMark } from "../../components/BrandMark";
 import { useLanguage } from "../../i18n";
 import { downloadableApi, type DownloadableCategoryItem } from "../../api/client";
 import { useAuth } from "../../context/AuthContext";
@@ -107,16 +108,8 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         {/* Logo */}
         <div style={{ padding: "24px 20px 20px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-            <div style={{
-              width: 36, height: 36, borderRadius: 10,
-              background: "linear-gradient(135deg, #004aad, #38b6ff)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              flexShrink: 0,
-            }}>
-              <BookOpen size={18} color="white" />
-            </div>
-              <div style={{ color: "white", fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>{t("common.appName")}</div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <BrandMark height={28} onDark />
             </div>
             <button
               type="button"
@@ -453,7 +446,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
       </aside>
 
       {/* Main content */}
-      <main style={{ flex: 1, minHeight: "100vh", overflowY: "auto", position: "relative" }}>
+      <main style={{ flex: 1, minWidth: 0, minHeight: "100vh", overflowY: "auto", overflowX: "hidden", position: "relative" }}>
         {collapsed && (
           <button
             type="button"
@@ -476,7 +469,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
             <PanelLeft size={18} color="#38b6ff" />
           </button>
         )}
-        <div style={{ paddingTop: collapsed ? 56 : 0 }}>
+        <div style={{ paddingTop: collapsed ? 56 : 0, minWidth: 0, maxWidth: "100%" }}>
           <div style={{
             display: "flex",
             alignItems: "center",

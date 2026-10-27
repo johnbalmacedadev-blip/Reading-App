@@ -2,6 +2,7 @@
 
 namespace App\Mail;
 
+use App\Mail\Concerns\EmbedsEmailLogo;
 use App\Models\User;
 use App\Services\EmailLocale;
 use App\Services\EmailTemplate;
@@ -13,9 +14,11 @@ use Illuminate\Queue\SerializesModels;
 
 class PortalEventEmail extends Mailable
 {
-    use Queueable, SerializesModels;
+    use EmbedsEmailLogo, Queueable, SerializesModels;
 
     public string $emailLocale;
+
+    public string $emailAudience;
 
     /**
      * @param  array<string, scalar|null>  $params
@@ -27,18 +30,26 @@ class PortalEventEmail extends Mailable
         public ?string $actionUrl = null,
     ) {
         $this->emailLocale = EmailLocale::resolve($user);
+        $this->emailAudience = EmailTemplate::audienceFromUser($user);
         $this->locale($this->emailLocale);
         $this->params = array_merge([
             'name' => $user->displayName(),
             'email' => $user->email,
             'portal' => $this->portalLabel($user),
         ], $params);
+        $this->embedEmailLogo();
     }
 
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: EmailTemplate::line($this->templateKey, 'subject', $this->params, $this->emailLocale),
+            subject: EmailTemplate::line(
+                $this->templateKey,
+                'subject',
+                $this->params,
+                $this->emailLocale,
+                $this->emailAudience,
+            ),
         );
     }
 
@@ -50,6 +61,7 @@ class PortalEventEmail extends Mailable
                 'templateKey' => $this->templateKey,
                 'params' => $this->params,
                 'actionUrl' => $this->actionUrl,
+                'emailAudience' => $this->emailAudience,
                 'hasPassword' => array_key_exists('password', $this->params),
             ],
         );

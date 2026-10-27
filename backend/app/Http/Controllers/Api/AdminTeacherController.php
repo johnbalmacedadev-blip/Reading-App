@@ -5,10 +5,15 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\School;
 use App\Models\SchoolBoard;
+use App\Models\SchoolClass;
+use App\Models\SchoolYear;
+use App\Models\ClassType;
 use App\Models\PlatformSetting;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\InstitutionalSubscriptionService;
 use App\Services\NotificationMailer;
+use App\Services\ResourceAccessService;
 use App\Services\TeacherNotificationService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -31,7 +36,7 @@ class AdminTeacherController extends Controller
     {
         $query = User::query()
             ->where('role', 'teacher')
-            ->with('school')
+            ->with(['school', 'classes:id,teacher_id,grade,name'])
             ->withCount('classes')
             ->orderBy('last_name')
             ->orderBy('first_name');
@@ -57,6 +62,10 @@ class AdminTeacherController extends Controller
 
         $teachers = $query->get();
         $studentCounts = $this->studentCountsForTeachers($teachers->pluck('id'));
+        ResourceAccessService::rememberEnabledMap(
+            ResourceAccessService::TYPE_TEACHER,
+            $teachers->pluck('id')->all(),
+        );
 
         return response()->json([
             'teachers' => $teachers->map(
@@ -67,8 +76,26 @@ class AdminTeacherController extends Controller
 
     public function schools(): JsonResponse
     {
+        $boardNames = SchoolBoard::query()->pluck('name', 'code');
+
+        $schools = School::query()
+            ->orderBy('name')
+            ->get(['id', 'name', 'city', 'school_board'])
+            ->map(function (School $school) use ($boardNames) {
+                $code = filled($school->school_board) ? (string) $school->school_board : null;
+
+                return [
+                    'id' => $school->id,
+                    'name' => $school->name,
+                    'city' => $school->city,
+                    'board_code' => $code,
+                    'board' => $code ? (string) ($boardNames[$code] ?? $code) : '',
+                ];
+            })
+            ->values();
+
         return response()->json([
-            'schools' => School::query()->orderBy('name')->get(['id', 'name', 'city']),
+            'schools' => $schools,
         ]);
     }
 
@@ -77,10 +104,12 @@ class AdminTeacherController extends Controller
         $data = $this->validated($request);
         $portal = $this->validatePortal($request, true);
         $data['email'] = $portal['portal_username'];
-        // New teachers must activate via email before signing in.
-        $data['account_status'] = 'inactive';
 
         $plainPassword = $portal['portal_password'];
+        $hasInstitution = filled($data['school_id'] ?? null) || filled($data['school_board'] ?? null);
+
+        // Independent teachers activate via email. Institution-assigned teachers inherit the licence.
+        $data['account_status'] = $hasInstitution ? 'active' : 'inactive';
 
         $teacher = User::create([
             ...$data,
@@ -89,17 +118,32 @@ class AdminTeacherController extends Controller
             'preferred_language' => $data['preferred_language'] ?? PlatformSetting::defaultLanguage(),
             'password' => Hash::make($plainPassword),
             'portal_password_encrypted' => Crypt::encryptString($plainPassword),
-            'email_verified_at' => null,
+            'email_verified_at' => $hasInstitution ? now() : null,
         ]);
 
-        $teacher->load('school')->loadCount('classes');
+        $this->syncClassTypes($teacher, $request->input('class_types', []));
+
+        $licensed = false;
+        if ($hasInstitution) {
+            $licensed = $this->applyInstitutionLicenceFromAssignment($teacher);
+        }
+
+        $teacher->load(['school', 'classes:id,teacher_id,grade,name'])->loadCount('classes');
 
         $emailSent = false;
+        $emailKind = 'welcome';
         try {
-            NotificationMailer::sendVerifyAccount($teacher, $plainPassword);
+            if ($licensed || $hasInstitution) {
+                // Assigned to school/board: send welcome with credentials (already active).
+                NotificationMailer::sendWelcome($teacher, $plainPassword);
+            } else {
+                // Independent teacher: activation link email.
+                NotificationMailer::sendVerifyAccount($teacher, $plainPassword);
+                $emailKind = 'activation';
+            }
             $emailSent = true;
         } catch (\Throwable $e) {
-            Log::error('Teacher activation email failed', [
+            Log::error('Teacher create email failed', [
                 'teacher_id' => $teacher->id,
                 'error' => $e->getMessage(),
             ]);
@@ -107,13 +151,35 @@ class AdminTeacherController extends Controller
 
         AuditLogger::log('Create', 'Teacher', "{$teacher->displayName()} created", 'info', $request, subject: $teacher);
 
+        $message = match (true) {
+            $emailSent && $licensed => 'Teacher created under the school/board licence. A welcome email was sent.',
+            $emailSent && $hasInstitution => 'Teacher created and activated. A welcome email was sent.',
+            $emailSent => 'Teacher created. An activation email was sent.',
+            default => 'Teacher created, but the email could not be sent.',
+        };
+
         return response()->json([
-            'teacher' => $this->format($teacher),
+            'teacher' => $this->format($teacher->fresh(['school', 'classes:id,teacher_id,grade,name'])->loadCount('classes')),
             'email_sent' => $emailSent,
-            'message' => $emailSent
-                ? 'Teacher created. An activation email was sent.'
-                : 'Teacher created, but the activation email could not be sent.',
+            'email_kind' => $emailKind,
+            'message' => $message,
         ], 201);
+    }
+
+    /**
+     * If the assigned school or board portal has an active licence, inherit it.
+     */
+    private function applyInstitutionLicenceFromAssignment(User $teacher): bool
+    {
+        $sponsor = $teacher->institutionalSponsor();
+        if (! $sponsor || ! InstitutionalSubscriptionService::sponsorHasActiveLicence($sponsor)) {
+            return false;
+        }
+
+        $source = $teacher->school_id ? 'school_assigned' : 'board_assigned';
+        InstitutionalSubscriptionService::applyInstitutionalCoverageFromSponsor($teacher, $sponsor, $source);
+
+        return true;
     }
 
     public function show(User $teacher): JsonResponse
@@ -122,7 +188,7 @@ class AdminTeacherController extends Controller
             abort(404);
         }
 
-        $teacher->load('school')->loadCount('classes');
+        $teacher->load(['school', 'classes:id,teacher_id,grade,name'])->loadCount('classes');
 
         return response()->json([
             'teacher' => $this->format($teacher),
@@ -155,11 +221,20 @@ class AdminTeacherController extends Controller
         }
 
         $teacher->save();
-        $teacher->load('school')->loadCount('classes');
+
+        if ($request->exists('class_types')) {
+            $this->syncClassTypes($teacher, $request->input('class_types', []));
+        }
+
+        if (filled($teacher->school_id) || filled($teacher->school_board)) {
+            $this->applyInstitutionLicenceFromAssignment($teacher->fresh());
+        }
+
+        $teacher->load(['school', 'classes:id,teacher_id,grade,name'])->loadCount('classes');
 
         AuditLogger::log('Edit', 'Teacher', "{$teacher->displayName()} updated", 'info', $request, subject: $teacher);
 
-        return response()->json(['teacher' => $this->format($teacher)]);
+        return response()->json(['teacher' => $this->format($teacher->fresh(['school', 'classes:id,teacher_id,grade,name'])->loadCount('classes'))]);
     }
 
     public function sendBillingNotice(Request $request, User $teacher): JsonResponse
@@ -167,21 +242,38 @@ class AdminTeacherController extends Controller
         $this->authorizeAdmin($request);
         $this->ensureTeacher($teacher);
 
+        $allowed = [
+            'trial_ending',
+            'trial_expired',
+            'subscription_started',
+            'subscription_renewed',
+            'subscription_cancelled',
+            'subscription_expired',
+            'inactive_reminder',
+            'suspension_reminder',
+        ];
+
         $data = $request->validate([
-            'type' => ['required', 'in:trial_ending,trial_expired'],
+            'type' => ['required', 'in:'.implode(',', $allowed)],
         ]);
 
         if ($teacher->account_status === 'archived') {
             return response()->json(['message' => 'Archived teachers cannot receive billing notices.'], 422);
         }
 
-        if ($teacher->hasActiveSubscription()) {
-            return response()->json(['message' => 'This teacher already has an active paid subscription.'], 422);
-        }
+        TeacherNotificationService::adminForceBillingNotice($teacher, $data['type']);
 
-        TeacherNotificationService::adminForceTrialNotice($teacher, $data['type']);
-
-        $label = $data['type'] === 'trial_ending' ? 'trial ending soon' : 'trial expired';
+        $labels = [
+            'trial_ending' => 'trial ending soon',
+            'trial_expired' => 'trial expired',
+            'subscription_started' => 'subscription started',
+            'subscription_renewed' => 'subscription renewed',
+            'subscription_cancelled' => 'subscription cancelled',
+            'subscription_expired' => 'subscription expired',
+            'inactive_reminder' => 'inactive account reminder',
+            'suspension_reminder' => 'account suspension reminder',
+        ];
+        $label = $labels[$data['type']] ?? $data['type'];
 
         AuditLogger::log(
             'Email',
@@ -193,11 +285,58 @@ class AdminTeacherController extends Controller
             metadata: ['notice_type' => $data['type']],
         );
 
+        $messages = [
+            'trial_ending' => 'Trial ending soon notification and email sent.',
+            'trial_expired' => 'Trial expired notification and email sent.',
+            'subscription_started' => 'Subscription started notification and email sent.',
+            'subscription_renewed' => 'Subscription renewed notification and email sent.',
+            'subscription_cancelled' => 'Subscription cancelled notification and email sent.',
+            'subscription_expired' => 'Subscription expired notification and email sent.',
+            'inactive_reminder' => 'Inactive account reminder email sent.',
+            'suspension_reminder' => 'Account suspension reminder email sent.',
+        ];
+
         return response()->json([
             'teacher' => $this->format($teacher->fresh()->load('school')->loadCount('classes')),
-            'message' => $data['type'] === 'trial_ending'
-                ? 'Trial ending soon notification and email sent.'
-                : 'Trial expired notification and email sent.',
+            'message' => $messages[$data['type']] ?? 'Notification and email sent.',
+        ]);
+    }
+
+    public function extendTrial(Request $request, User $teacher): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+        $this->ensureTeacher($teacher);
+
+        if ($teacher->account_status === 'archived') {
+            return response()->json(['message' => 'Archived teachers cannot have their trial extended.'], 422);
+        }
+
+        if ($teacher->isInstitutionalTeacher() || $teacher->isRegistrationLicensedTeacher()) {
+            return response()->json([
+                'message' => 'Institutional teachers inherit access from their school or board. Extend the school/board trial instead.',
+            ], 422);
+        }
+
+        $data = $request->validate([
+            'days' => ['required', 'integer', 'min:1', 'max:30'],
+        ]);
+
+        $result = TeacherNotificationService::extendTrial($teacher, $data['days']);
+        $ends = $result['trial_ends_at']?->format('Y-m-d') ?? '';
+
+        AuditLogger::log(
+            'Edit',
+            'Teacher',
+            "Admin extended trial for {$teacher->displayName()} by {$result['days']} day(s) until {$ends}",
+            'info',
+            $request,
+            subject: $teacher,
+            metadata: ['days' => $result['days'], 'trial_ends_at' => $ends],
+        );
+
+        return response()->json([
+            'teacher' => $this->format($teacher->fresh()->load('school')->loadCount('classes')),
+            'message' => "Trial extended by {$result['days']} day(s). Email sent.",
         ]);
     }
 
@@ -420,6 +559,21 @@ class AdminTeacherController extends Controller
             $boardCodes[] = $existingBoard;
         }
 
+        // Allow the assigned school's current board even if that board is inactive/legacy.
+        $schoolId = $request->input('school_id');
+        if (filled($schoolId)) {
+            $schoolBoard = School::query()->where('id', $schoolId)->value('school_board');
+            if (filled($schoolBoard) && ! in_array((string) $schoolBoard, $boardCodes, true)) {
+                $boardCodes[] = (string) $schoolBoard;
+            }
+        }
+
+        // Treat blank / NONE as null so Rule::in does not reject empty string.
+        $incomingBoard = $request->input('school_board');
+        if (! filled($incomingBoard)) {
+            $request->merge(['school_board' => null]);
+        }
+
         $data = $request->validate([
             'title' => ['nullable', 'string', 'max:20'],
             'first_name' => ['required', 'string', 'max:255'],
@@ -433,7 +587,8 @@ class AdminTeacherController extends Controller
         ]);
 
         $data['school_id'] = $data['school_id'] ?? null;
-        $data['school_board'] = $data['school_board'] ?? null;
+        $data['school_board'] = filled($data['school_board'] ?? null) ? (string) $data['school_board'] : null;
+        $data['title'] = $this->normalizedTitle($request->input('title', $data['title'] ?? null));
         $data['account_status'] = $this->parseStatus($data['account_status']);
 
         return $data;
@@ -516,12 +671,22 @@ class AdminTeacherController extends Controller
     private function buildName(array $data): string
     {
         $parts = array_filter([
-            $data['title'] ?? null,
-            $data['first_name'],
-            $data['last_name'],
+            $this->normalizedTitle($data['title'] ?? null),
+            $data['first_name'] ?? null,
+            $data['last_name'] ?? null,
         ]);
 
         return implode(' ', $parts);
+    }
+
+    private function normalizedTitle(mixed $title): ?string
+    {
+        $value = trim((string) ($title ?? ''));
+        if ($value === '' || strcasecmp($value, 'None') === 0) {
+            return null;
+        }
+
+        return $value;
     }
 
     private function parseStatus(string $status): string
@@ -547,6 +712,23 @@ class AdminTeacherController extends Controller
 
     private function format(User $teacher, ?int $studentsCount = null): array
     {
+        if (
+            $teacher->isInstitutionalTeacher()
+            || (
+                $teacher->affiliation_type !== 'individual'
+                && (
+                    $teacher->isRegistrationLicensedTeacher()
+                    || $teacher->subscription_plan === 'institutional'
+                    || $teacher->affiliation_type === 'institutional'
+                )
+            )
+        ) {
+            $sponsor = $teacher->institutionalSponsor();
+            if ($sponsor) {
+                InstitutionalSubscriptionService::syncRegistrationCoverage($teacher, $sponsor);
+            }
+        }
+
         $emailActivationPending = $teacher->account_status === 'inactive' && $teacher->email_verified_at === null;
         $joinPending = $teacher->account_status === 'pending';
         $activationPending = $emailActivationPending || $joinPending;
@@ -572,14 +754,22 @@ class AdminTeacherController extends Controller
             'school_id' => $teacher->school_id,
             'board' => $teacher->school_board ?? '',
             'classes' => $teacher->classes_count ?? 0,
+            'class_types' => $this->classTypesFor($teacher),
             'students' => $studentsCount ?? $this->studentCountFor($teacher),
             'status' => $status,
             'activation_pending' => $activationPending,
             'email_activated' => $teacher->email_verified_at !== null,
             'activated_at' => $teacher->email_verified_at?->toIso8601String(),
             'affiliation_type' => $teacher->affiliation_type,
+            'registration_source' => $teacher->registration_source,
+            'registration_source_label' => InstitutionalSubscriptionService::registrationSourceLabel($teacher->registration_source),
             'subscription_status' => $teacher->subscription_status,
             'subscription_plan' => $teacher->subscription_plan,
+            'subscription_billing' => $teacher->subscription_billing,
+            'subscription_started_at' => $teacher->subscription_started_at?->toIso8601String(),
+            'subscription_ends_at' => $teacher->subscription_ends_at?->toIso8601String(),
+            'is_subscription_active' => $teacher->hasActiveSubscription(),
+            'subscription_days_remaining' => $teacher->subscriptionDaysRemaining(),
             'is_trial_active' => $teacher->hasActiveTrial(),
             'trial_days_remaining' => $teacher->trialDaysRemaining(),
             'trial_ends_at' => $teacher->trial_ends_at?->toIso8601String(),
@@ -592,6 +782,10 @@ class AdminTeacherController extends Controller
             'portal_password' => $this->portalPasswordFor($teacher),
             'has_avatar' => (bool) $teacher->avatar_path,
             'avatar_url' => $teacher->avatar_path ? "/api/admin/teachers/{$teacher->id}/avatar" : null,
+            'resource_access_enabled' => ResourceAccessService::isEnabled(
+                ResourceAccessService::TYPE_TEACHER,
+                $teacher->id,
+            ),
         ];
     }
 
@@ -601,8 +795,18 @@ class AdminTeacherController extends Controller
             return 'Pending join';
         }
 
-        if ($teacher->isInstitutionalTeacher()) {
-            return 'Institutional';
+        // Individual signup teachers never show as institutional (free-text board name is not a licence).
+        if ($teacher->affiliation_type !== 'individual') {
+            if ($teacher->isRegistrationLicensedTeacher() || $teacher->subscription_plan === 'institutional') {
+                return 'Institutional';
+            }
+
+            if ($teacher->isInstitutionalTeacher()) {
+                return 'Institutional';
+            }
+        } elseif ($teacher->account_status === 'inactive') {
+            // Trial starts after email activation.
+            return 'Trial';
         }
 
         if ($teacher->hasActiveSubscription()) {
@@ -618,6 +822,81 @@ class AdminTeacherController extends Controller
         }
 
         return 'None';
+    }
+
+    /** @return list<string> */
+    private function classTypesFor(User $teacher): array
+    {
+        if ($teacher->relationLoaded('classes')) {
+            return $teacher->classes
+                ->pluck('grade')
+                ->filter(fn ($grade) => filled($grade))
+                ->unique()
+                ->values()
+                ->all();
+        }
+
+        return SchoolClass::query()
+            ->where('teacher_id', $teacher->id)
+            ->whereNotNull('grade')
+            ->where('grade', '!=', '')
+            ->distinct()
+            ->orderBy('grade')
+            ->pluck('grade')
+            ->all();
+    }
+
+    /** @param mixed $classTypes */
+    private function syncClassTypes(User $teacher, mixed $classTypes): void
+    {
+        if (! is_array($classTypes)) {
+            return;
+        }
+
+        $allowed = ClassType::allowedGradeValues(true);
+        $selected = array_values(array_unique(array_filter(array_map(
+            fn ($value) => trim((string) $value),
+            $classTypes
+        ))));
+
+        foreach ($selected as $grade) {
+            if (! in_array($grade, $allowed, true)) {
+                abort(response()->json([
+                    'message' => "Invalid class type \"{$grade}\".",
+                ], 422));
+            }
+        }
+
+        $year = SchoolYear::defaultLabel();
+        $existing = SchoolClass::query()
+            ->where('teacher_id', $teacher->id)
+            ->get();
+
+        foreach ($selected as $grade) {
+            $hasGrade = $existing->contains(fn (SchoolClass $class) => $class->grade === $grade);
+            if ($hasGrade) {
+                continue;
+            }
+
+            SchoolClass::create([
+                'teacher_id' => $teacher->id,
+                'school_id' => $teacher->school_id,
+                'name' => $grade,
+                'grade' => $grade,
+                'school_year' => $year,
+            ]);
+        }
+
+        foreach ($existing as $class) {
+            if (in_array($class->grade, $selected, true)) {
+                continue;
+            }
+            if ($class->students()->count() > 0) {
+                continue;
+            }
+            $class->evaluations()->delete();
+            $class->delete();
+        }
     }
 
     private function sendActivationEmail(User $teacher, string $plainPassword): void
@@ -663,7 +942,11 @@ class AdminTeacherController extends Controller
     private function formattedName(User $teacher): string
     {
         if ($teacher->first_name) {
-            $parts = array_filter([$teacher->title, $teacher->first_name, $teacher->last_name]);
+            $parts = array_filter([
+                $this->normalizedTitle($teacher->title),
+                $teacher->first_name,
+                $teacher->last_name,
+            ]);
 
             return implode(' ', $parts);
         }

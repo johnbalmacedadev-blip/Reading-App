@@ -1,13 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AdminLayout } from "./AdminLayout";
-import { Plus, Search, Edit2, Archive, X, ChevronDown, School, Loader2, Eye, EyeOff } from "lucide-react";
+import { Plus, Search, Edit2, Archive, Trash2, X, ChevronDown, School, Loader2, Eye, EyeOff } from "lucide-react";
 import {
   adminSchoolsApi,
   adminSchoolBoardsApi,
+  resourceAccessApi,
   type AdminSchoolPayload,
   type AdminSchoolRecord,
+  type InstitutionalAccessMode,
+  type InstitutionalBillingNoticeType,
 } from "../../api/client";
+import { ResourceAccessModal, ResourceAccessToggle } from "../../components/admin/ResourceAccessModal";
+import {
+  InstitutionalAccessFields,
+  type InstitutionalAccessForm,
+} from "../../components/admin/InstitutionalAccessFields";
+import { ExtendTrialDaysModal } from "../../components/admin/ExtendTrialDaysModal";
+import { CreateSchoolWizard } from "../../components/admin/CreateSchoolWizard";
 
 type BoardOption = { code: string; name: string };
 
@@ -21,16 +31,28 @@ type SchoolForm = {
   grades: string;
   portal_username: string;
   portal_password: string;
-};
+} & InstitutionalAccessForm;
 
-const emptyForm = (defaultBoard = ""): SchoolForm => ({
-  name: "",
-  city: "",
-  board: defaultBoard,
-  grades: "K–2",
-  portal_username: "",
-  portal_password: "",
-});
+function fromRecord(school: AdminSchoolRecord): SchoolForm {
+  return {
+    id: school.id,
+    name: school.name,
+    city: school.city,
+    board: school.board || "",
+    grades: school.grades === "—" ? "K–2" : school.grades,
+    portal_username: school.portal_username ?? "",
+    portal_password: school.portal_password ?? "",
+    access_mode: (school.access_mode as InstitutionalAccessMode) || "trial",
+    trial_started_at: school.trial_started_at ?? "",
+    trial_ends_at: school.trial_ends_at ?? "",
+    subscription_started_at: school.subscription_started_at ?? "",
+    subscription_ends_at: school.subscription_ends_at ?? "",
+    access: school.access,
+    is_trial_active: school.is_trial_active,
+    trial_days_remaining: school.trial_days_remaining,
+    activation_pending: school.activation_pending,
+  };
+}
 
 function modalBoardOptions(activeBoards: BoardOption[], currentBoard: string): BoardOption[] {
   const boards = [NONE_BOARD, ...activeBoards];
@@ -48,6 +70,13 @@ function Modal({
   onClose,
   onSave,
   saving,
+  onSendBillingNotice,
+  billingNoticeAction,
+  onExtendTrial,
+  extendTrialAction,
+  onResendActivation,
+  onActivateAccount,
+  activationAction,
 }: {
   title: string;
   school: SchoolForm;
@@ -56,11 +85,19 @@ function Modal({
   onClose: () => void;
   onSave: (form: SchoolForm) => void;
   saving: boolean;
+  onSendBillingNotice?: (type: InstitutionalBillingNoticeType) => void;
+  billingNoticeAction: InstitutionalBillingNoticeType | null;
+  onExtendTrial?: (days: number) => Promise<boolean>;
+  extendTrialAction?: boolean;
+  onResendActivation?: () => void;
+  onActivateAccount?: () => void;
+  activationAction: "resend" | "activate" | null;
 }) {
   const [form, setForm] = useState(school);
   const [suggesting, setSuggesting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loadingPassword, setLoadingPassword] = useState(false);
+  const [extendDaysOpen, setExtendDaysOpen] = useState(false);
 
   useEffect(() => {
     setForm(school);
@@ -361,6 +398,20 @@ function Modal({
               </div>
             </div>
           </div>
+
+          <InstitutionalAccessFields
+            form={form}
+            isCreate={isCreate}
+            saving={saving}
+            noticeAction={billingNoticeAction}
+            onChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
+            onSendNotice={onSendBillingNotice}
+            onExtendTrial={onExtendTrial ? () => setExtendDaysOpen(true) : undefined}
+            extendTrialAction={extendTrialAction}
+            onResendActivation={onResendActivation}
+            onActivateAccount={onActivateAccount}
+            activationAction={activationAction}
+          />
         </div>
         <div
           style={{
@@ -409,34 +460,44 @@ function Modal({
           </button>
         </div>
       </div>
+      <ExtendTrialDaysModal
+        open={extendDaysOpen}
+        subjectName={form.name}
+        submitting={extendTrialAction}
+        onClose={() => {
+          if (!extendTrialAction) setExtendDaysOpen(false);
+        }}
+        onConfirm={(days) => {
+          if (!onExtendTrial) return;
+          void (async () => {
+            const ok = await onExtendTrial(days);
+            if (ok) setExtendDaysOpen(false);
+          })();
+        }}
+      />
     </div>
   );
 }
 
-function toPayload(form: SchoolForm, isCreate: boolean): AdminSchoolPayload {
+function toPayload(form: SchoolForm): AdminSchoolPayload {
   const payload: AdminSchoolPayload = {
     name: form.name.trim(),
     city: form.city.trim(),
     school_board: form.board,
     grades: form.grades.trim() || undefined,
     portal_username: form.portal_username.trim(),
+    access_mode: form.access_mode,
+    trial_started_at: form.access_mode === "trial" ? (form.trial_started_at.trim() || null) : null,
+    trial_ends_at: form.access_mode === "trial" ? (form.trial_ends_at.trim() || null) : null,
+    subscription_started_at:
+      form.access_mode === "subscription" ? (form.subscription_started_at.trim() || null) : null,
+    subscription_ends_at:
+      form.access_mode === "subscription" ? (form.subscription_ends_at.trim() || null) : null,
   };
-  if (isCreate || form.portal_password.trim()) {
+  if (form.portal_password.trim()) {
     payload.portal_password = form.portal_password.trim();
   }
   return payload;
-}
-
-function fromRecord(school: AdminSchoolRecord): SchoolForm {
-  return {
-    id: school.id,
-    name: school.name,
-    city: school.city,
-    board: school.board,
-    grades: school.grades === "—" ? "" : school.grades,
-    portal_username: school.portal_username ?? "",
-    portal_password: school.portal_password ?? "",
-  };
 }
 
 export function AdminSchoolsPage() {
@@ -445,10 +506,18 @@ export function AdminSchoolsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadingSchool, setLoadingSchool] = useState(false);
+  const [billingNoticeAction, setBillingNoticeAction] = useState<InstitutionalBillingNoticeType | null>(null);
+  const [extendTrialAction, setExtendTrialAction] = useState(false);
+  const [activationAction, setActivationAction] = useState<"resend" | "activate" | null>(null);
   const [search, setSearch] = useState("");
   const [board, setBoard] = useState("All Boards");
   const [statusFilter, setStatusFilter] = useState("All");
   const [modal, setModal] = useState<{ type: "create" | "edit"; school: SchoolForm } | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardError, setWizardError] = useState("");
+  const [accessModal, setAccessModal] = useState<AdminSchoolRecord | null>(null);
+  const [accessSavingId, setAccessSavingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const boardFilterOptions = ["All Boards", ...activeBoards.map((b) => b.code)];
 
@@ -497,26 +566,34 @@ export function AdminSchoolsPage() {
       toast.error("Please fill in all required fields.");
       return;
     }
-    if (modal?.type === "create" && !form.portal_password.trim()) {
-      toast.error("Please set a portal password.");
-      return;
-    }
+
+    if (!form.id) return;
 
     setSaving(true);
     try {
-      const payload = toPayload(form, modal?.type === "create");
-      if (modal?.type === "create") {
-        const { school } = await adminSchoolsApi.create(payload);
-        setSchools((prev) => [...prev, school].sort((a, b) => a.name.localeCompare(b.name)));
-        toast.success("School created");
-      } else if (form.id) {
-        const { school } = await adminSchoolsApi.update(form.id, payload);
-        setSchools((prev) => prev.map((s) => (s.id === school.id ? school : s)));
-        toast.success("School updated");
-      }
+      const { school } = await adminSchoolsApi.update(form.id, toPayload(form));
+      setSchools((prev) => prev.map((s) => (s.id === school.id ? school : s)));
+      toast.success("School updated");
       setModal(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Save failed.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCreateWizard = async (payload: AdminSchoolPayload) => {
+    setSaving(true);
+    setWizardError("");
+    try {
+      const { school, message } = await adminSchoolsApi.create(payload);
+      setSchools((prev) => [...prev, school].sort((a, b) => a.name.localeCompare(b.name)));
+      toast.success(message || "School created");
+      setWizardOpen(false);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "Save failed.";
+      setWizardError(detail);
+      toast.error(detail);
     } finally {
       setSaving(false);
     }
@@ -529,6 +606,93 @@ export function AdminSchoolsPage() {
       toast.success(updated.status === "Archived" ? "School archived" : "School restored");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Action failed.");
+    }
+  };
+
+  const handleDelete = async (school: AdminSchoolRecord) => {
+    if (school.status !== "Archived") {
+      toast.error("Archive the school before permanently deleting it.");
+      return;
+    }
+    if (
+      !window.confirm(
+        `Permanently delete ${school.name}? This cannot be undone and will remove the school portal account.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeletingId(school.id);
+    try {
+      const { message } = await adminSchoolsApi.remove(school.id);
+      setSchools((prev) => prev.filter((s) => s.id !== school.id));
+      toast.success(message || "School permanently deleted.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Delete failed.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleSendBillingNotice = async (type: InstitutionalBillingNoticeType) => {
+    if (!modal?.school.id) return;
+    setBillingNoticeAction(type);
+    try {
+      const { school, message } = await adminSchoolsApi.sendBillingNotice(modal.school.id, type);
+      setSchools((prev) => prev.map((s) => (s.id === school.id ? school : s)));
+      setModal({ type: "edit", school: fromRecord(school) });
+      toast.success(message);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to send notice.");
+    } finally {
+      setBillingNoticeAction(null);
+    }
+  };
+
+  const handleExtendTrial = async (days: number): Promise<boolean> => {
+    if (!modal?.school.id) return false;
+    setExtendTrialAction(true);
+    try {
+      const { school, message } = await adminSchoolsApi.extendTrial(modal.school.id, days);
+      setSchools((prev) => prev.map((s) => (s.id === school.id ? school : s)));
+      setModal({ type: "edit", school: fromRecord(school) });
+      toast.success(message);
+      return true;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to extend trial.");
+      return false;
+    } finally {
+      setExtendTrialAction(false);
+    }
+  };
+
+  const handleResendActivation = async () => {
+    if (!modal?.school.id) return;
+    setActivationAction("resend");
+    try {
+      const { school, message } = await adminSchoolsApi.resendActivation(modal.school.id);
+      setSchools((prev) => prev.map((s) => (s.id === school.id ? school : s)));
+      setModal({ type: "edit", school: fromRecord(school) });
+      toast.success(message);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to resend activation.");
+    } finally {
+      setActivationAction(null);
+    }
+  };
+
+  const handleActivateAccount = async () => {
+    if (!modal?.school.id) return;
+    setActivationAction("activate");
+    try {
+      const { school, message } = await adminSchoolsApi.activateAccount(modal.school.id);
+      setSchools((prev) => prev.map((s) => (s.id === school.id ? school : s)));
+      setModal({ type: "edit", school: fromRecord(school) });
+      toast.success(message);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to activate account.");
+    } finally {
+      setActivationAction(null);
     }
   };
 
@@ -552,12 +716,10 @@ export function AdminSchoolsPage() {
             </p>
           </div>
           <button
-            onClick={() =>
-              setModal({
-                type: "create",
-                school: emptyForm(activeBoards[0]?.code ?? ""),
-              })
-            }
+            onClick={() => {
+              setWizardError("");
+              setWizardOpen(true);
+            }}
             style={{
               display: "flex",
               alignItems: "center",
@@ -641,7 +803,8 @@ export function AdminSchoolsPage() {
             background: "white",
             borderRadius: 14,
             border: "1px solid #f1f5f9",
-            overflow: "hidden",
+            overflowX: "auto",
+            overflowY: "hidden",
             boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
           }}
         >
@@ -650,10 +813,10 @@ export function AdminSchoolsPage() {
               <Loader2 className="animate-spin" size={24} color="#004aad" />
             </div>
           ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <table style={{ width: "100%", minWidth: 1080, borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: "#f8fafc" }}>
-                  {["School", "Board", "City", "Grades", "Teachers", "Students", "Status", "Actions"].map(
+                  {["School", "Board", "City", "Grades", "Teachers", "Students", "Status", "Downloads", "Actions"].map(
                     (h) => (
                       <th
                         key={h}
@@ -727,7 +890,32 @@ export function AdminSchoolsPage() {
                       </span>
                     </td>
                     <td style={{ padding: "13px 16px" }}>
-                      <div style={{ display: "flex", gap: 6 }}>
+                      <ResourceAccessToggle
+                        enabled={Boolean(s.resource_access_enabled)}
+                        disabled={accessSavingId === s.id}
+                        onConfigure={() => setAccessModal(s)}
+                        onDisable={async () => {
+                          setAccessSavingId(s.id);
+                          try {
+                            const current = await resourceAccessApi.school(s.id);
+                            const result = await resourceAccessApi.saveSchool(s.id, {
+                              enabled: false,
+                              items: current.items ?? [],
+                            });
+                            setSchools((prev) => prev.map((row) => (
+                              row.id === s.id ? { ...row, resource_access_enabled: result.enabled } : row
+                            )));
+                            toast.success(result.message || "Download permissions turned off.");
+                          } catch (err) {
+                            toast.error(err instanceof Error ? err.message : "Failed to update download permissions.");
+                          } finally {
+                            setAccessSavingId(null);
+                          }
+                        }}
+                      />
+                    </td>
+                    <td style={{ padding: "13px 16px" }}>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                         <button
                           onClick={() => openEdit(s)}
                           style={{
@@ -747,21 +935,47 @@ export function AdminSchoolsPage() {
                         </button>
                         <button
                           onClick={() => handleArchive(s)}
+                          disabled={deletingId === s.id}
                           style={{
                             padding: "5px 10px",
                             borderRadius: 6,
-                            border: "1px solid #fee2e2",
-                            background: "#fff5f5",
-                            cursor: "pointer",
+                            border: s.status === "Archived" ? "1px solid #d1fae5" : "1px solid #fee2e2",
+                            background: s.status === "Archived" ? "#ecfdf5" : "#fff5f5",
+                            cursor: deletingId === s.id ? "wait" : "pointer",
                             display: "flex",
                             alignItems: "center",
                             gap: 4,
                             fontSize: 12,
-                            color: "#ef4444",
+                            color: s.status === "Archived" ? "#059669" : "#ef4444",
                           }}
                         >
                           <Archive size={12} /> {s.status === "Archived" ? "Restore" : "Archive"}
                         </button>
+                        {s.status === "Archived" && (
+                          <button
+                            onClick={() => void handleDelete(s)}
+                            disabled={deletingId === s.id}
+                            style={{
+                              padding: "5px 10px",
+                              borderRadius: 6,
+                              border: "1px solid #fecdd3",
+                              background: "#fff1f2",
+                              cursor: deletingId === s.id ? "wait" : "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 4,
+                              fontSize: 12,
+                              color: "#be123c",
+                            }}
+                          >
+                            {deletingId === s.id ? (
+                              <Loader2 size={12} className="animate-spin" />
+                            ) : (
+                              <Trash2 size={12} />
+                            )}
+                            Delete
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -776,17 +990,55 @@ export function AdminSchoolsPage() {
           )}
         </div>
       </div>
-      {modal && (
+      {wizardOpen && (
+        <CreateSchoolWizard
+          saving={saving}
+          error={wizardError}
+          boardOptions={modalBoardOptions(activeBoards, "")}
+          defaultBoard={activeBoards[0]?.code ?? ""}
+          onClose={() => {
+            setWizardOpen(false);
+            setWizardError("");
+          }}
+          onSubmit={handleCreateWizard}
+        />
+      )}
+      {modal?.type === "edit" && (
         <Modal
-          title={modal.type === "create" ? "New School" : "Edit School"}
+          title="Edit School"
           school={modal.school}
-          isCreate={modal.type === "create"}
+          isCreate={false}
           boardOptions={modalBoardOptions(activeBoards, modal.school.board)}
           onClose={() => setModal(null)}
           onSave={handleSave}
           saving={saving || loadingSchool}
+          onSendBillingNotice={handleSendBillingNotice}
+          billingNoticeAction={billingNoticeAction}
+          onExtendTrial={handleExtendTrial}
+          extendTrialAction={extendTrialAction}
+          onResendActivation={handleResendActivation}
+          onActivateAccount={handleActivateAccount}
+          activationAction={activationAction}
         />
       )}
+      <ResourceAccessModal
+        open={Boolean(accessModal)}
+        title="Download & export permissions"
+        subjectName={accessModal?.name ?? ""}
+        subjectId={accessModal?.id ?? null}
+        load={() => resourceAccessApi.school(accessModal!.id)}
+        save={(payload) => resourceAccessApi.saveSchool(accessModal!.id, payload)}
+        onClose={() => setAccessModal(null)}
+        onSaved={(enabled, message) => {
+          if (accessModal) {
+            setSchools((prev) => prev.map((row) => (
+              row.id === accessModal.id ? { ...row, resource_access_enabled: enabled } : row
+            )));
+          }
+          toast.success(message || "Download permissions saved.");
+          setAccessModal(null);
+        }}
+      />
     </AdminLayout>
   );
 }

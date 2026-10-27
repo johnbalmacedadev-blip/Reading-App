@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { AdminLayout } from "./AdminLayout";
 import {
   Search, Edit2, X, ChevronDown, ChevronLeft, ChevronRight, GraduationCap, Eye, Plus, Trash2, Loader2,
@@ -6,9 +6,11 @@ import {
 import { useLanguage } from "../../i18n";
 import {
   adminStudentsApi,
+  type AdminGradeOption,
   type AdminSchool,
   type AdminStudentPayload,
   type AdminStudentRecord,
+  type AdminStudentTeacher,
 } from "../../api/client";
 
 const statusConfig: Record<string, { bg: string; color: string }> = {
@@ -17,16 +19,9 @@ const statusConfig: Record<string, { bg: string; color: string }> = {
   "At Risk": { bg: "#fff1f2", color: "#e11d48" },
 };
 
-const gradeExpected: Record<string, number> = {
-  Kindergarten: 2,
-  "Grade 1": 6,
-  "Grade 2": 10,
-  "Grade 3": 14,
-};
-
-const GRADES = ["Kindergarten", "Grade 1", "Grade 2", "Grade 3"];
 const STATUSES = ["On Track", "Monitor", "At Risk"];
 const PAGE_SIZE = 20;
+const NONE_LABEL = "None";
 
 type FormState = {
   id?: number;
@@ -34,18 +29,20 @@ type FormState = {
   last_name: string;
   dob: string;
   grade: string;
-  school_id: number;
+  school_id: number | null;
+  board: string;
   teacher: string;
   atelier: number;
   status: string;
 };
 
-const emptyForm = (schoolId = 0): FormState => ({
+const emptyForm = (grade = ""): FormState => ({
   first_name: "",
   last_name: "",
   dob: "",
-  grade: "Kindergarten",
-  school_id: schoolId,
+  grade,
+  school_id: null,
+  board: "",
   teacher: "",
   atelier: 1,
   status: "On Track",
@@ -64,7 +61,7 @@ function toPayload(form: FormState): AdminStudentPayload {
   };
 }
 
-function fromRecord(student: AdminStudentRecord): FormState {
+function fromRecord(student: AdminStudentRecord, schools: AdminSchool[]): FormState {
   return {
     id: student.id,
     first_name: student.first_name,
@@ -72,6 +69,7 @@ function fromRecord(student: AdminStudentRecord): FormState {
     dob: student.dob,
     grade: student.grade,
     school_id: student.school_id,
+    board: schools.find((s) => s.id === student.school_id)?.board ?? "",
     teacher: student.teacher,
     atelier: student.atelier,
     status: student.status,
@@ -82,6 +80,7 @@ function StudentModal({
   mode,
   form,
   schools,
+  grades,
   saving,
   error,
   onChange,
@@ -92,6 +91,7 @@ function StudentModal({
   mode: "add" | "edit" | "view";
   form: FormState;
   schools: AdminSchool[];
+  grades: AdminGradeOption[];
   saving: boolean;
   error: string;
   onChange: (form: FormState) => void;
@@ -101,7 +101,42 @@ function StudentModal({
 }) {
   const { t, tp } = useLanguage();
   const readOnly = mode === "view";
-  const expected = gradeExpected[form.grade] || 0;
+  const [teacherResults, setTeacherResults] = useState<AdminStudentTeacher[]>([]);
+  const [teacherSearching, setTeacherSearching] = useState(false);
+  const [teacherOpen, setTeacherOpen] = useState(false);
+
+  useEffect(() => {
+    if (readOnly || !teacherOpen) return;
+    const term = form.teacher.trim();
+    const timer = setTimeout(async () => {
+      setTeacherSearching(true);
+      try {
+        const { teachers } = await adminStudentsApi.teachers(term);
+        setTeacherResults(teachers);
+      } catch {
+        setTeacherResults([]);
+      } finally {
+        setTeacherSearching(false);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [form.teacher, teacherOpen, readOnly]);
+
+  const selectTeacher = (teacher: AdminStudentTeacher) => {
+    onChange({
+      ...form,
+      teacher: teacher.name,
+      school_id: teacher.school_id,
+      board: teacher.board,
+    });
+    setTeacherOpen(false);
+  };
+
+  const gradeOptions = grades.some((g) => g.value === form.grade) || !form.grade
+    ? grades
+    : [{ value: form.grade, label: form.grade, label_fr: form.grade, assessment_grade: form.grade, target: 14 }, ...grades];
+
+  const expected = grades.find((g) => g.value === form.grade)?.target ?? 0;
   const progress = expected > 0 ? Math.min(100, Math.round((form.atelier / expected) * 100)) : 0;
   const title =
     mode === "add"
@@ -206,8 +241,9 @@ function StudentModal({
                   onChange={(e) => onChange({ ...form, grade: e.target.value })}
                   style={inputStyle}
                 >
-                  {GRADES.map((g) => (
-                    <option key={g}>{g}</option>
+                  <option value="" disabled>Select grade</option>
+                  {gradeOptions.map((g) => (
+                    <option key={g.value} value={g.value}>{g.label}</option>
                   ))}
                 </select>
               )
@@ -224,21 +260,88 @@ function StudentModal({
                 style={inputStyle}
               />
             )}
+            <div style={{ gridColumn: "1 / -1" }}>
+              {field(
+                "Teacher",
+                readOnly ? (
+                  <input readOnly value={form.teacher || NONE_LABEL} style={inputStyle} />
+                ) : (
+                  <div style={{ position: "relative" }}>
+                    <input
+                      value={form.teacher}
+                      placeholder="Search a teacher by name or email…"
+                      onFocus={() => setTeacherOpen(true)}
+                      onChange={(e) => {
+                        onChange({ ...form, teacher: e.target.value });
+                        setTeacherOpen(true);
+                      }}
+                      onBlur={() => setTimeout(() => setTeacherOpen(false), 150)}
+                      style={inputStyle}
+                    />
+                    {teacherOpen && (
+                      <div
+                        style={{
+                          position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 5,
+                          background: "white", border: "1px solid #e2e8f0", borderRadius: 8,
+                          boxShadow: "0 10px 30px rgba(15,23,42,0.12)", maxHeight: 210, overflowY: "auto",
+                        }}
+                      >
+                        {teacherSearching && (
+                          <div style={{ padding: "10px 12px", fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", gap: 6 }}>
+                            <Loader2 size={12} className="animate-spin" /> Searching teachers…
+                          </div>
+                        )}
+                        {!teacherSearching && teacherResults.length === 0 && (
+                          <div style={{ padding: "10px 12px", fontSize: 12, color: "#94a3b8" }}>
+                            No teacher found.
+                          </div>
+                        )}
+                        {!teacherSearching &&
+                          teacherResults.map((teacher) => (
+                            <button
+                              key={teacher.id}
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => selectTeacher(teacher)}
+                              style={{
+                                display: "block", width: "100%", textAlign: "left", padding: "8px 12px",
+                                background: "white", border: "none", borderBottom: "1px solid #f1f5f9", cursor: "pointer",
+                              }}
+                            >
+                              <div style={{ fontSize: 13, fontWeight: 600, color: "#1e293b" }}>{teacher.name}</div>
+                              <div style={{ fontSize: 11, color: "#94a3b8" }}>
+                                {teacher.email} · {teacher.school || NONE_LABEL} · {teacher.board || NONE_LABEL}
+                              </div>
+                            </button>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              )}
+            </div>
             {field(
               "School",
               readOnly ? (
                 <input
                   readOnly
-                  value={schools.find((s) => s.id === form.school_id)?.name ?? ""}
+                  value={schools.find((s) => s.id === form.school_id)?.name ?? NONE_LABEL}
                   style={inputStyle}
                 />
               ) : (
                 <select
-                  value={form.school_id || ""}
-                  onChange={(e) => onChange({ ...form, school_id: Number(e.target.value) })}
+                  value={form.school_id ?? ""}
+                  onChange={(e) => {
+                    const id = e.target.value ? Number(e.target.value) : null;
+                    onChange({
+                      ...form,
+                      school_id: id,
+                      board: schools.find((s) => s.id === id)?.board ?? "",
+                    });
+                  }}
                   style={inputStyle}
                 >
-                  <option value="" disabled>Select school</option>
+                  <option value="">{NONE_LABEL}</option>
                   {schools.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
@@ -248,12 +351,11 @@ function StudentModal({
               )
             )}
             {field(
-              "Teacher",
+              "School Board",
               <input
-                readOnly={readOnly}
-                value={form.teacher}
-                onChange={(e) => onChange({ ...form, teacher: e.target.value })}
-                style={inputStyle}
+                readOnly
+                value={schools.find((s) => s.id === form.school_id)?.board || form.board || NONE_LABEL}
+                style={{ ...inputStyle, background: "#f8fafc" }}
               />
             )}
             {field(
@@ -325,6 +427,7 @@ export function AdminStudentsPage() {
   const { auto: a, t, tp } = useLanguage();
   const [students, setStudents] = useState<AdminStudentRecord[]>([]);
   const [schools, setSchools] = useState<AdminSchool[]>([]);
+  const [grades, setGrades] = useState<AdminGradeOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -347,6 +450,7 @@ export function AdminStudentsPage() {
       ]);
       setStudents(studentsRes.students);
       setSchools(schoolsRes.schools);
+      setGrades(schoolsRes.grades);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load student records.");
       setStudents([]);
@@ -372,6 +476,14 @@ export function AdminStudentsPage() {
     return matchSearch && matchGrade && matchStatus;
   });
 
+  const gradeFilterOptions = useMemo(() => {
+    const values = grades.map((g) => g.value);
+    students.forEach((s) => {
+      if (s.grade && !values.includes(s.grade)) values.push(s.grade);
+    });
+    return ["All Grades", ...values];
+  }, [grades, students]);
+
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const pageStart = (safePage - 1) * PAGE_SIZE;
@@ -387,19 +499,19 @@ export function AdminStudentsPage() {
   };
 
   const openAdd = () => {
-    setForm(emptyForm(schools[0]?.id ?? 0));
+    setForm(emptyForm(grades[0]?.value ?? ""));
     setModalError("");
     setModalMode("add");
   };
 
   const openView = (student: AdminStudentRecord) => {
-    setForm(fromRecord(student));
+    setForm(fromRecord(student, schools));
     setModalError("");
     setModalMode("view");
   };
 
   const openEdit = (student: AdminStudentRecord) => {
-    setForm(fromRecord(student));
+    setForm(fromRecord(student, schools));
     setModalError("");
     setModalMode("edit");
   };
@@ -413,8 +525,8 @@ export function AdminStudentsPage() {
       setModalError("First and last name are required.");
       return;
     }
-    if (!form.school_id) {
-      setModalError("Please select a school.");
+    if (!form.grade) {
+      setModalError("Please select a grade level.");
       return;
     }
 
@@ -478,7 +590,7 @@ export function AdminStudentsPage() {
           </div>
           <button
             onClick={openAdd}
-            disabled={loading || schools.length === 0}
+            disabled={loading || grades.length === 0}
             style={{ display: "flex", alignItems: "center", gap: 7, padding: "10px 18px", borderRadius: 9, border: "none", background: "#004aad", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
           >
             <Plus size={15} /> Add Record
@@ -519,7 +631,7 @@ export function AdminStudentsPage() {
             />
           </div>
           {[
-            { value: gradeFilter, onChange: setGradeFilter, options: ["All Grades", ...GRADES] },
+            { value: gradeFilter, onChange: setGradeFilter, options: gradeFilterOptions },
             { value: statusFilter, onChange: setStatusFilter, options: ["All", ...STATUSES] },
           ].map((sel, i) => (
             <div key={i} style={{ position: "relative" }}>
@@ -556,7 +668,7 @@ export function AdminStudentsPage() {
               <tbody>
                 {paginated.map((s, i) => {
                   const sc = statusConfig[s.status] ?? statusConfig["On Track"];
-                  const expected = gradeExpected[s.grade] || 14;
+                  const expected = s.target || 14;
                   return (
                     <tr key={s.id} style={{ borderTop: "1px solid #f1f5f9", background: i % 2 === 0 ? "white" : "#fafbfc" }}>
                       <td style={{ padding: "12px 16px" }}>
@@ -568,8 +680,8 @@ export function AdminStudentsPage() {
                         </div>
                       </td>
                       <td style={{ padding: "12px 16px", fontSize: 12, color: "#374151" }}>{a(s.grade)}</td>
-                      <td style={{ padding: "12px 16px", fontSize: 12, color: "#374151" }}>{a(s.school)}</td>
-                      <td style={{ padding: "12px 16px", fontSize: 12, color: "#374151" }}>{a(s.teacher)}</td>
+                      <td style={{ padding: "12px 16px", fontSize: 12, color: "#374151" }}>{s.school ? a(s.school) : NONE_LABEL}</td>
+                      <td style={{ padding: "12px 16px", fontSize: 12, color: "#374151" }}>{s.teacher ? a(s.teacher) : NONE_LABEL}</td>
                       <td style={{ padding: "12px 16px" }}>
                         <span style={{ fontSize: 13, fontWeight: 700, color: "#004aad" }}>{s.atelier}</span>
                       </td>
@@ -662,6 +774,7 @@ export function AdminStudentsPage() {
           mode={modalMode}
           form={form}
           schools={schools}
+          grades={grades}
           saving={saving}
           error={modalError}
           onChange={setForm}

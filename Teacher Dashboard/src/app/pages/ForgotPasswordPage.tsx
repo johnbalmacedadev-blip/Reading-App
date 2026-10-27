@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { BookOpen, ArrowLeft, Mail, CheckCircle2, Send } from "lucide-react";
+import { ArrowLeft, Mail, CheckCircle2, Send } from "lucide-react";
 import classroomPhoto from "../../imports/image-1.png";
+import { BrandMark } from "../components/BrandMark";
 import { LangToggle } from "../components/LangToggle";
 import { useLanguage } from "../i18n";
 import { authApi, ApiError } from "../api/client";
@@ -44,9 +45,8 @@ export function ForgotPasswordPage() {
         <img src={classroomPhoto} alt="Classe" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(0,74,173,0.72) 0%, rgba(0,74,173,0.45) 50%, rgba(0,74,173,0.80) 100%)" }} />
         <div style={{ position: "relative", height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between", padding: 48 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <BookOpen size={36} color="white" />
-            <span style={{ fontSize: 22, fontWeight: 700, color: "white" }}>{t("common.appName")}</span>
+          <div style={{ alignSelf: "flex-start" }}>
+            <BrandMark height={48} onDark />
           </div>
           <div>
             <h2 style={{ fontSize: 28, fontWeight: 800, color: "white", lineHeight: 1.3, marginBottom: 12, maxWidth: 360 }}>

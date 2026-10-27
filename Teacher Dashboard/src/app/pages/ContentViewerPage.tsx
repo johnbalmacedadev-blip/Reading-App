@@ -4,6 +4,9 @@ import { ArrowLeft, Download, Loader2 } from "lucide-react";
 import { init } from "pptx-preview";
 import { teacherLibraryApi, type LibraryContentItem } from "../api/client";
 import { useLanguage } from "../i18n";
+import { useAuth } from "../context/AuthContext";
+import { userMayAccessResource } from "../utils/teacherAccess";
+import { toast } from "sonner";
 
 function isPowerPoint(format: string) {
   return ["PPT", "PPTX"].includes(format.toUpperCase());
@@ -17,12 +20,19 @@ export function ContentViewerPage() {
   const { contentId } = useParams();
   const navigate = useNavigate();
   const { t, tp } = useLanguage();
+  const { user } = useAuth();
   const pptxContainerRef = useRef<HTMLDivElement>(null);
   const pptxViewerRef = useRef<ReturnType<typeof init> | null>(null);
 
   const [content, setContent] = useState<LibraryContentItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [viewerError, setViewerError] = useState("");
+
+  const guardLibraryDownload = (e: { preventDefault: () => void }) => {
+    if (userMayAccessResource(user, "export", "library_content")) return;
+    e.preventDefault();
+    toast.error(t("resource.upgradeToDownload"));
+  };
 
   useEffect(() => {
     const id = Number(contentId);
@@ -134,6 +144,7 @@ export function ContentViewerPage() {
         <a
           href={teacherLibraryApi.downloadUrl(content.id)}
           download
+          onClick={guardLibraryDownload}
           className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold"
           style={{ background: "#004aad", color: "#fff" }}
         >
@@ -173,6 +184,7 @@ export function ContentViewerPage() {
             <a
               href={teacherLibraryApi.downloadUrl(content.id)}
               download
+              onClick={guardLibraryDownload}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold"
               style={{ background: "#004aad", color: "#fff" }}
             >
@@ -188,6 +200,7 @@ export function ContentViewerPage() {
             <a
               href={teacherLibraryApi.downloadUrl(content.id)}
               download
+              onClick={guardLibraryDownload}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold"
               style={{ background: "#004aad", color: "#fff" }}
             >
