@@ -498,9 +498,11 @@ class AdminTeacherController extends Controller
             abort(404);
         }
 
-        if ($teacher->account_status !== 'archived') {
+        // Archived teachers, or teachers on the admin "Inactive" list (same 30-day rule as login_inactive).
+        $deletable = $teacher->account_status === 'archived' || $teacher->isLoginInactive(30);
+        if (! $deletable) {
             return response()->json([
-                'message' => 'Only archived teachers can be permanently deleted.',
+                'message' => 'Only archived or inactive teachers can be permanently deleted.',
             ], 422);
         }
 

@@ -25,7 +25,8 @@ class NotificationMailer
         self::safeSend($user, new WelcomeEmail($user, $temporaryPassword));
     }
 
-    public static function sendVerifyAccount(User $user, string $temporaryPassword): void
+    /** @return 'sent'|'skipped'|'failed' */
+    public static function sendVerifyAccount(User $user, string $temporaryPassword): string
     {
         if ($user->role === 'teacher') {
             $activationUrl = URL::temporarySignedRoute(
@@ -33,9 +34,8 @@ class NotificationMailer
                 now()->addDays(7),
                 ['user' => $user->id],
             );
-            self::safeSend($user, new TeacherAccountCreatedEmail($user, $activationUrl, $temporaryPassword));
 
-            return;
+            return self::safeSend($user, new TeacherAccountCreatedEmail($user, $activationUrl, $temporaryPassword));
         }
 
         $activationUrl = URL::temporarySignedRoute(
@@ -50,7 +50,7 @@ class NotificationMailer
             default => self::frontendUrl('/signin'),
         };
 
-        self::safeSend($user, new PortalEventEmail(
+        return self::safeSend($user, new PortalEventEmail(
             $user,
             'verify',
             [

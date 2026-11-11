@@ -443,6 +443,11 @@ const translations = {
   "payment.success.firstPaymentAnnual": { fr: "16,00 $/mois le 2 juil. 2026", en: "$16.00/month on Jul 2, 2026" },
   "payment.success.goToDashboard": { fr: "Accéder à mon tableau de bord →", en: "Go to my dashboard →" },
   "payment.success.confirmEmail": { fr: "Un courriel de confirmation a été envoyé à votre adresse.", en: "A confirmation email has been sent to your address." },
+  "signup.pending.title": { fr: "Vérifiez votre courriel", en: "Check your email" },
+  "signup.pending.body": { fr: "Votre compte a été créé. Nous avons envoyé un lien d'activation à {email}. Cliquez sur ce lien pour activer votre compte et démarrer votre essai gratuit.", en: "Your account has been created. We sent an activation link to {email}. Click the link to activate your account and start your free trial." },
+  "signup.pending.spam": { fr: "Vous ne le voyez pas? Vérifiez votre dossier de courriels indésirables. Le lien est valide pendant 7 jours.", en: "Don't see it? Check your spam or junk folder. The link is valid for 7 days." },
+  "signup.pending.emailFailed": { fr: "Votre compte a été créé, mais le courriel d'activation n'a pas pu être envoyé. Veuillez contacter le soutien pour activer votre compte.", en: "Your account was created, but the activation email could not be sent. Please contact support to activate your account." },
+  "signup.pending.goToSignin": { fr: "Aller à la connexion", en: "Go to sign in" },
 
   // ── Evaluation ─────────────────────────────────────────────────────────────
   "eval.saveAtelier":      { fr: "Sauvegarder l'atelier", en: "Save Workshop" },

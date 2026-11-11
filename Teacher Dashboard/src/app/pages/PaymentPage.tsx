@@ -9,6 +9,7 @@ import { useLanguage } from "../i18n";
 import { authApi, ApiError } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { clearSignupDraft, loadSignupDraft } from "../signupDraft";
+import { SignupPendingActivation } from "../components/SignupPendingActivation";
 
 function CardInput({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -52,6 +53,7 @@ export function PaymentPage() {
   const [processing, setProcessing] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState("");
+  const [pending, setPending] = useState<{ email: string; emailSent: boolean } | null>(null);
 
   useEffect(() => {
     if (!draft?.form.email) {
@@ -111,7 +113,7 @@ export function PaymentPage() {
     setError("");
     try {
       await authApi.csrf();
-      await authApi.completeSignup({
+      const result = await authApi.completeSignup({
         first_name: signup.form.firstName,
         last_name: signup.form.lastName,
         email: signup.form.email,
@@ -127,6 +129,11 @@ export function PaymentPage() {
         next_billing_date: billingDate,
       });
       clearSignupDraft();
+      if (!result.user) {
+        // Inactive until the emailed activation link is clicked; /api/user would 401.
+        setPending({ email: signup.form.email, emailSent: result.email_sent !== false });
+        return;
+      }
       await refreshUser();
       setDone(true);
     } catch (err) {
@@ -141,6 +148,10 @@ export function PaymentPage() {
       setProcessing(false);
     }
   };
+
+  if (pending) {
+    return <SignupPendingActivation email={pending.email} emailSent={pending.emailSent} />;
+  }
 
   if (done) {
     const successRows = [

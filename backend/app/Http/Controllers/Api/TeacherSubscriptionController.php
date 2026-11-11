@@ -108,8 +108,9 @@ class TeacherSubscriptionController extends Controller
                 'plan' => $data['plan'],
                 'billing' => $billing,
             ],
+            // Stripe Checkout rejects `cancel_at_period_end` here (it is a Subscription field, not a
+            // Checkout one). New subscriptions auto-renew by default, so nothing extra is needed.
             'subscription_data' => [
-                'cancel_at_period_end' => false,
                 'metadata' => [
                     'user_id' => (string) $teacher->id,
                     'plan' => $data['plan'],

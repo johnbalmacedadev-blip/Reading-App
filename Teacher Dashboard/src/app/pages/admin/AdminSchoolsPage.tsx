@@ -18,6 +18,7 @@ import {
 } from "../../components/admin/InstitutionalAccessFields";
 import { ExtendTrialDaysModal } from "../../components/admin/ExtendTrialDaysModal";
 import { CreateSchoolWizard } from "../../components/admin/CreateSchoolWizard";
+import { StatusTabs, type StatusTab } from "../../components/admin/StatusTabs";
 
 type BoardOption = { code: string; name: string };
 
@@ -511,7 +512,7 @@ export function AdminSchoolsPage() {
   const [activationAction, setActivationAction] = useState<"resend" | "activate" | null>(null);
   const [search, setSearch] = useState("");
   const [board, setBoard] = useState("All Boards");
-  const [statusFilter, setStatusFilter] = useState("All");
+  const [tab, setTab] = useState<StatusTab>("Active");
   const [modal, setModal] = useState<{ type: "create" | "edit"; school: SchoolForm } | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardError, setWizardError] = useState("");
@@ -536,12 +537,12 @@ export function AdminSchoolsPage() {
       .list({
         search: search || undefined,
         board: board !== "All Boards" ? board : undefined,
-        status: statusFilter !== "All" ? statusFilter : undefined,
+        // All statuses; the Active / Archived tabs split them client-side so both counts are known.
       })
       .then(({ schools: data }) => setSchools(data))
       .catch((err) => toast.error(err instanceof Error ? err.message : "Failed to load schools."))
       .finally(() => setLoading(false));
-  }, [search, board, statusFilter]);
+  }, [search, board]);
 
   useEffect(() => {
     const timer = setTimeout(loadSchools, 250);
@@ -696,7 +697,10 @@ export function AdminSchoolsPage() {
     }
   };
 
-  const activeCount = schools.filter((s) => s.status === "Active").length;
+  const isArchived = (s: AdminSchoolRecord) => s.status === "Archived";
+  const activeCount = schools.filter((s) => !isArchived(s)).length;
+  const archivedCount = schools.filter(isArchived).length;
+  const visibleSchools = schools.filter((s) => (tab === "Archived" ? isArchived(s) : !isArchived(s)));
 
   return (
     <AdminLayout>
@@ -762,7 +766,6 @@ export function AdminSchoolsPage() {
           </div>
           {[
             { value: board, onChange: setBoard, options: boardFilterOptions },
-            { value: statusFilter, onChange: setStatusFilter, options: ["All", "Active", "Archived"] },
           ].map((sel, i) => (
             <div key={i} style={{ position: "relative" }}>
               <select
@@ -797,6 +800,8 @@ export function AdminSchoolsPage() {
             </div>
           ))}
         </div>
+
+        <StatusTabs value={tab} onChange={setTab} counts={{ Active: activeCount, Archived: archivedCount }} />
 
         <div
           style={{
@@ -837,7 +842,7 @@ export function AdminSchoolsPage() {
                 </tr>
               </thead>
               <tbody>
-                {schools.map((s, i) => (
+                {visibleSchools.map((s, i) => (
                   <tr
                     key={s.id}
                     style={{
@@ -983,9 +988,9 @@ export function AdminSchoolsPage() {
               </tbody>
             </table>
           )}
-          {!loading && schools.length === 0 && (
+          {!loading && visibleSchools.length === 0 && (
             <div style={{ padding: "40px 0", textAlign: "center", color: "#94a3b8", fontSize: 14 }}>
-              No school found.
+              {tab === "Archived" ? "No archived schools." : "No school found."}
             </div>
           )}
         </div>

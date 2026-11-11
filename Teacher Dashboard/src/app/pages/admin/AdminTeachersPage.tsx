@@ -979,7 +979,7 @@ export function AdminTeachersPage() {
   const handleDelete = async (teacher: AdminTeacherRecord) => {
     if (
       !window.confirm(
-        `Permanently delete ${teacher.name}? This cannot be undone and will remove their classes.`,
+        `Permanently delete ${teacher.name}?\n\nThis cannot be undone. Their classes, and the students and evaluations in those classes, will also be deleted.`,
       )
     ) {
       return;
@@ -1391,6 +1391,18 @@ export function AdminTeachersPage() {
                                 style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "white", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#374151" }}
                               >
                                 <Edit2 size={12} /> Edit
+                              </button>
+                              <button
+                                onClick={() => handleDelete(t)}
+                                disabled={deletingId === t.id || inactivityEmailAction?.id === t.id}
+                                style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #fecdd3", background: "#fff1f2", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#be123c" }}
+                              >
+                                {deletingId === t.id ? (
+                                  <Loader2 size={12} className="animate-spin" />
+                                ) : (
+                                  <Trash2 size={12} />
+                                )}
+                                Delete
                               </button>
                             </>
                           ) : (

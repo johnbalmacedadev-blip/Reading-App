@@ -15,10 +15,15 @@ export function teacherIsInstitutional(user: AuthUser | null | undefined): boole
     return true;
   }
 
-  const hasSchool = Boolean(user.school?.id);
-  const hasBoard = Boolean(user.school_board && String(user.school_board).trim());
+  // The backend (User::isInstitutionalTeacher) is the source of truth. When it has answered,
+  // trust it: individual teachers may have typed a school board name at signup purely for
+  // information — that free text is not a licence and must not hide their Subscription page.
+  if (typeof user.subscription?.is_institutional === "boolean") {
+    return false;
+  }
 
-  return hasSchool || hasBoard;
+  // Older payloads without the flag: only a real school link implies institutional access.
+  return Boolean(user.school?.id);
 }
 
 export function teacherCanAccessAssessments(user: AuthUser | null | undefined): boolean {

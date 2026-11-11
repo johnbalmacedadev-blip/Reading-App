@@ -7,8 +7,11 @@ import {
   adminSettingsApi,
   type EmailTemplateCatalogItem,
   type EmailTemplatesPayload,
+  type EmailTemplateAudience,
+  type EmailTemplateLocaleMap,
   type PlatformSettings,
   type SystemAnnouncementCategory,
+  type SystemAnnouncementAudience,
   type SystemAnnouncementRecord,
 } from "../../api/client";
 import { BrandMark } from "../../components/BrandMark";
@@ -89,7 +92,31 @@ const defaultSettings: PlatformSettings = {
   support_email: "support@lecturesci.ca",
 };
 
-const emptyTemplates = (): EmailTemplatesPayload["templates"] => ({ en: {}, fr: {} });
+const EMAIL_AUDIENCES: EmailTemplateAudience[] = ["teacher", "school", "board"];
+const EMAIL_AUDIENCE_FALLBACK_LABELS: Record<EmailTemplateAudience, string> = {
+  teacher: "Teachers",
+  school: "Schools",
+  board: "School Boards",
+};
+
+const emptyTemplates = (): EmailTemplatesPayload["templates"] => ({
+  teacher: { en: {}, fr: {} },
+  school: { en: {}, fr: {} },
+  board: { en: {}, fr: {} },
+});
+
+/** Accepts the per-audience shape, or the legacy flat { en, fr } shape (treated as Teachers). */
+function normalizeEmailTemplates(raw: unknown): EmailTemplatesPayload["templates"] {
+  const result = emptyTemplates();
+  if (!raw || typeof raw !== "object") return result;
+  const data = raw as Record<string, unknown>;
+  const isLegacy = ("en" in data || "fr" in data) && !EMAIL_AUDIENCES.some((a) => a in data);
+  const source = (isLegacy ? { teacher: data } : data) as Record<string, Partial<EmailTemplateLocaleMap> | undefined>;
+  for (const audience of EMAIL_AUDIENCES) {
+    result[audience] = { en: source[audience]?.en ?? {}, fr: source[audience]?.fr ?? {} };
+  }
+  return result;
+}
 
 export function AdminSettingsPage() {
   const { defaultLabel, years } = useAdminSchoolYear();
@@ -113,12 +140,18 @@ export function AdminSettingsPage() {
   const [announceTitle, setAnnounceTitle] = useState("");
   const [announceMessage, setAnnounceMessage] = useState("");
   const [announceUrl, setAnnounceUrl] = useState("");
+  const [announcementAudiences, setAnnouncementAudiences] = useState<{ value: SystemAnnouncementAudience; label: string }[]>([]);
+  const [announceAudience, setAnnounceAudience] = useState<SystemAnnouncementAudience>("teachers");
+  const [announceSendPortal, setAnnounceSendPortal] = useState(true);
+  const [announceSendEmail, setAnnounceSendEmail] = useState(true);
   const [announceSending, setAnnounceSending] = useState(false);
   const [announceNotice, setAnnounceNotice] = useState("");
 
   const [emailCatalog, setEmailCatalog] = useState<EmailTemplateCatalogItem[]>([]);
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplatesPayload["templates"]>(emptyTemplates);
   const [emailLocale, setEmailLocale] = useState<"en" | "fr">("en");
+  const [emailAudience, setEmailAudience] = useState<EmailTemplateAudience>("teacher");
+  const [emailAudienceLabels, setEmailAudienceLabels] = useState<Record<EmailTemplateAudience, string>>(EMAIL_AUDIENCE_FALLBACK_LABELS);
   const [selectedEmailKey, setSelectedEmailKey] = useState("inactive_reminder");
   const [emailLogoUri, setEmailLogoUri] = useState<string | null>(null);
   const [hasCustomEmailLogo, setHasCustomEmailLogo] = useState(false);
@@ -148,9 +181,15 @@ export function AdminSettingsPage() {
   const [backupFreq, setBackupFreq] = useState("Daily");
   const [retention, setRetention] = useState("12 months");
 
+  // Only templates that this audience actually receives (e.g. "School added to board" is boards-only).
+  const visibleEmailCatalog = useMemo(
+    () => emailCatalog.filter((item) => !item.audiences || item.audiences.includes(emailAudience)),
+    [emailCatalog, emailAudience],
+  );
+
   const selectedEmail = useMemo(
-    () => emailCatalog.find((item) => item.key === selectedEmailKey) ?? emailCatalog[0] ?? null,
-    [emailCatalog, selectedEmailKey],
+    () => visibleEmailCatalog.find((item) => item.key === selectedEmailKey) ?? visibleEmailCatalog[0] ?? null,
+    [visibleEmailCatalog, selectedEmailKey],
   );
 
   const canSaveTop = activeSection === "general" || activeSection === "language" || activeSection === "emails" || activeSection === "permissions";
@@ -198,7 +237,14 @@ export function AdminSettingsPage() {
 
   const applyEmailPayload = useCallback((payload: EmailTemplatesPayload) => {
     setEmailCatalog(payload.catalog);
-    setEmailTemplates(payload.templates);
+    setEmailTemplates(normalizeEmailTemplates(payload.templates));
+    if (payload.audiences?.length) {
+      setEmailAudienceLabels((prev) => {
+        const next = { ...prev };
+        for (const a of payload.audiences ?? []) next[a.key] = a.label;
+        return next;
+      });
+    }
     setEmailLogoUri(payload.logo_data_uri);
     setHasCustomEmailLogo(payload.has_custom_logo);
     if (payload.catalog.length > 0) {
@@ -213,6 +259,9 @@ export function AdminSettingsPage() {
       const result = await adminAnnouncementsApi.list();
       setAnnouncements(result.announcements);
       setAnnouncementCategories(result.categories);
+      if (result.audiences?.length) {
+        setAnnouncementAudiences(result.audiences);
+      }
       if (result.categories[0]) {
         setAnnounceCategory((current) =>
           result.categories.some((c) => c.value === current) ? current : result.categories[0].value,
@@ -264,6 +313,17 @@ export function AdminSettingsPage() {
       setAnnounceNotice("Title and message are required.");
       return;
     }
+    if (!announceSendPortal && !announceSendEmail) {
+      setAnnounceNotice("Select at least one delivery channel: Portal or Email (required).");
+      return;
+    }
+    const audienceLabel =
+      announcementAudiences.find((a) => a.value === announceAudience)?.label
+      ?? { teachers: "Teachers", school: "Schools", board: "School Boards" }[announceAudience];
+    const channels = [announceSendPortal && "portal notification", announceSendEmail && "email"].filter(Boolean).join(" and ");
+    if (!window.confirm(`Send "${announceTitle.trim()}" to ALL ${audienceLabel} accounts by ${channels}? This cannot be undone.`)) {
+      return;
+    }
     setAnnounceSending(true);
     setAnnounceNotice("");
     try {
@@ -272,6 +332,9 @@ export function AdminSettingsPage() {
         title: announceTitle.trim(),
         message: announceMessage.trim(),
         url: announceUrl.trim() || undefined,
+        audience: announceAudience,
+        send_portal: announceSendPortal,
+        send_email: announceSendEmail,
       });
       setAnnounceNotice(result.message);
       setAnnounceTitle("");
@@ -289,11 +352,14 @@ export function AdminSettingsPage() {
     if (!selectedEmail) return;
     setEmailTemplates((prev) => ({
       ...prev,
-      [emailLocale]: {
-        ...prev[emailLocale],
-        [selectedEmail.key]: {
-          ...(prev[emailLocale]?.[selectedEmail.key] ?? {}),
-          [field]: value,
+      [emailAudience]: {
+        ...prev[emailAudience],
+        [emailLocale]: {
+          ...prev[emailAudience]?.[emailLocale],
+          [selectedEmail.key]: {
+            ...(prev[emailAudience]?.[emailLocale]?.[selectedEmail.key] ?? {}),
+            [field]: value,
+          },
         },
       },
     }));
@@ -701,9 +767,28 @@ export function AdminSettingsPage() {
             </div>
 
             <div style={{ fontSize: 12, fontWeight: 700, color: "#94a3b8", letterSpacing: 0.8, marginBottom: 8, textTransform: "uppercase" }}>
-              Broadcast to teachers
+              Broadcast announcement
             </div>
             <div style={{ display: "grid", gap: 12, marginBottom: 18 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 5 }}>Audience</label>
+                <select
+                  value={announceAudience}
+                  onChange={(e) => setAnnounceAudience(e.target.value as SystemAnnouncementAudience)}
+                  style={{ width: "100%", padding: "9px 10px", borderRadius: 7, border: "1px solid #e2e8f0", fontSize: 13 }}
+                >
+                  {(announcementAudiences.length
+                    ? announcementAudiences
+                    : [
+                        { value: "teachers" as const, label: "Teachers" },
+                        { value: "school" as const, label: "Schools" },
+                        { value: "board" as const, label: "School Boards" },
+                      ]
+                  ).map((a) => (
+                    <option key={a.value} value={a.value}>{a.label}</option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 5 }}>Category</label>
                 <select
@@ -752,6 +837,19 @@ export function AdminSettingsPage() {
                   style={{ width: "100%", padding: "9px 10px", borderRadius: 7, border: "1px solid #e2e8f0", fontSize: 13, boxSizing: "border-box" }}
                 />
               </div>
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 5 }}>Delivery</label>
+                <div style={{ display: "flex", gap: 18, flexWrap: "wrap", fontSize: 13, color: "#374151" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                    <input type="checkbox" checked={announceSendPortal} onChange={(e) => setAnnounceSendPortal(e.target.checked)} />
+                    Portal notification (bell menu)
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                    <input type="checkbox" checked={announceSendEmail} onChange={(e) => setAnnounceSendEmail(e.target.checked)} />
+                    Email
+                  </label>
+                </div>
+              </div>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <button
                   type="button"
@@ -772,7 +870,8 @@ export function AdminSettingsPage() {
                   }}
                 >
                   {announceSending ? <Loader2 size={14} className="animate-spin" /> : <Bell size={14} />}
-                  Send to teachers
+                  Send to {(announcementAudiences.find((a) => a.value === announceAudience)?.label
+                    ?? { teachers: "Teachers", school: "Schools", board: "School Boards" }[announceAudience]).toLowerCase()}
                 </button>
                 {announceNotice && (
                   <span style={{ fontSize: 12, color: announceNotice.toLowerCase().includes("fail") || announceNotice.includes("required") ? "#be123c" : "#047857" }}>
@@ -793,7 +892,7 @@ export function AdminSettingsPage() {
                   <div key={item.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "12px 14px", background: "#fff" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 4 }}>
                       <strong style={{ fontSize: 13, color: "#0f172a" }}>{item.title}</strong>
-                      <span style={{ fontSize: 11, color: "#64748b", whiteSpace: "nowrap" }}>{item.delivered_count} teachers</span>
+                      <span style={{ fontSize: 11, color: "#64748b", whiteSpace: "nowrap" }}>{item.delivered_count} · {item.audience_label ?? "Teachers"}</span>
                     </div>
                     <div style={{ fontSize: 11, color: "#004aad", fontWeight: 600, marginBottom: 4 }}>{item.category_label}</div>
                     <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.45 }}>{item.message}</div>
@@ -910,9 +1009,39 @@ export function AdminSettingsPage() {
               </div>
             </div>
 
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#94a3b8", letterSpacing: 0.8, textTransform: "uppercase" }}>
+                Recipients
+              </span>
+              <div style={{ display: "inline-flex", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+                {EMAIL_AUDIENCES.map((audience) => (
+                  <button
+                    key={audience}
+                    type="button"
+                    onClick={() => setEmailAudience(audience)}
+                    style={{
+                      padding: "6px 14px",
+                      border: "none",
+                      borderRight: audience !== "board" ? "1px solid #e2e8f0" : "none",
+                      background: emailAudience === audience ? "#004aad" : "white",
+                      color: emailAudience === audience ? "white" : "#475569",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {emailAudienceLabels[audience]}
+                  </button>
+                ))}
+              </div>
+              <span style={{ fontSize: 12, color: "#64748b" }}>
+                Each recipient type has its own copy of every email.
+              </span>
+            </div>
+
             <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 16 }}>
               <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden", height: "fit-content", maxHeight: 520, overflowY: "auto" }}>
-                {emailCatalog.map((item) => {
+                {visibleEmailCatalog.map((item) => {
                   const active = selectedEmail?.key === item.key;
                   return (
                     <button
@@ -943,6 +1072,9 @@ export function AdminSettingsPage() {
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
                   <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>
                     {selectedEmail?.label ?? "Select a template"}
+                    <span style={{ fontSize: 12, fontWeight: 500, color: "#64748b", marginLeft: 8 }}>
+                      · {emailAudienceLabels[emailAudience]}
+                    </span>
                   </div>
                   <div style={{ display: "inline-flex", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
                     {(["en", "fr"] as const).map((lang) => (
@@ -969,7 +1101,7 @@ export function AdminSettingsPage() {
                 {selectedEmail && (
                   <div style={{ display: "grid", gap: 12 }}>
                     {selectedEmail.fields.map((field) => {
-                      const value = emailTemplates[emailLocale]?.[selectedEmail.key]?.[field.key] ?? "";
+                      const value = emailTemplates[emailAudience]?.[emailLocale]?.[selectedEmail.key]?.[field.key] ?? "";
                       const isMultiline = MULTILINE_FIELDS.has(field.key) || field.key === "body";
                       return (
                         <div key={field.key}>

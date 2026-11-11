@@ -189,7 +189,7 @@ export const authApi = {
     next_billing_date?: string;
     preferred_language?: "en" | "fr";
   }) =>
-    apiRequest<{ message: string; user: AuthUser | null; pending_activation?: boolean }>("/api/signup/complete", {
+    apiRequest<{ message: string; user: AuthUser | null; pending_activation?: boolean; email_sent?: boolean }>("/api/signup/complete", {
       method: "POST",
       json: payload,
     }),
@@ -1077,14 +1077,23 @@ export type EmailTemplateField = {
   label: string;
 };
 
+export type EmailTemplateAudience = "teacher" | "school" | "board";
+
 export type EmailTemplateCatalogItem = {
   key: string;
   label: string;
+  /** Which recipient audiences use this template (backend: EmailTemplate::TEMPLATE_AUDIENCES). */
+  audiences?: EmailTemplateAudience[];
   fields: EmailTemplateField[];
 };
 
+/** locale → template key → field → text */
+export type EmailTemplateLocaleMap = Record<"en" | "fr", Record<string, Record<string, string>>>;
+
 export type EmailTemplatesPayload = {
-  templates: Record<"en" | "fr", Record<string, Record<string, string>>>;
+  /** Templates are stored per audience: { teacher: { en, fr }, school: {...}, board: {...} }. */
+  templates: Record<EmailTemplateAudience, EmailTemplateLocaleMap>;
+  audiences?: { key: EmailTemplateAudience; label: string }[];
   catalog: EmailTemplateCatalogItem[];
   logo_url: string | null;
   logo_data_uri: string | null;
@@ -1192,22 +1201,29 @@ export type SystemAnnouncementRecord = {
   message: string;
   url: string | null;
   audience: string;
+  audience_label?: string;
   delivered_count: number;
   published_at: string | null;
   created_by: string | null;
 };
+
+export type SystemAnnouncementAudience = "teachers" | "school" | "board";
 
 export const adminAnnouncementsApi = {
   list: () =>
     apiRequest<{
       announcements: SystemAnnouncementRecord[];
       categories: { value: SystemAnnouncementCategory; label: string }[];
+      audiences?: { value: SystemAnnouncementAudience; label: string }[];
     }>("/api/admin/announcements"),
   create: (payload: {
     category: SystemAnnouncementCategory;
     title: string;
     message: string;
     url?: string;
+    audience: SystemAnnouncementAudience;
+    send_portal: boolean;
+    send_email: boolean;
   }) =>
     apiRequest<{ announcement: SystemAnnouncementRecord; message: string }>("/api/admin/announcements", {
       method: "POST",
@@ -1717,6 +1733,8 @@ export const adminSchoolBoardsApi = {
     apiRequest<{ board: AdminSchoolBoardRecord }>(`/api/admin/school-boards/${id}/archive`, {
       method: "PATCH",
     }),
+  remove: (id: number) =>
+    apiRequest<{ message: string }>(`/api/admin/school-boards/${id}`, { method: "DELETE" }),
 };
 
 export type SchoolReportClass = {

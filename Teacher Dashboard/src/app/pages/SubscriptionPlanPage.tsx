@@ -11,6 +11,7 @@ import { useLanguage } from "../i18n";
 import { clearSignupDraft, saveSignupDraft, loadSignupDraft } from "../signupDraft";
 import { ApiError, authApi } from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import { SignupPendingActivation } from "../components/SignupPendingActivation";
 
 type PlanId = "essentials" | "insights";
 
@@ -21,6 +22,7 @@ export function SubscriptionPlanPage() {
   const [selected, setSelected] = useState<PlanId>("essentials");
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
+  const [pending, setPending] = useState<{ email: string; emailSent: boolean } | null>(null);
 
   const includedFeatures = useMemo(
     () => [
@@ -105,7 +107,7 @@ export function SubscriptionPlanPage() {
     setError("");
     try {
       await authApi.csrf();
-      await authApi.completeSignup({
+      const result = await authApi.completeSignup({
         first_name: signup.form.firstName,
         last_name: signup.form.lastName,
         email: signup.form.email,
@@ -120,6 +122,12 @@ export function SubscriptionPlanPage() {
         due_today: "$0.00",
       });
       clearSignupDraft();
+      if (!result.user) {
+        // Account created but inactive until the emailed activation link is clicked —
+        // there is no session yet, so don't call /api/user (it would 401).
+        setPending({ email: signup.form.email, emailSent: result.email_sent !== false });
+        return;
+      }
       await refreshUser();
       navigate("/dashboard", { replace: true });
     } catch (err) {
@@ -134,6 +142,10 @@ export function SubscriptionPlanPage() {
       setProcessing(false);
     }
   };
+
+  if (pending) {
+    return <SignupPendingActivation email={pending.email} emailSent={pending.emailSent} />;
+  }
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>

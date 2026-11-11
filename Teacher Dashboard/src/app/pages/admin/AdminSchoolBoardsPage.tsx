@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AdminLayout } from "./AdminLayout";
-import { Plus, Search, Edit2, Archive, X, ChevronDown, Building2, Loader2, Eye, EyeOff } from "lucide-react";
+import { Plus, Search, Edit2, Archive, Trash2, X, Building2, Loader2, Eye, EyeOff } from "lucide-react";
+import { StatusTabs, type StatusTab } from "../../components/admin/StatusTabs";
 import {
   adminSchoolBoardsApi,
   type AdminSchoolBoardPayload,
@@ -337,7 +338,8 @@ export function AdminSchoolBoardsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All");
+  const [tab, setTab] = useState<StatusTab>("Active");
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [modalMode, setModalMode] = useState<"create" | "edit" | null>(null);
   const [form, setForm] = useState<BoardForm>(emptyForm());
   const [loadingBoard, setLoadingBoard] = useState(false);
@@ -351,9 +353,9 @@ export function AdminSchoolBoardsPage() {
     setLoading(true);
     setError("");
     try {
+      // Load every status; the Active / Archived tabs split them client-side so both counts are known.
       const { boards: data } = await adminSchoolBoardsApi.list({
         search: search || undefined,
-        status: statusFilter !== "All" ? statusFilter : undefined,
       });
       setBoards(data);
     } catch (err) {
@@ -362,14 +364,17 @@ export function AdminSchoolBoardsPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter]);
+  }, [search]);
 
   useEffect(() => {
     const timer = setTimeout(loadBoards, search ? 300 : 0);
     return () => clearTimeout(timer);
   }, [loadBoards, search]);
 
-  const activeCount = boards.filter((b) => b.status === "Active").length;
+  const isArchived = (b: AdminSchoolBoardRecord) => b.status === "Archived";
+  const activeCount = boards.filter((b) => !isArchived(b)).length;
+  const archivedCount = boards.filter(isArchived).length;
+  const visibleBoards = boards.filter((b) => (tab === "Archived" ? isArchived(b) : !isArchived(b)));
 
   const openCreate = () => {
     setForm(emptyForm());
@@ -500,10 +505,36 @@ export function AdminSchoolBoardsPage() {
     try {
       const { board } = await adminSchoolBoardsApi.archive(id);
       setBoards((prev) => prev.map((b) => (b.id === board.id ? board : b)));
+      toast.success(board.status === "Archived" ? `${board.name} archived` : `${board.name} restored`);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Archive failed.");
+      toast.error(err instanceof Error ? err.message : "Archive failed.");
     } finally {
       setArchivingId(null);
+    }
+  };
+
+  const handleDelete = async (board: AdminSchoolBoardRecord) => {
+    if (board.status !== "Archived") {
+      toast.error("Archive the school board before permanently deleting it.");
+      return;
+    }
+    if (
+      !window.confirm(
+        `Permanently delete ${board.name} (${board.code})? This cannot be undone and will remove the board portal account. Its schools are kept.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeletingId(board.id);
+    try {
+      const { message } = await adminSchoolBoardsApi.remove(board.id);
+      setBoards((prev) => prev.filter((b) => b.id !== board.id));
+      toast.success(message || "School board permanently deleted.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Delete failed.");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -544,23 +575,9 @@ export function AdminSchoolBoardsPage() {
               style={{ width: "100%", padding: "9px 12px 9px 34px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, outline: "none", boxSizing: "border-box" }}
             />
           </div>
-          {[
-            { value: statusFilter, onChange: setStatusFilter, options: ["All", "Active", "Archived"] },
-          ].map((sel, i) => (
-            <div key={i} style={{ position: "relative" }}>
-              <select
-                value={sel.value}
-                onChange={(e) => sel.onChange(e.target.value)}
-                style={{ padding: "9px 32px 9px 12px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, background: "white", cursor: "pointer", outline: "none", appearance: "none" }}
-              >
-                {sel.options.map((o) => (
-                  <option key={o}>{o}</option>
-                ))}
-              </select>
-              <ChevronDown size={13} color="#94a3b8" style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
-            </div>
-          ))}
         </div>
+
+        <StatusTabs value={tab} onChange={setTab} counts={{ Active: activeCount, Archived: archivedCount }} />
 
         <div style={{ background: "white", borderRadius: 14, border: "1px solid #f1f5f9", overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
           {loading ? (
@@ -577,7 +594,7 @@ export function AdminSchoolBoardsPage() {
                 </tr>
               </thead>
               <tbody>
-                {boards.map((b, i) => (
+                {visibleBoards.map((b, i) => (
                   <tr key={b.id} style={{ borderTop: "1px solid #f1f5f9", background: i % 2 === 0 ? "white" : "#fafbfc" }}>
                     <td style={{ padding: "13px 16px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -610,8 +627,13 @@ export function AdminSchoolBoardsPage() {
                         </button>
                         <button
                           onClick={() => handleArchive(b.id)}
-                          disabled={archivingId === b.id}
-                          style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #fee2e2", background: "#fff5f5", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#ef4444" }}
+                          disabled={archivingId === b.id || deletingId === b.id}
+                          style={{
+                            padding: "5px 10px", borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 12,
+                            border: b.status === "Archived" ? "1px solid #d1fae5" : "1px solid #fee2e2",
+                            background: b.status === "Archived" ? "#ecfdf5" : "#fff5f5",
+                            color: b.status === "Archived" ? "#059669" : "#ef4444",
+                          }}
                         >
                           {archivingId === b.id ? (
                             <Loader2 size={12} className="animate-spin" />
@@ -620,6 +642,16 @@ export function AdminSchoolBoardsPage() {
                           )}
                           {b.status === "Archived" ? "Restore" : "Archive"}
                         </button>
+                        {b.status === "Archived" && (
+                          <button
+                            onClick={() => void handleDelete(b)}
+                            disabled={deletingId === b.id || archivingId === b.id}
+                            style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #fecdd3", background: "#fff1f2", cursor: deletingId === b.id ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#be123c" }}
+                          >
+                            {deletingId === b.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                            Delete
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -627,8 +659,10 @@ export function AdminSchoolBoardsPage() {
               </tbody>
             </table>
           )}
-          {!loading && boards.length === 0 && (
-            <div style={{ padding: "40px 0", textAlign: "center", color: "#94a3b8", fontSize: 14 }}>No board found.</div>
+          {!loading && visibleBoards.length === 0 && (
+            <div style={{ padding: "40px 0", textAlign: "center", color: "#94a3b8", fontSize: 14 }}>
+              {tab === "Archived" ? "No archived boards." : "No board found."}
+            </div>
           )}
         </div>
       </div>

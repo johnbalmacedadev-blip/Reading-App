@@ -83,8 +83,7 @@ class SignupController extends Controller
 
         $emailSent = false;
         try {
-            NotificationMailer::sendVerifyAccount($user, $plainPassword);
-            $emailSent = true;
+            $emailSent = NotificationMailer::sendVerifyAccount($user, $plainPassword) === 'sent';
         } catch (\Throwable $e) {
             Log::error('Signup activation email failed', [
                 'user_id' => $user->id,
